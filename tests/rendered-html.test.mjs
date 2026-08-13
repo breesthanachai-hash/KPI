@@ -18,6 +18,9 @@ test("builds the People Pulse KPI product bundle", async () => {
   assert.match(pageAsset, /ภาพรวม KPI พนักงาน/);
   assert.match(pageAsset, /KPI &amp; SKILL SYSTEM|KPI & SKILL SYSTEM/);
   assert.match(pageAsset, /saveEvaluation/);
+  assert.match(pageAsset, /สกิลรายบุคคล/);
+  assert.match(pageAsset, /INDIVIDUAL SKILL PROFILE/);
+  assert.match(pageAsset, /รายละเอียดสกิล \(ปัจจุบัน\/เป้าหมาย\)/);
   assert.match(layout, /People Pulse — ระบบวัด KPI พนักงาน/);
   assert.doesNotMatch(pageAsset, /Your site is taking shape|Building your site|codex-preview/i);
 });

@@ -8,7 +8,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const protocol = requestHeaders.get("x-forwarded-proto") ?? (host.includes("localhost") ? "http" : "https");
   const origin = `${protocol}://${host}`;
   const title = "People Pulse — ระบบวัด KPI พนักงาน";
-  const description = "ติดตาม KPI ตามตำแหน่ง ประเมินผลงาน และวิเคราะห์การเติบโตของทีมในที่เดียว";
+  const description = "ติดตาม KPI และสกิลรายบุคคล เปรียบเทียบระดับกับเป้าหมาย และวางแผนพัฒนาทีมในที่เดียว";
 
   return {
     metadataBase: new URL(origin),
