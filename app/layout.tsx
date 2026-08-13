@@ -7,8 +7,8 @@ export async function generateMetadata(): Promise<Metadata> {
   const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host") ?? "localhost:3000";
   const protocol = requestHeaders.get("x-forwarded-proto") ?? (host.includes("localhost") ? "http" : "https");
   const origin = `${protocol}://${host}`;
-  const title = "People Pulse — ระบบวัด KPI พนักงาน";
-  const description = "ติดตาม KPI และสกิลรายบุคคลด้วยกราฟใยแมงมุม พร้อม Talent Fit แนะนำตำแหน่งงานที่เหมาะสม";
+  const title = "People Pulse — ระบบบริหารทรัพยากรบุคคล";
+  const description = "เชื่อม KPI สกิล การทดสอบ อัปสกิล Talent Fit ตำแหน่งที่เหมาะสม และการวางแผนเงินเดือนในระบบเดียว";
 
   return {
     metadataBase: new URL(origin),
@@ -19,13 +19,13 @@ export async function generateMetadata(): Promise<Metadata> {
       description,
       type: "website",
       locale: "th_TH",
-      images: [{ url: new URL("/og-talent-fit.png", origin).toString(), width: 1536, height: 1024, alt: "People Pulse KPI, Skill Radar and Talent Fit" }],
+      images: [{ url: new URL("/og-workforce-management.png", origin).toString(), width: 1536, height: 1024, alt: "People Pulse Workforce Management" }],
     },
     twitter: {
       card: "summary_large_image",
       title,
       description,
-      images: [new URL("/og-talent-fit.png", origin).toString()],
+      images: [new URL("/og-workforce-management.png", origin).toString()],
     },
   };
 }

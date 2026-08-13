@@ -39,6 +39,26 @@ export type EmployeeRecord = {
   updatedAt: string;
 };
 
+export type HrProfileRecord = {
+  employeeId: string;
+  currentSalary: number;
+  salaryReviewMonth: string;
+  updatedAt: string;
+};
+
+export type TalentActionRecord = {
+  id: string;
+  employeeId: string;
+  type: "skill_test" | "upskill" | "role_review" | "salary_review";
+  title: string;
+  status: "planned" | "in_progress" | "completed";
+  score: number | null;
+  dueDate: string;
+  targetRoleId: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type EvaluationRecord = {
   id: string;
   employeeId: string;
@@ -162,6 +182,14 @@ export const roles: RoleTemplate[] = [
   },
 ];
 
+export const roleSalaryBands: Record<string, { min: number; mid: number; max: number }> = {
+  "sales-manager": { min: 55000, mid: 70000, max: 90000 },
+  marketing: { min: 30000, mid: 42000, max: 58000 },
+  "customer-service": { min: 24000, mid: 32000, max: 42000 },
+  developer: { min: 45000, mid: 65000, max: 90000 },
+  hr: { min: 32000, mid: 45000, max: 62000 },
+};
+
 export const seedEmployees: EmployeeRecord[] = [
   { id: "emp-narin", initials: "นก", name: "นรินทร์ กิตติคุณ", email: "narin@peoplepulse.co", roleId: "sales-manager", manager: "วารุณี ภักดี", status: "active", latestScore: 92, latestSkillScore: 88, latestPeriod: periods[0], updatedAt: "2026-08-02T09:30:00.000Z" },
   { id: "emp-pimchanok", initials: "พส", name: "พิมพ์ชนก สุขใจ", email: "pimchanok@peoplepulse.co", roleId: "marketing", manager: "อรทัย ศรีสุข", status: "active", latestScore: 87, latestSkillScore: 84, latestPeriod: periods[0], updatedAt: "2026-08-01T08:20:00.000Z" },
@@ -171,6 +199,24 @@ export const seedEmployees: EmployeeRecord[] = [
   { id: "emp-nattapong", initials: "ณต", name: "ณัฐพงษ์ ตั้งใจ", email: "nattapong@peoplepulse.co", roleId: "sales-manager", manager: "วารุณี ภักดี", status: "active", latestScore: 84, latestSkillScore: 79, latestPeriod: periods[0], updatedAt: "2026-07-29T11:05:00.000Z" },
   { id: "emp-sirilak", initials: "ศร", name: "ศิริลักษณ์ รุ่งเรือง", email: "sirilak@peoplepulse.co", roleId: "marketing", manager: "อรทัย ศรีสุข", status: "active", latestScore: null, latestSkillScore: null, latestPeriod: null, updatedAt: "2026-07-20T06:00:00.000Z" },
   { id: "emp-pattarapon", initials: "ภพ", name: "ภัทรพล พูนทรัพย์", email: "pattarapon@peoplepulse.co", roleId: "developer", manager: "ณัฐวุฒิ สายชล", status: "active", latestScore: null, latestSkillScore: null, latestPeriod: null, updatedAt: "2026-07-18T05:50:00.000Z" },
+];
+
+export const seedHrProfiles: HrProfileRecord[] = [
+  { employeeId: "emp-narin", currentSalary: 72000, salaryReviewMonth: "มกราคม 2570", updatedAt: "2026-08-02T09:30:00.000Z" },
+  { employeeId: "emp-pimchanok", currentSalary: 44000, salaryReviewMonth: "มกราคม 2570", updatedAt: "2026-08-01T08:20:00.000Z" },
+  { employeeId: "emp-thanawat", currentSalary: 30000, salaryReviewMonth: "ตุลาคม 2569", updatedAt: "2026-07-28T04:10:00.000Z" },
+  { employeeId: "emp-supakorn", currentSalary: 68000, salaryReviewMonth: "มกราคม 2570", updatedAt: "2026-08-03T03:45:00.000Z" },
+  { employeeId: "emp-kanyarat", currentSalary: 46000, salaryReviewMonth: "มกราคม 2570", updatedAt: "2026-07-30T07:15:00.000Z" },
+  { employeeId: "emp-nattapong", currentSalary: 61000, salaryReviewMonth: "ตุลาคม 2569", updatedAt: "2026-07-29T11:05:00.000Z" },
+  { employeeId: "emp-sirilak", currentSalary: 36000, salaryReviewMonth: "มกราคม 2570", updatedAt: "2026-07-20T06:00:00.000Z" },
+  { employeeId: "emp-pattarapon", currentSalary: 52000, salaryReviewMonth: "มกราคม 2570", updatedAt: "2026-07-18T05:50:00.000Z" },
+];
+
+export const seedTalentActions: TalentActionRecord[] = [
+  { id: "action-thanawat-test", employeeId: "emp-thanawat", type: "skill_test", title: "ทดสอบการแก้ปัญหาและความรู้ผลิตภัณฑ์", status: "planned", score: null, dueDate: "2026-08-28", targetRoleId: "customer-service", createdAt: "2026-08-04T03:00:00.000Z", updatedAt: "2026-08-04T03:00:00.000Z" },
+  { id: "action-nattapong-upskill", employeeId: "emp-nattapong", type: "upskill", title: "โปรแกรม Coaching for Performance", status: "in_progress", score: null, dueDate: "2026-09-15", targetRoleId: "sales-manager", createdAt: "2026-08-04T03:10:00.000Z", updatedAt: "2026-08-10T03:10:00.000Z" },
+  { id: "action-pim-role", employeeId: "emp-pimchanok", type: "role_review", title: "ประเมินความพร้อมสายงาน People Analytics", status: "planned", score: null, dueDate: "2026-09-05", targetRoleId: "hr", createdAt: "2026-08-04T03:20:00.000Z", updatedAt: "2026-08-04T03:20:00.000Z" },
+  { id: "action-narin-salary", employeeId: "emp-narin", type: "salary_review", title: "ทบทวนค่าตอบแทนตามผลงาน", status: "planned", score: null, dueDate: "2026-10-01", targetRoleId: "sales-manager", createdAt: "2026-08-04T03:30:00.000Z", updatedAt: "2026-08-04T03:30:00.000Z" },
 ];
 
 export function getRole(roleId: string) {

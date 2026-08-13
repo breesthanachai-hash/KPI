@@ -8,6 +8,13 @@
       "when": 1785907908184,
       "tag": "0000_marvelous_pandemic",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1786610429559,
+      "tag": "0001_outstanding_leper_queen",
+      "breakpoints": true
     }
   ]
 }

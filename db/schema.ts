@@ -35,3 +35,26 @@ export const evaluations = sqliteTable("evaluations", {
   uniqueIndex("evaluations_employee_period_unique").on(table.employeeId, table.period),
   index("evaluations_period_idx").on(table.period),
 ]);
+
+export const hrProfiles = sqliteTable("hr_profiles", {
+  employeeId: text("employee_id").primaryKey().references(() => employees.id, { onDelete: "cascade" }),
+  currentSalary: real("current_salary").notNull().default(0),
+  salaryReviewMonth: text("salary_review_month").notNull().default(""),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
+export const talentActions = sqliteTable("talent_actions", {
+  id: text("id").primaryKey(),
+  employeeId: text("employee_id").notNull().references(() => employees.id, { onDelete: "cascade" }),
+  type: text("type", { enum: ["skill_test", "upskill", "role_review", "salary_review"] }).notNull(),
+  title: text("title").notNull(),
+  status: text("status", { enum: ["planned", "in_progress", "completed"] }).notNull().default("planned"),
+  score: real("score"),
+  dueDate: text("due_date").notNull(),
+  targetRoleId: text("target_role_id").notNull().default(""),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  index("talent_actions_employee_idx").on(table.employeeId),
+  index("talent_actions_status_due_idx").on(table.status, table.dueDate),
+]);

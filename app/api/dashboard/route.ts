@@ -1,15 +1,18 @@
 import { and, eq } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { ensureDatabase } from "../../../db/initialize";
-import { employees, evaluations } from "../../../db/schema";
+import { employees, evaluations, hrProfiles, talentActions } from "../../../db/schema";
 import {
   clampScore,
   clampSkillLevel,
   getRole,
   makeInitials,
   periods,
+  roleSalaryBands,
   roles,
   seedEmployees,
+  seedHrProfiles,
+  seedTalentActions,
 } from "../../../lib/kpi-data";
 
 export const dynamic = "force-dynamic";
@@ -58,6 +61,12 @@ async function ensureSeedData() {
     });
     if (initialEvaluations.length) await db.insert(evaluations).values(initialEvaluations).onConflictDoNothing();
   }
+
+  const [existingHrProfile] = await db.select({ employeeId: hrProfiles.employeeId }).from(hrProfiles).limit(1);
+  if (!existingHrProfile) await db.insert(hrProfiles).values(seedHrProfiles).onConflictDoNothing();
+
+  const [existingTalentAction] = await db.select({ id: talentActions.id }).from(talentActions).limit(1);
+  if (!existingTalentAction) await db.insert(talentActions).values(seedTalentActions).onConflictDoNothing();
 }
 
 function evaluatorName(request: Request) {
@@ -78,12 +87,14 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const period = url.searchParams.get("period") ?? periods[0];
     const db = getDb();
-    const [employeeRows, evaluationRows] = await Promise.all([
+    const [employeeRows, evaluationRows, hrProfileRows, talentActionRows] = await Promise.all([
       db.select().from(employees),
       db.select().from(evaluations).where(eq(evaluations.period, period)),
+      db.select().from(hrProfiles),
+      db.select().from(talentActions),
     ]);
 
-    return Response.json({ employees: employeeRows, evaluations: evaluationRows, period });
+    return Response.json({ employees: employeeRows, evaluations: evaluationRows, hrProfiles: hrProfileRows, talentActions: talentActionRows, period });
   } catch (error) {
     return apiError(error);
   }
@@ -106,10 +117,28 @@ type EvaluationPayload = {
   note?: string;
 };
 
+type HrPlanPayload = {
+  action: "saveHrPlan";
+  actionId?: string;
+  employeeId?: string;
+  currentSalary?: number;
+  salaryReviewMonth?: string;
+  planType?: "skill_test" | "upskill" | "role_review" | "salary_review";
+  title?: string;
+  dueDate?: string;
+  targetRoleId?: string;
+};
+
+type CompleteTalentActionPayload = {
+  action: "completeTalentAction";
+  actionId?: string;
+  score?: number;
+};
+
 export async function POST(request: Request) {
   try {
     await ensureSeedData();
-    const payload = await request.json() as EmployeePayload | EvaluationPayload;
+    const payload = await request.json() as EmployeePayload | EvaluationPayload | HrPlanPayload | CompleteTalentActionPayload;
     const db = getDb();
 
     if (payload.action === "createEmployee") {
@@ -137,7 +166,14 @@ export async function POST(request: Request) {
         updatedAt: now,
       };
       await db.insert(employees).values(employee);
-      return Response.json({ employee }, { status: 201 });
+      const hrProfile = {
+        employeeId: employee.id,
+        currentSalary: roleSalaryBands[roleId].mid,
+        salaryReviewMonth: "มกราคม 2570",
+        updatedAt: now,
+      };
+      await db.insert(hrProfiles).values(hrProfile);
+      return Response.json({ employee, hrProfile }, { status: 201 });
     }
 
     if (payload.action === "saveEvaluation") {
@@ -193,6 +229,59 @@ export async function POST(request: Request) {
       }
 
       return Response.json({ evaluation });
+    }
+
+    if (payload.action === "saveHrPlan") {
+      const employeeId = payload.employeeId ?? "";
+      const [employee] = await db.select().from(employees).where(eq(employees.id, employeeId)).limit(1);
+      if (!employee) return Response.json({ error: "ไม่พบพนักงานที่เลือก" }, { status: 404 });
+      const salary = Math.min(1000000, Math.max(0, Math.round(Number(payload.currentSalary) || 0)));
+      const salaryReviewMonth = payload.salaryReviewMonth?.trim().slice(0, 80) || "มกราคม 2570";
+      const now = new Date().toISOString();
+      const hrProfile = { employeeId, currentSalary: salary, salaryReviewMonth, updatedAt: now };
+      await db.insert(hrProfiles).values(hrProfile).onConflictDoUpdate({
+        target: hrProfiles.employeeId,
+        set: { currentSalary: salary, salaryReviewMonth, updatedAt: now },
+      });
+
+      const title = payload.title?.trim().slice(0, 200) ?? "";
+      let talentAction = null;
+      if (title) {
+        const type = payload.planType ?? "upskill";
+        const dueDate = /^\d{4}-\d{2}-\d{2}$/.test(payload.dueDate ?? "") ? payload.dueDate as string : now.slice(0, 10);
+        const targetRoleId = roles.some((role) => role.id === payload.targetRoleId) ? payload.targetRoleId as string : employee.roleId;
+        const actionId = payload.actionId?.trim() || `action-${crypto.randomUUID()}`;
+        const [existingAction] = payload.actionId
+          ? await db.select().from(talentActions).where(and(eq(talentActions.id, actionId), eq(talentActions.employeeId, employeeId))).limit(1)
+          : [];
+        talentAction = {
+          id: existingAction?.id ?? actionId,
+          employeeId,
+          type,
+          title,
+          status: existingAction?.status ?? "planned" as const,
+          score: existingAction?.score ?? null,
+          dueDate,
+          targetRoleId,
+          createdAt: existingAction?.createdAt ?? now,
+          updatedAt: now,
+        };
+        await db.insert(talentActions).values(talentAction).onConflictDoUpdate({
+          target: talentActions.id,
+          set: { type, title, dueDate, targetRoleId, updatedAt: now },
+        });
+      }
+      return Response.json({ hrProfile, talentAction });
+    }
+
+    if (payload.action === "completeTalentAction") {
+      const actionId = payload.actionId ?? "";
+      const score = payload.score === undefined ? null : Math.min(100, Math.max(0, Math.round(Number(payload.score) || 0)));
+      const now = new Date().toISOString();
+      await db.update(talentActions).set({ status: "completed", score, updatedAt: now }).where(eq(talentActions.id, actionId));
+      const [talentAction] = await db.select().from(talentActions).where(eq(talentActions.id, actionId)).limit(1);
+      if (!talentAction) return Response.json({ error: "ไม่พบแผนที่เลือก" }, { status: 404 });
+      return Response.json({ talentAction });
     }
 
     return Response.json({ error: "คำขอไม่ถูกต้อง" }, { status: 400 });

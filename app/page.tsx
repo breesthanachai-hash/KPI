@@ -4,15 +4,20 @@ import { useEffect, useMemo, useState } from "react";
 import {
   type EmployeeRecord,
   type EvaluationRecord,
+  type HrProfileRecord,
+  type TalentActionRecord,
   getRole,
   makeInitials,
   periods,
+  roleSalaryBands,
   roles,
   scoreStatus,
   seedEmployees,
+  seedHrProfiles,
+  seedTalentActions,
 } from "../lib/kpi-data";
 
-type View = "overview" | "employees" | "skills";
+type View = "overview" | "employees" | "skills" | "hr";
 
 type TalentDimensionId = "analysis" | "communication" | "problemSolving" | "leadership" | "execution";
 
@@ -128,9 +133,25 @@ function formatUpdatedAt(value: string) {
   return new Intl.DateTimeFormat("th-TH", { day: "numeric", month: "short", year: "2-digit" }).format(new Date(value));
 }
 
+function formatDueDate(value: string) {
+  return new Intl.DateTimeFormat("th-TH", { day: "numeric", month: "short", year: "2-digit" }).format(new Date(`${value}T00:00:00`));
+}
+
 function skillLevelLabel(level: number | null) {
   if (level === null) return "รอประเมิน";
   return ["", "พื้นฐาน", "กำลังพัฒนา", "ใช้งานได้", "ชำนาญ", "ผู้เชี่ยวชาญ"][level] ?? "รอประเมิน";
+}
+
+function formatMoney(value: number) {
+  return new Intl.NumberFormat("th-TH", { maximumFractionDigits: 0 }).format(value);
+}
+
+function actionTypeLabel(type: TalentActionRecord["type"]) {
+  return { skill_test: "ทดสอบสกิล", upskill: "อัปสกิล", role_review: "ทบทวนตำแหน่ง", salary_review: "ทบทวนเงินเดือน" }[type];
+}
+
+function actionStatusLabel(status: TalentActionRecord["status"]) {
+  return { planned: "วางแผนแล้ว", in_progress: "กำลังดำเนินการ", completed: "เสร็จแล้ว" }[status];
 }
 
 export default function Home() {
@@ -141,8 +162,11 @@ export default function Home() {
   const [evaluations, setEvaluations] = useState<EvaluationRecord[]>(
     seedEmployees.map(fallbackEvaluation).filter((item): item is EvaluationRecord => item !== null),
   );
+  const [hrProfiles, setHrProfiles] = useState<HrProfileRecord[]>(seedHrProfiles);
+  const [talentActions, setTalentActions] = useState<TalentActionRecord[]>(seedTalentActions);
   const [selectedEmployee, setSelectedEmployee] = useState<EmployeeRecord | null>(null);
   const [skillProfileEmployee, setSkillProfileEmployee] = useState<EmployeeRecord | null>(null);
+  const [hrEmployee, setHrEmployee] = useState<EmployeeRecord | null>(null);
   const [kpiScores, setKpiScores] = useState<Record<string, number>>({});
   const [skillScores, setSkillScores] = useState<Record<string, number>>({});
   const [note, setNote] = useState("");
@@ -153,15 +177,18 @@ export default function Home() {
   const [dataWarning, setDataWarning] = useState("");
   const [showAddEmployee, setShowAddEmployee] = useState(false);
   const [employeeForm, setEmployeeForm] = useState({ name: "", email: "", roleId: roles[0].id, manager: "" });
+  const [hrForm, setHrForm] = useState({ actionId: "", currentSalary: 0, salaryReviewMonth: "มกราคม 2570", planType: "upskill" as TalentActionRecord["type"], title: "", dueDate: "2026-09-30", targetRoleId: roles[0].id });
 
   useEffect(() => {
     const controller = new AbortController();
     fetch(`/api/dashboard?period=${encodeURIComponent(period)}`, { signal: controller.signal })
       .then(async (response) => {
-        const body = await response.json() as { employees?: EmployeeRecord[]; evaluations?: EvaluationRecord[]; error?: string };
+        const body = await response.json() as { employees?: EmployeeRecord[]; evaluations?: EvaluationRecord[]; hrProfiles?: HrProfileRecord[]; talentActions?: TalentActionRecord[]; error?: string };
         if (!response.ok) throw new Error(body.error ?? "โหลดข้อมูลไม่สำเร็จ");
         setEmployees(body.employees ?? []);
         setEvaluations(body.evaluations ?? []);
+        setHrProfiles(body.hrProfiles ?? []);
+        setTalentActions(body.talentActions ?? []);
         setDataWarning("");
       })
       .catch((error: unknown) => {
@@ -175,17 +202,18 @@ export default function Home() {
   }, [period]);
 
   useEffect(() => {
-    if (!selectedEmployee && !skillProfileEmployee && !showAddEmployee) return;
+    if (!selectedEmployee && !skillProfileEmployee && !hrEmployee && !showAddEmployee) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setSelectedEmployee(null);
         setSkillProfileEmployee(null);
+        setHrEmployee(null);
         setShowAddEmployee(false);
       }
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [selectedEmployee, skillProfileEmployee, showAddEmployee]);
+  }, [selectedEmployee, skillProfileEmployee, hrEmployee, showAddEmployee]);
 
   const evaluationsByEmployee = useMemo(
     () => new Map(evaluations.filter((evaluation) => evaluation.period === period).map((evaluation) => [evaluation.employeeId, evaluation])),
@@ -219,6 +247,27 @@ export default function Home() {
     const skill = roleEvaluations.length ? roleEvaluations.reduce((sum, item) => sum + item.skillScore, 0) / roleEvaluations.length : 0;
     return { role, people: people.length, evaluated: roleEvaluations.length, score, skill };
   }), [employees, evaluationsByEmployee]);
+
+  const hrProfilesByEmployee = useMemo(() => new Map(hrProfiles.map((profile) => [profile.employeeId, profile])), [hrProfiles]);
+  const openTalentActions = useMemo(() => talentActions.filter((action) => action.status !== "completed"), [talentActions]);
+  const workforceInsights = useMemo(() => employees.filter((employee) => employee.status === "active").map((employee) => {
+    const role = getRole(employee.roleId);
+    const evaluation = evaluationsByEmployee.get(employee.id) ?? null;
+    const talentProfile = buildTalentProfile(employee.roleId, evaluation);
+    const fits = evaluation ? roles.map((fitRole) => ({ role: fitRole, score: calculateRoleFit(talentProfile, fitRole.id) })).sort((a, b) => b.score - a.score) : [];
+    const bestFit = fits[0] ?? null;
+    const hrProfile = hrProfilesByEmployee.get(employee.id) ?? null;
+    const salaryBand = roleSalaryBands[role.id];
+    const salaryPosition = hrProfile ? hrProfile.currentSalary / salaryBand.mid * 100 : 0;
+    const actions = talentActions.filter((action) => action.employeeId === employee.id).sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+    return { employee, role, evaluation, talentProfile, bestFit, hrProfile, salaryBand, salaryPosition, actions };
+  }), [employees, evaluationsByEmployee, hrProfilesByEmployee, talentActions]);
+  const payroll = hrProfiles.reduce((sum, profile) => sum + profile.currentSalary, 0);
+  const highPotentialCount = workforceInsights.filter(({ evaluation }) => (evaluation?.totalScore ?? 0) >= 85 && (evaluation?.skillScore ?? 0) >= 80).length;
+  const skillGapCount = workforceInsights.filter(({ evaluation, role }) => evaluation && (evaluation.skillScore < 80 || role.skills.some((skill) => (evaluation.skillScores[skill.id] ?? 0) < skill.targetLevel))).length;
+  const visibleWorkforce = workforceInsights.filter(({ employee }) => filteredEmployees.some((item) => item.id === employee.id));
+  const employeesById = new Map(employees.map((employee) => [employee.id, employee]));
+  const hrEmployeeInsight = hrEmployee ? workforceInsights.find(({ employee }) => employee.id === hrEmployee.id) ?? null : null;
 
   const selectedRole = selectedEmployee ? getRole(selectedEmployee.roleId) : null;
   const skillProfileRole = skillProfileEmployee ? getRole(skillProfileEmployee.roleId) : null;
@@ -258,6 +307,63 @@ export default function Home() {
   const editSkillProfile = (employee: EmployeeRecord) => {
     setSkillProfileEmployee(null);
     openEvaluation(employee);
+  };
+
+  const openHrManagement = (employee: EmployeeRecord, planType: TalentActionRecord["type"] = "upskill", existingAction?: TalentActionRecord) => {
+    const profile = hrProfilesByEmployee.get(employee.id);
+    const role = getRole(employee.roleId);
+    const defaultTitles: Record<TalentActionRecord["type"], string> = {
+      skill_test: `ทดสอบสกิลหลักของ ${role.name}`,
+      upskill: `แผนพัฒนาสกิลสำหรับ ${role.name}`,
+      role_review: "ทบทวนตำแหน่งจาก Talent Fit",
+      salary_review: "ทบทวนเงินเดือนตามผลงานและสกิล",
+    };
+    setHrEmployee(employee);
+    setHrForm({
+      actionId: existingAction?.id ?? "",
+      currentSalary: profile?.currentSalary ?? roleSalaryBands[role.id].mid,
+      salaryReviewMonth: profile?.salaryReviewMonth ?? "มกราคม 2570",
+      planType: existingAction?.type ?? planType,
+      title: existingAction?.title ?? defaultTitles[planType],
+      dueDate: existingAction?.dueDate ?? "2026-09-30",
+      targetRoleId: existingAction?.targetRoleId || employee.roleId,
+    });
+  };
+
+  const saveHrPlan = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!hrEmployee) return;
+    setIsSaving(true);
+    try {
+      const response = await fetch("/api/dashboard", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "saveHrPlan", employeeId: hrEmployee.id, ...hrForm }),
+      });
+      const body = await response.json() as { hrProfile?: HrProfileRecord; talentAction?: TalentActionRecord | null; error?: string };
+      if (!response.ok || !body.hrProfile) throw new Error(body.error ?? "บันทึกแผนบุคลากรไม่สำเร็จ");
+      setHrProfiles((items) => [...items.filter((item) => item.employeeId !== body.hrProfile?.employeeId), body.hrProfile as HrProfileRecord]);
+      if (body.talentAction) setTalentActions((items) => [...items.filter((item) => item.id !== body.talentAction?.id), body.talentAction as TalentActionRecord]);
+      const employeeName = hrEmployee.name;
+      setHrEmployee(null);
+      showToast(`บันทึกแผนบุคลากรของ ${employeeName} แล้ว`);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "บันทึกแผนบุคลากรไม่สำเร็จ");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const completeTalentAction = async (action: TalentActionRecord) => {
+    try {
+      const response = await fetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "completeTalentAction", actionId: action.id }) });
+      const body = await response.json() as { talentAction?: TalentActionRecord; error?: string };
+      if (!response.ok || !body.talentAction) throw new Error(body.error ?? "อัปเดตสถานะไม่สำเร็จ");
+      setTalentActions((items) => items.map((item) => item.id === action.id ? body.talentAction as TalentActionRecord : item));
+      showToast(`ปิดงาน “${action.title}” แล้ว`);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "อัปเดตสถานะไม่สำเร็จ");
+    }
   };
 
   const saveEvaluation = async () => {
@@ -300,9 +406,10 @@ export default function Home() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ action: "createEmployee", ...employeeForm }),
       });
-      const body = await response.json() as { employee?: EmployeeRecord; error?: string };
+      const body = await response.json() as { employee?: EmployeeRecord; hrProfile?: HrProfileRecord; error?: string };
       if (!response.ok || !body.employee) throw new Error(body.error ?? "เพิ่มพนักงานไม่สำเร็จ");
       setEmployees((items) => [...items, body.employee as EmployeeRecord]);
+      if (body.hrProfile) setHrProfiles((items) => [...items, body.hrProfile as HrProfileRecord]);
       setShowAddEmployee(false);
       setEmployeeForm({ name: "", email: "", roleId: roles[0].id, manager: "" });
       showToast(`เพิ่ม ${body.employee.name} ในระบบแล้ว`);
@@ -317,6 +424,10 @@ export default function Home() {
     const rows = employees.map((employee) => {
       const role = getRole(employee.roleId);
       const evaluation = evaluationsByEmployee.get(employee.id);
+      const profile = hrProfilesByEmployee.get(employee.id);
+      const talentProfile = buildTalentProfile(employee.roleId, evaluation ?? null);
+      const bestFit = evaluation ? roles.map((fitRole) => ({ role: fitRole, score: calculateRoleFit(talentProfile, fitRole.id) })).sort((a, b) => b.score - a.score)[0] : null;
+      const nextAction = talentActions.filter((action) => action.employeeId === employee.id && action.status !== "completed").sort((a, b) => a.dueDate.localeCompare(b.dueDate))[0];
       return [
         employee.name,
         employee.email,
@@ -328,11 +439,15 @@ export default function Home() {
         evaluation?.totalScore ?? null,
         scoreStatus(evaluation?.totalScore ?? null),
         role.skills.map((skill) => `${skill.name}: ${evaluation?.skillScores[skill.id] ?? "รอประเมิน"}/${skill.targetLevel}`).join("; "),
+        bestFit ? `${bestFit.role.name} (${bestFit.score}%)` : "รอประเมิน",
+        profile?.currentSalary ?? null,
+        `${formatMoney(roleSalaryBands[role.id].min)}-${formatMoney(roleSalaryBands[role.id].max)}`,
+        nextAction ? `${actionTypeLabel(nextAction.type)}: ${nextAction.title} (${nextAction.dueDate})` : "",
         evaluation?.note ?? "",
       ];
     });
     const content = [
-      ["ชื่อพนักงาน", "อีเมล", "แผนก", "ตำแหน่ง", "รอบประเมิน", "คะแนน KPI", "คะแนนสกิล", "คะแนนรวม", "สถานะ", "รายละเอียดสกิล (ปัจจุบัน/เป้าหมาย)", "หมายเหตุ"],
+      ["ชื่อพนักงาน", "อีเมล", "แผนก", "ตำแหน่ง", "รอบประเมิน", "คะแนน KPI", "คะแนนสกิล", "คะแนนรวม", "สถานะ", "รายละเอียดสกิล (ปัจจุบัน/เป้าหมาย)", "ตำแหน่งที่เหมาะสม", "เงินเดือนปัจจุบัน", "กรอบเงินเดือน", "แผนถัดไป", "หมายเหตุ"],
       ...rows,
     ].map((row) => row.map(csvCell).join(",")).join("\n");
     const blob = new Blob([`\uFEFF${content}`], { type: "text/csv;charset=utf-8" });
@@ -356,6 +471,7 @@ export default function Home() {
           <button className={view === "overview" ? "active" : ""} onClick={() => setView("overview")}>ภาพรวม</button>
           <button className={view === "employees" ? "active" : ""} onClick={() => setView("employees")}>พนักงาน</button>
           <button className={view === "skills" ? "active" : ""} onClick={() => setView("skills")}>สกิลทีม</button>
+          <button className={view === "hr" ? "active" : ""} onClick={() => setView("hr")}>บริหารบุคลากร</button>
         </nav>
         <div className="header-actions">
           <label className="period-select">
@@ -373,13 +489,21 @@ export default function Home() {
         {dataWarning && <div className="data-warning" role="status"><span>!</span>{dataWarning}</div>}
         <div className="page-heading">
           <div>
-            <p className="eyebrow">{view === "overview" ? "ภาพรวมองค์กร" : view === "employees" ? "ทะเบียนและการประเมิน" : "COMPETENCY MATRIX"}</p>
-            <h1>{view === "overview" ? "ภาพรวม KPI พนักงาน" : view === "employees" ? "พนักงานและผลประเมิน" : "ภาพรวมสกิลของทีม"}</h1>
-            <p>{view === "overview" ? "ติดตามเป้าหมาย ประเมินผลงาน และวางแผนพัฒนาทีมในที่เดียว" : view === "employees" ? "ค้นหา เพิ่มพนักงาน และบันทึกผล KPI พร้อมระดับสกิลรายบุคคล" : "มองเห็นจุดแข็ง ช่องว่าง และความพร้อมของแต่ละสายงาน"}</p>
+            <p className="eyebrow">{view === "overview" ? "ภาพรวมองค์กร" : view === "employees" ? "ทะเบียนและการประเมิน" : view === "skills" ? "COMPETENCY MATRIX" : "WORKFORCE MANAGEMENT"}</p>
+            <h1>{view === "overview" ? "ภาพรวม KPI พนักงาน" : view === "employees" ? "พนักงานและผลประเมิน" : view === "skills" ? "ภาพรวมสกิลของทีม" : "บริหารทรัพยากรบุคคล"}</h1>
+            <p>{view === "overview" ? "ติดตามเป้าหมาย ประเมินผลงาน และวางแผนพัฒนาทีมในที่เดียว" : view === "employees" ? "ค้นหา เพิ่มพนักงาน และบันทึกผล KPI พร้อมระดับสกิลรายบุคคล" : view === "skills" ? "มองเห็นจุดแข็ง ช่องว่าง และความพร้อมของแต่ละสายงาน" : "เชื่อมผลงาน สกิล การทดสอบ แผนพัฒนา ตำแหน่งที่เหมาะสม และค่าตอบแทน เพื่อการตัดสินใจที่รอบด้าน"}</p>
           </div>
           <div className="heading-actions">
             <button className="secondary-button" onClick={exportReport}><span aria-hidden="true">↓</span> ส่งออกรายงาน</button>
-            <button className="primary-button" onClick={() => pendingEmployees[0] ? openEvaluation(pendingEmployees[0]) : setView("employees")}><span aria-hidden="true">＋</span> เริ่มประเมิน</button>
+            <button className="primary-button" onClick={() => {
+              if (view === "hr") {
+                if (workforceInsights[0]) openHrManagement(workforceInsights[0].employee);
+                else showToast("ยังไม่มีพนักงานสำหรับวางแผน");
+                return;
+              }
+              if (pendingEmployees[0]) openEvaluation(pendingEmployees[0]);
+              else setView("employees");
+            }}><span aria-hidden="true">＋</span> {view === "hr" ? "เพิ่มแผนบุคลากร" : "เริ่มประเมิน"}</button>
           </div>
         </div>
 
@@ -548,6 +672,78 @@ export default function Home() {
             </div>
           </section>
         )}
+
+        {view === "hr" && (
+          <section className="hr-layout">
+            <div className="hr-summary-grid">
+              <MetricCard label="บุคลากรที่ดูแล" value={`${workforceInsights.length} คน`} copy={`${highPotentialCount} คนอยู่ในกลุ่มศักยภาพสูง`} tone="positive" icon="◎" />
+              <MetricCard label="ช่องว่างสกิล" value={`${skillGapCount} คน`} copy="ควรวางแผนทดสอบหรืออัปสกิล" tone={skillGapCount ? "warning" : "positive"} icon="↗" />
+              <MetricCard label="แผนที่กำลังติดตาม" value={`${openTalentActions.length} รายการ`} copy={`${talentActions.filter((action) => action.status === "completed").length} รายการเสร็จแล้ว`} icon="✓" />
+              <MetricCard label="เงินเดือนรวมต่อเดือน" value={`฿${formatMoney(payroll)}`} copy="ข้อมูลเพื่อวางแผนกำลังคน" icon="฿" />
+            </div>
+
+            <div className="hr-command-grid">
+              <section className="workforce-board">
+                <div className="workforce-board-heading">
+                  <div><p className="eyebrow">PEOPLE DECISION BOARD</p><h2>ภาพรวมรายบุคคลเพื่อการตัดสินใจ</h2><p>ดูผลงาน ความพร้อมด้านสกิล ตำแหน่งที่เหมาะสม และค่าตอบแทนในบรรทัดเดียว</p></div>
+                  <label className="search-field"><span aria-hidden="true">⌕</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="ค้นหาชื่อ ตำแหน่ง หรือแผนก" /><span className="sr-only">ค้นหาบุคลากร</span></label>
+                </div>
+                <div className="workforce-table" role="table" aria-label="ภาพรวมการบริหารบุคลากร">
+                  <div className="workforce-table-head" role="row"><span>บุคลากร</span><span>KPI / สกิล</span><span>Talent Fit</span><span>เงินเดือน</span><span>แผนถัดไป</span><span /></div>
+                  {visibleWorkforce.map(({ employee, role, evaluation, bestFit, hrProfile, salaryBand, actions }) => {
+                    const nextAction = actions.find((action) => action.status !== "completed");
+                    const salaryPoint = hrProfile ? Math.min(100, Math.max(0, (hrProfile.currentSalary - salaryBand.min) / (salaryBand.max - salaryBand.min) * 100)) : 0;
+                    return (
+                      <article className="workforce-row" role="row" key={employee.id}>
+                        <span className="workforce-person"><i>{employee.initials || makeInitials(employee.name)}</i><span><strong>{employee.name}</strong><small>{role.name} · {role.department}</small></span></span>
+                        <span className="workforce-scores"><b>{evaluation ? evaluation.totalScore.toFixed(0) : "—"}<small>KPI รวม</small></b><b className={evaluation && evaluation.skillScore < 80 ? "attention" : ""}>{evaluation ? evaluation.skillScore.toFixed(0) : "—"}<small>สกิล</small></b></span>
+                        <span className="workforce-fit"><strong>{bestFit ? `${bestFit.score}%` : "รอประเมิน"}</strong><small>{bestFit?.role.name ?? "ยังไม่มีข้อมูลสกิล"}</small><i><b style={{ width: `${bestFit?.score ?? 0}%` }} /></i></span>
+                        <span className="workforce-salary"><strong>{hrProfile ? `฿${formatMoney(hrProfile.currentSalary)}` : "—"}</strong><small>กรอบ ฿{formatMoney(salaryBand.min)}–{formatMoney(salaryBand.max)}</small><i><b style={{ left: `${salaryPoint}%` }} /></i></span>
+                        <span className="workforce-action">{nextAction ? <><b className={`action-type ${nextAction.type}`}>{actionTypeLabel(nextAction.type)}</b><small>{nextAction.title}<br />ภายใน {formatDueDate(nextAction.dueDate)}</small></> : <><b className="action-type ready">พร้อมวางแผน</b><small>ยังไม่มีรายการติดตาม</small></>}</span>
+                        <span className="workforce-buttons"><button onClick={() => setSkillProfileEmployee(employee)}>ดูโปรไฟล์</button><button className="manage" onClick={() => openHrManagement(employee)}>จัดการ</button></span>
+                      </article>
+                    );
+                  })}
+                  {!visibleWorkforce.length && <div className="empty-state">ไม่พบบุคลากรตามเงื่อนไขที่เลือก</div>}
+                </div>
+                <div className="decision-note"><span>i</span><p><strong>ใช้เป็นข้อมูลประกอบการตัดสินใจ</strong> Talent Fit และกรอบเงินเดือนเป็นแนวทางเบื้องต้น ควรพิจารณาประสบการณ์ ความสนใจ ความรับผิดชอบ และความเป็นธรรมภายในองค์กรร่วมด้วยเสมอ</p></div>
+              </section>
+
+              <aside className="talent-action-center">
+                <div className="section-heading compact"><div><p className="eyebrow">ACTION CENTER</p><h2>แผนที่ต้องติดตาม</h2></div><span className="action-count">{openTalentActions.length}</span></div>
+                <div className="talent-action-list">
+                  {openTalentActions.sort((a, b) => a.dueDate.localeCompare(b.dueDate)).slice(0, 6).map((action) => {
+                    const employee = employeesById.get(action.employeeId);
+                    if (!employee) return null;
+                    const targetRole = getRole(action.targetRoleId || employee.roleId);
+                    return (
+                      <article key={action.id}>
+                        <div className="talent-action-top"><b className={`action-type ${action.type}`}>{actionTypeLabel(action.type)}</b><span>{formatDueDate(action.dueDate)}</span></div>
+                        <strong>{action.title}</strong>
+                        <p>{employee.name} · {action.type === "role_review" ? `เป้าหมาย ${targetRole.name}` : actionStatusLabel(action.status)}</p>
+                        <div><button onClick={() => openHrManagement(employee, action.type, action)}>เปิดแผน</button><button className="complete" onClick={() => completeTalentAction(action)}>ทำเสร็จแล้ว ✓</button></div>
+                      </article>
+                    );
+                  })}
+                  {!openTalentActions.length && <div className="success-state"><span>✓</span><strong>ติดตามครบแล้ว</strong><p>ไม่มีแผนบุคลากรค้างอยู่</p></div>}
+                </div>
+              </aside>
+            </div>
+
+            <section className="salary-band-card">
+              <div className="section-heading"><div><p className="eyebrow">COMPENSATION PLANNING</p><h2>กรอบเงินเดือนตามตำแหน่ง</h2></div><span className="matrix-period">บาท / เดือน</span></div>
+              <div className="salary-band-grid">
+                {roles.map((role) => {
+                  const band = roleSalaryBands[role.id];
+                  const people = workforceInsights.filter((item) => item.role.id === role.id);
+                  const average = people.length ? people.reduce((sum, item) => sum + (item.hrProfile?.currentSalary ?? 0), 0) / people.length : 0;
+                  const point = Math.min(100, Math.max(0, (average - band.min) / (band.max - band.min) * 100));
+                  return <article key={role.id}><div><span>{role.shortName.slice(0, 2)}</span><p><strong>{role.name}</strong><small>{people.length} คน · เฉลี่ย ฿{formatMoney(average)}</small></p></div><div className="salary-range"><i><b style={{ left: `${point}%` }} /></i><span><small>ต่ำสุด</small>฿{formatMoney(band.min)}</span><span><small>ค่ากลาง</small>฿{formatMoney(band.mid)}</span><span><small>สูงสุด</small>฿{formatMoney(band.max)}</span></div></article>;
+                })}
+              </div>
+            </section>
+          </section>
+        )}
       </section>
 
       <footer><span>PEOPLE PULSE</span><p>ระบบ KPI &amp; Skill Management · อัปเดตข้อมูลตามรอบประเมิน</p></footer>
@@ -632,6 +828,43 @@ export default function Home() {
             </div>
             <div className="modal-actions profile-actions"><button className="secondary-button" onClick={() => setSkillProfileEmployee(null)}>ปิด</button><button className="primary-button" onClick={() => editSkillProfile(skillProfileEmployee)}>{skillProfileEvaluation ? "แก้ไขระดับสกิล" : "เริ่มประเมินสกิล"}</button></div>
           </section>
+        </div>
+      )}
+
+      {hrEmployee && hrEmployeeInsight && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setHrEmployee(null)}>
+          <form className="hr-plan-modal" onSubmit={saveHrPlan} role="dialog" aria-modal="true" aria-labelledby="hr-plan-title">
+            <div className="hr-plan-hero">
+              <div className="profile-identity"><span>{hrEmployee.initials || makeInitials(hrEmployee.name)}</span><div><p className="eyebrow">WORKFORCE PLAN</p><h2 id="hr-plan-title">จัดการแผนของ {hrEmployee.name}</h2><small>{hrEmployeeInsight.role.name} · {hrEmployeeInsight.role.department}</small></div></div>
+              <button type="button" className="modal-close dark" onClick={() => setHrEmployee(null)} aria-label="ปิดหน้าต่าง">×</button>
+              <div className="hr-plan-snapshot">
+                <span><small>KPI รวม</small><strong>{hrEmployeeInsight.evaluation ? hrEmployeeInsight.evaluation.totalScore.toFixed(1) : "—"}</strong></span>
+                <span><small>คะแนนสกิล</small><strong>{hrEmployeeInsight.evaluation ? hrEmployeeInsight.evaluation.skillScore.toFixed(1) : "—"}</strong></span>
+                <span><small>Talent Fit สูงสุด</small><strong>{hrEmployeeInsight.bestFit ? `${hrEmployeeInsight.bestFit.score}%` : "—"}</strong><em>{hrEmployeeInsight.bestFit?.role.name ?? "รอประเมิน"}</em></span>
+                <span><small>กรอบตำแหน่งปัจจุบัน</small><strong>฿{formatMoney(hrEmployeeInsight.salaryBand.min)}–{formatMoney(hrEmployeeInsight.salaryBand.max)}</strong></span>
+              </div>
+            </div>
+            <div className="hr-plan-body">
+              <section>
+                <div className="hr-form-heading"><span>01</span><div><strong>ข้อมูลค่าตอบแทน</strong><small>เก็บเงินเดือนปัจจุบันและรอบทบทวนถัดไป</small></div></div>
+                <div className="form-grid hr-form-grid">
+                  <label><span>เงินเดือนปัจจุบัน (บาท/เดือน)</span><input required type="number" min="0" step="500" value={hrForm.currentSalary} onChange={(event) => setHrForm((form) => ({ ...form, currentSalary: Number(event.target.value) }))} /></label>
+                  <label><span>รอบทบทวนเงินเดือน</span><input required value={hrForm.salaryReviewMonth} onChange={(event) => setHrForm((form) => ({ ...form, salaryReviewMonth: event.target.value }))} placeholder="เช่น มกราคม 2570" /></label>
+                </div>
+              </section>
+              <section>
+                <div className="hr-form-heading"><span>02</span><div><strong>สร้างแผนติดตาม</strong><small>เลือกได้ทั้งการทดสอบ อัปสกิล ทบทวนตำแหน่ง และเงินเดือน</small></div></div>
+                <div className="form-grid hr-form-grid">
+                  <label><span>ประเภทแผน</span><select value={hrForm.planType} onChange={(event) => setHrForm((form) => ({ ...form, planType: event.target.value as TalentActionRecord["type"] }))}><option value="skill_test">ทดสอบสกิล</option><option value="upskill">อัปสกิล</option><option value="role_review">ทบทวนตำแหน่ง</option><option value="salary_review">ทบทวนเงินเดือน</option></select></label>
+                  <label><span>กำหนดเสร็จ</span><input required type="date" value={hrForm.dueDate} onChange={(event) => setHrForm((form) => ({ ...form, dueDate: event.target.value }))} /></label>
+                  <label className="wide"><span>ชื่อแผน / กิจกรรม</span><input value={hrForm.title} onChange={(event) => setHrForm((form) => ({ ...form, title: event.target.value }))} placeholder="เว้นว่างได้ หากต้องการอัปเดตเงินเดือนอย่างเดียว" /></label>
+                  <label className="wide"><span>ตำแหน่งเป้าหมาย</span><select value={hrForm.targetRoleId} onChange={(event) => setHrForm((form) => ({ ...form, targetRoleId: event.target.value }))}>{roles.map((role) => <option key={role.id} value={role.id}>{role.name} · กรอบ ฿{formatMoney(roleSalaryBands[role.id].min)}–{formatMoney(roleSalaryBands[role.id].max)}</option>)}</select></label>
+                </div>
+              </section>
+              <div className="decision-note compact"><span>i</span><p>ข้อมูลเงินเดือนเป็นข้อมูลอ่อนไหว ควรกำหนดสิทธิ์การเข้าถึงและให้ผู้มีอำนาจอนุมัติตรวจสอบก่อนนำไปใช้จริง</p></div>
+            </div>
+            <div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setHrEmployee(null)}>ยกเลิก</button><button className="primary-button" disabled={isSaving}>{isSaving ? "กำลังบันทึก..." : "บันทึกข้อมูลและแผน"}</button></div>
+          </form>
         </div>
       )}
 
