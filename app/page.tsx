@@ -14,6 +14,87 @@ import {
 
 type View = "overview" | "employees" | "skills";
 
+type TalentDimensionId = "analysis" | "communication" | "problemSolving" | "leadership" | "execution";
+
+const talentDimensions: { id: TalentDimensionId; label: string; shortLabel: string }[] = [
+  { id: "analysis", label: "การวิเคราะห์", shortLabel: "วิเคราะห์" },
+  { id: "communication", label: "การสื่อสาร", shortLabel: "สื่อสาร" },
+  { id: "problemSolving", label: "การแก้ปัญหา", shortLabel: "แก้ปัญหา" },
+  { id: "leadership", label: "ภาวะผู้นำ", shortLabel: "ผู้นำ" },
+  { id: "execution", label: "การลงมือทำ", shortLabel: "ลงมือทำ" },
+];
+
+const roleTalentProfiles: Record<string, Record<TalentDimensionId, number>> = {
+  "sales-manager": { analysis: 4, communication: 5, problemSolving: 4, leadership: 5, execution: 4 },
+  marketing: { analysis: 5, communication: 4, problemSolving: 4, leadership: 3, execution: 4 },
+  "customer-service": { analysis: 3, communication: 5, problemSolving: 5, leadership: 3, execution: 4 },
+  developer: { analysis: 5, communication: 3, problemSolving: 5, leadership: 3, execution: 5 },
+  hr: { analysis: 4, communication: 5, problemSolving: 4, leadership: 5, execution: 4 },
+};
+
+const skillDimensionWeights: Record<string, Partial<Record<TalentDimensionId, number>>> = {
+  negotiation: { communication: .7, problemSolving: .3 },
+  forecasting: { analysis: .6, execution: .4 },
+  coaching: { leadership: .7, communication: .3 },
+  "customer-insight": { analysis: .5, communication: .5 },
+  "campaign-strategy": { analysis: .4, execution: .4, leadership: .2 },
+  analytics: { analysis: .8, problemSolving: .2 },
+  content: { communication: .8, execution: .2 },
+  experimentation: { problemSolving: .6, analysis: .4 },
+  empathy: { communication: .7, leadership: .3 },
+  "problem-solving": { problemSolving: 1 },
+  "product-knowledge": { execution: .7, analysis: .3 },
+  communication: { communication: 1 },
+  engineering: { execution: .5, problemSolving: .5 },
+  "system-design": { analysis: .6, problemSolving: .4 },
+  quality: { execution: .6, problemSolving: .4 },
+  collaboration: { communication: .7, leadership: .3 },
+  "people-analytics": { analysis: .8, problemSolving: .2 },
+  "labor-practice": { execution: .7, analysis: .3 },
+  facilitation: { communication: .7, leadership: .3 },
+  "talent-development": { leadership: .6, communication: .4 },
+};
+
+const emptyTalentProfile = (): Record<TalentDimensionId, number> => ({ analysis: 0, communication: 0, problemSolving: 0, leadership: 0, execution: 0 });
+
+function buildTalentProfile(roleId: string, evaluation: EvaluationRecord | null) {
+  const profile = emptyTalentProfile();
+  if (!evaluation) return profile;
+  const weightTotals = emptyTalentProfile();
+  const role = getRole(roleId);
+  role.skills.forEach((skill) => {
+    const level = evaluation.skillScores[skill.id] ?? 0;
+    const weights = skillDimensionWeights[skill.id] ?? {};
+    talentDimensions.forEach(({ id }) => {
+      const weight = weights[id] ?? 0;
+      profile[id] += level * weight;
+      weightTotals[id] += weight;
+    });
+  });
+  const measured = talentDimensions
+    .filter(({ id }) => weightTotals[id] > 0)
+    .map(({ id }) => profile[id] / weightTotals[id]);
+  const fallback = measured.length ? measured.reduce((sum, value) => sum + value, 0) / measured.length : 0;
+  talentDimensions.forEach(({ id }) => {
+    profile[id] = Number((weightTotals[id] > 0 ? profile[id] / weightTotals[id] : fallback).toFixed(2));
+  });
+  return profile;
+}
+
+function calculateRoleFit(profile: Record<TalentDimensionId, number>, roleId: string) {
+  const target = roleTalentProfiles[roleId];
+  const fit = talentDimensions.reduce((sum, { id }) => sum + Math.min(profile[id] / target[id], 1), 0) / talentDimensions.length * 100;
+  return Math.round(fit);
+}
+
+function radarPolygon(values: Record<TalentDimensionId, number>) {
+  return talentDimensions.map(({ id }, index) => {
+    const angle = (-90 + index * 72) * Math.PI / 180;
+    const radius = Math.max(0, Math.min(5, values[id])) / 5 * 44;
+    return `${(50 + Math.cos(angle) * radius).toFixed(2)}% ${(50 + Math.sin(angle) * radius).toFixed(2)}%`;
+  }).join(", ");
+}
+
 const departmentFilters = [
   { id: "all", label: "ทุกแผนก" },
   ...roles.map((role) => ({ id: role.departmentId, label: role.department })),
@@ -142,6 +223,16 @@ export default function Home() {
   const selectedRole = selectedEmployee ? getRole(selectedEmployee.roleId) : null;
   const skillProfileRole = skillProfileEmployee ? getRole(skillProfileEmployee.roleId) : null;
   const skillProfileEvaluation = skillProfileEmployee ? evaluationsByEmployee.get(skillProfileEmployee.id) ?? null : null;
+  const skillProfileTalent = useMemo(
+    () => skillProfileEmployee ? buildTalentProfile(skillProfileEmployee.roleId, skillProfileEvaluation) : emptyTalentProfile(),
+    [skillProfileEmployee, skillProfileEvaluation],
+  );
+  const roleFitRecommendations = useMemo(
+    () => skillProfileEvaluation
+      ? roles.map((role) => ({ role, score: calculateRoleFit(skillProfileTalent, role.id) })).sort((a, b) => b.score - a.score)
+      : [],
+    [skillProfileEvaluation, skillProfileTalent],
+  );
   const kpiTotal = selectedRole
     ? selectedRole.kpis.reduce((sum, kpi) => sum + (kpiScores[kpi.id] ?? 0) * kpi.weight / 100, 0)
     : 0;
@@ -447,7 +538,7 @@ export default function Home() {
                       <div className="person-skill-foot">
                         <span className={readiness === role.skills.length ? "ready" : "develop"}>{evaluation ? `ถึงเป้าหมาย ${readiness}/${role.skills.length} สกิล` : "ยังไม่มีผลประเมิน"}</span>
                         <small>{evaluation && biggestGap?.gap > 0 ? `เน้นพัฒนา: ${biggestGap.skill.name}` : evaluation ? "สกิลพร้อมตามบทบาท" : "เริ่มประเมินเพื่อสร้างโปรไฟล์"}</small>
-                        <button onClick={() => setSkillProfileEmployee(employee)}>ดูรายละเอียด →</button>
+                        <button onClick={() => setSkillProfileEmployee(employee)}>ดูกราฟและ Talent Fit →</button>
                       </div>
                     </article>
                   );
@@ -476,6 +567,32 @@ export default function Home() {
               </div>
             </div>
             <div className="skill-profile-body">
+              <section className="talent-fit-section">
+                <div className="talent-fit-heading">
+                  <div><p className="eyebrow">TALENT FIT ANALYSIS</p><h3>กราฟสกิลที่ถนัด</h3><p>แปลงสกิลที่ประเมินแล้วเป็น 5 มิติ เพื่อมองเห็นรูปแบบความถนัดของบุคคล</p></div>
+                  <div className="radar-legend"><span><i className="current" />ระดับปัจจุบัน</span><span><i className="target" />เป้าหมายตำแหน่งปัจจุบัน</span></div>
+                </div>
+                {skillProfileEvaluation ? (
+                  <div className="talent-fit-grid">
+                    <RadarChart values={skillProfileTalent} target={roleTalentProfiles[skillProfileRole.id]} employeeName={skillProfileEmployee.name} />
+                    <div className="role-fit-panel">
+                      <div className="role-fit-title"><span>ตำแหน่งที่เหมาะสม</span><small>เรียงจากรูปแบบสกิลที่ใกล้เคียงที่สุด</small></div>
+                      <div className="role-fit-list">
+                        {roleFitRecommendations.slice(0, 3).map(({ role, score }, index) => (
+                          <article key={role.id} className={index === 0 ? "top" : ""}>
+                            <span className="fit-rank">{String(index + 1).padStart(2, "0")}</span>
+                            <div><strong>{role.name}</strong><small>{role.department}{role.id === skillProfileEmployee.roleId ? " · ตำแหน่งปัจจุบัน" : ""}</small></div>
+                            <div className="fit-score"><strong>{score}%</strong><i><b style={{ width: `${score}%` }} /></i></div>
+                          </article>
+                        ))}
+                      </div>
+                      <p className="fit-disclaimer">ผลนี้เป็นคำแนะนำเบื้องต้นจากระดับสกิล 5 มิติ ควรพิจารณาประสบการณ์ ความสนใจ และผลงานร่วมด้วย</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="talent-empty"><span>◎</span><div><strong>ยังสร้างกราฟไม่ได้</strong><p>เริ่มประเมินระดับสกิล 1–5 เพื่อดูกราฟความถนัดและตำแหน่งที่เหมาะสม</p></div><button onClick={() => editSkillProfile(skillProfileEmployee)}>เริ่มประเมินสกิล</button></div>
+                )}
+              </section>
               <div className="profile-section-heading"><div><p className="eyebrow">COMPETENCY DETAIL</p><h3>ระดับปัจจุบันเทียบเป้าหมาย</h3></div><span><i />ระดับปัจจุบัน <i className="target" />เป้าหมาย</span></div>
               <div className="profile-skill-list">
                 {skillProfileRole.skills.map((skill) => {
@@ -590,4 +707,22 @@ function EmployeeCompact({ employee, onClick }: { employee: EmployeeRecord; onCl
 
 function ScoreCell({ value }: { value: number | null }) {
   return <span className="table-score"><strong>{value === null ? "—" : value.toFixed(1)}</strong><i><b style={{ width: `${value ?? 0}%` }} /></i></span>;
+}
+
+function RadarChart({ values, target, employeeName }: { values: Record<TalentDimensionId, number>; target: Record<TalentDimensionId, number>; employeeName: string }) {
+  const accessibleSummary = talentDimensions.map(({ id, label }) => `${label} ${values[id].toFixed(1)} จาก 5`).join(", ");
+  return (
+    <div className="radar-card">
+      <div className="radar-chart" role="img" aria-label={`กราฟสกิลของ ${employeeName}: ${accessibleSummary}`}>
+        <div className="radar-rings" aria-hidden="true">{[1, 2, 3, 4, 5].map((level) => <i key={level} style={{ width: `${level * 17.6}%`, height: `${level * 17.6}%` }} />)}</div>
+        <div className="radar-axes" aria-hidden="true">{talentDimensions.map(({ id }, index) => <i key={id} style={{ transform: `translateX(-50%) rotate(${index * 72}deg)` }} />)}</div>
+        <div className="radar-shape target" style={{ clipPath: `polygon(${radarPolygon(target)})` }} aria-hidden="true" />
+        <div className="radar-shape current" style={{ clipPath: `polygon(${radarPolygon(values)})` }} aria-hidden="true" />
+        {talentDimensions.map(({ id, shortLabel }, index) => <span key={id} className={`radar-label label-${index}`}><strong>{shortLabel}</strong><small>{values[id].toFixed(1)}</small></span>)}
+      </div>
+      <div className="talent-dimension-list">
+        {talentDimensions.map(({ id, label }) => <span key={id}><small>{label}</small><strong>{values[id].toFixed(1)}</strong><i><b style={{ width: `${values[id] / 5 * 100}%` }} /></i></span>)}
+      </div>
+    </div>
+  );
 }

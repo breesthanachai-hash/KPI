@@ -8,7 +8,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const protocol = requestHeaders.get("x-forwarded-proto") ?? (host.includes("localhost") ? "http" : "https");
   const origin = `${protocol}://${host}`;
   const title = "People Pulse — ระบบวัด KPI พนักงาน";
-  const description = "ติดตาม KPI และสกิลรายบุคคล เปรียบเทียบระดับกับเป้าหมาย และวางแผนพัฒนาทีมในที่เดียว";
+  const description = "ติดตาม KPI และสกิลรายบุคคลด้วยกราฟใยแมงมุม พร้อม Talent Fit แนะนำตำแหน่งงานที่เหมาะสม";
 
   return {
     metadataBase: new URL(origin),
@@ -19,13 +19,13 @@ export async function generateMetadata(): Promise<Metadata> {
       description,
       type: "website",
       locale: "th_TH",
-      images: [{ url: new URL("/og.png", origin).toString(), width: 1662, height: 946, alt: "People Pulse KPI and Skill Management" }],
+      images: [{ url: new URL("/og-talent-fit.png", origin).toString(), width: 1536, height: 1024, alt: "People Pulse KPI, Skill Radar and Talent Fit" }],
     },
     twitter: {
       card: "summary_large_image",
       title,
       description,
-      images: [new URL("/og.png", origin).toString()],
+      images: [new URL("/og-talent-fit.png", origin).toString()],
     },
   };
 }
