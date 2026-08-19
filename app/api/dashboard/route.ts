@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { ensureDatabase } from "../../../db/initialize";
-import { employees, evaluations, hrProfiles, pointLedger, projects, rewardRedemptions, rewards, talentActions, workItems } from "../../../db/schema";
+import { applicationDocuments, employeeProfiles, employees, employmentContracts, evaluations, hrProfiles, pointLedger, projects, rewardRedemptions, rewards, talentActions, workItems } from "../../../db/schema";
 import {
   clampScore,
   clampSkillLevel,
@@ -11,6 +11,9 @@ import {
   roleSalaryBands,
   roles,
   seedEmployees,
+  seedApplicationDocuments,
+  seedEmployeeProfiles,
+  seedEmploymentContracts,
   seedHrProfiles,
   seedPointLedger,
   seedProjects,
@@ -92,18 +95,40 @@ async function ensureSeedData() {
 
   const [existingRedemption] = await db.select({ id: rewardRedemptions.id }).from(rewardRedemptions).limit(1);
   if (!existingRedemption && seedRewardRedemptions.length) await db.insert(rewardRedemptions).values(seedRewardRedemptions).onConflictDoNothing();
+
+  const [existingEmployeeProfile] = await db.select({ employeeId: employeeProfiles.employeeId }).from(employeeProfiles).limit(1);
+  if (!existingEmployeeProfile) {
+    for (const profile of seedEmployeeProfiles) await db.insert(employeeProfiles).values(profile).onConflictDoNothing();
+  }
+
+  const [existingApplicationDocument] = await db.select({ id: applicationDocuments.id }).from(applicationDocuments).limit(1);
+  if (!existingApplicationDocument) {
+    for (const document of seedApplicationDocuments) await db.insert(applicationDocuments).values(document).onConflictDoNothing();
+  }
+
+  const [existingEmploymentContract] = await db.select({ id: employmentContracts.id }).from(employmentContracts).limit(1);
+  if (!existingEmploymentContract) {
+    for (const contract of seedEmploymentContracts) await db.insert(employmentContracts).values(contract).onConflictDoNothing();
+  }
 }
 
-function evaluatorName(request: Request) {
+function authenticatedActor(request: Request) {
+  const userId = request.headers.get("oai-authenticated-user-id") ?? "local-admin";
+  const email = request.headers.get("oai-authenticated-user-email") ?? "hr@peoplepulse.local";
   const encodedName = request.headers.get("oai-authenticated-user-full-name");
-  if (encodedName) {
+  const encoding = request.headers.get("oai-authenticated-user-full-name-encoding");
+  if (encodedName && encoding === "percent-encoded-utf-8") {
     try {
-      return decodeURIComponent(encodedName);
+      return { userId, email, name: decodeURIComponent(encodedName) };
     } catch {
       // Fall back to the authenticated email when the optional name is malformed.
     }
   }
-  return request.headers.get("oai-authenticated-user-email") ?? "ฝ่ายทรัพยากรบุคคล";
+  return { userId, email, name: email === "hr@peoplepulse.local" ? "ฝ่ายทรัพยากรบุคคล" : email };
+}
+
+function evaluatorName(request: Request) {
+  return authenticatedActor(request).name;
 }
 
 export async function GET(request: Request) {
@@ -112,7 +137,7 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const period = url.searchParams.get("period") ?? periods[0];
     const db = getDb();
-    const [employeeRows, evaluationRows, hrProfileRows, talentActionRows, projectRows, workItemRows, rewardRows, pointRows, redemptionRows] = await Promise.all([
+    const [employeeRows, evaluationRows, hrProfileRows, talentActionRows, projectRows, workItemRows, rewardRows, pointRows, redemptionRows, employeeProfileRows, applicationDocumentRows, employmentContractRows] = await Promise.all([
       db.select().from(employees),
       db.select().from(evaluations).where(eq(evaluations.period, period)),
       db.select().from(hrProfiles),
@@ -122,9 +147,12 @@ export async function GET(request: Request) {
       db.select().from(rewards),
       db.select().from(pointLedger),
       db.select().from(rewardRedemptions),
+      db.select().from(employeeProfiles),
+      db.select().from(applicationDocuments),
+      db.select().from(employmentContracts),
     ]);
 
-    return Response.json({ employees: employeeRows, evaluations: evaluationRows, hrProfiles: hrProfileRows, talentActions: talentActionRows, projects: projectRows, workItems: workItemRows, rewards: rewardRows, pointLedger: pointRows, rewardRedemptions: redemptionRows, period });
+    return Response.json({ employees: employeeRows, evaluations: evaluationRows, hrProfiles: hrProfileRows, talentActions: talentActionRows, projects: projectRows, workItems: workItemRows, rewards: rewardRows, pointLedger: pointRows, rewardRedemptions: redemptionRows, employeeProfiles: employeeProfileRows, applicationDocuments: applicationDocumentRows, employmentContracts: employmentContractRows, period });
   } catch (error) {
     return apiError(error);
   }
@@ -198,10 +226,57 @@ type RedeemRewardPayload = {
   rewardId?: string;
 };
 
+type EmployeeProfilePayload = {
+  action: "saveEmployeeProfile";
+  employeeId?: string;
+  personalEmail?: string;
+  phone?: string;
+  birthDate?: string;
+  nationalIdLast4?: string;
+  address?: string;
+  emergencyName?: string;
+  emergencyPhone?: string;
+  startDate?: string;
+  employmentType?: "permanent" | "contract" | "probation" | "intern";
+  education?: string;
+  experienceYears?: number;
+  applicationSource?: string;
+};
+
+type DocumentStatusPayload = {
+  action: "updateDocumentStatus";
+  documentId?: string;
+  status?: "verified" | "rejected";
+  note?: string;
+};
+
+type ContractPayload = {
+  action: "createContract";
+  employeeId?: string;
+  documentId?: string;
+  title?: string;
+  version?: string;
+  status?: "draft" | "sent";
+  effectiveDate?: string;
+  expiryDate?: string;
+};
+
+type SignContractPayload = {
+  action: "signContract";
+  contractId?: string;
+  signedName?: string;
+  consent?: boolean;
+};
+
+type SendContractPayload = {
+  action: "sendContract";
+  contractId?: string;
+};
+
 export async function POST(request: Request) {
   try {
     await ensureSeedData();
-    const payload = await request.json() as EmployeePayload | EvaluationPayload | HrPlanPayload | CompleteTalentActionPayload | ProjectPayload | WorkItemPayload | RedeemRewardPayload;
+    const payload = await request.json() as EmployeePayload | EvaluationPayload | HrPlanPayload | CompleteTalentActionPayload | ProjectPayload | WorkItemPayload | RedeemRewardPayload | EmployeeProfilePayload | DocumentStatusPayload | ContractPayload | SignContractPayload | SendContractPayload;
     const db = getDb();
 
     if (payload.action === "createEmployee") {
@@ -236,7 +311,24 @@ export async function POST(request: Request) {
         updatedAt: now,
       };
       await db.insert(hrProfiles).values(hrProfile);
-      return Response.json({ employee, hrProfile }, { status: 201 });
+      const employeeProfile = {
+        employeeId: employee.id,
+        personalEmail: "",
+        phone: "",
+        birthDate: "",
+        nationalIdLast4: "",
+        address: "",
+        emergencyName: "",
+        emergencyPhone: "",
+        startDate: now.slice(0, 10),
+        employmentType: "probation" as const,
+        education: "",
+        experienceYears: 0,
+        applicationSource: "",
+        updatedAt: now,
+      };
+      await db.insert(employeeProfiles).values(employeeProfile);
+      return Response.json({ employee, hrProfile, employeeProfile }, { status: 201 });
     }
 
     if (payload.action === "saveEvaluation") {
@@ -439,6 +531,112 @@ export async function POST(request: Request) {
       await db.insert(pointLedger).values(pointEntry);
       await db.update(rewards).set({ stock: reward.stock - 1, updatedAt: now }).where(eq(rewards.id, rewardId));
       return Response.json({ redemption, pointEntry, reward: { ...reward, stock: reward.stock - 1, updatedAt: now } });
+    }
+
+    if (payload.action === "saveEmployeeProfile") {
+      const employeeId = payload.employeeId ?? "";
+      const [employee] = await db.select({ id: employees.id }).from(employees).where(eq(employees.id, employeeId)).limit(1);
+      if (!employee) return Response.json({ error: "ไม่พบพนักงานที่เลือก" }, { status: 404 });
+      const personalEmail = payload.personalEmail?.trim().toLowerCase().slice(0, 160) ?? "";
+      if (personalEmail && !personalEmail.includes("@")) return Response.json({ error: "รูปแบบอีเมลส่วนตัวไม่ถูกต้อง" }, { status: 400 });
+      const now = new Date().toISOString();
+      const profile = {
+        employeeId,
+        personalEmail,
+        phone: payload.phone?.trim().slice(0, 40) ?? "",
+        birthDate: /^\d{4}-\d{2}-\d{2}$/.test(payload.birthDate ?? "") ? payload.birthDate as string : "",
+        nationalIdLast4: (payload.nationalIdLast4 ?? "").replace(/\D/g, "").slice(-4),
+        address: payload.address?.trim().slice(0, 1000) ?? "",
+        emergencyName: payload.emergencyName?.trim().slice(0, 160) ?? "",
+        emergencyPhone: payload.emergencyPhone?.trim().slice(0, 40) ?? "",
+        startDate: /^\d{4}-\d{2}-\d{2}$/.test(payload.startDate ?? "") ? payload.startDate as string : "",
+        employmentType: payload.employmentType ?? "permanent" as const,
+        education: payload.education?.trim().slice(0, 500) ?? "",
+        experienceYears: Math.min(60, Math.max(0, Math.round(Number(payload.experienceYears) || 0))),
+        applicationSource: payload.applicationSource?.trim().slice(0, 160) ?? "",
+        updatedAt: now,
+      };
+      await db.insert(employeeProfiles).values(profile).onConflictDoUpdate({
+        target: employeeProfiles.employeeId,
+        set: { ...profile, employeeId: undefined },
+      });
+      return Response.json({ employeeProfile: profile });
+    }
+
+    if (payload.action === "updateDocumentStatus") {
+      const documentId = payload.documentId ?? "";
+      const status = payload.status;
+      if (status !== "verified" && status !== "rejected") return Response.json({ error: "สถานะเอกสารไม่ถูกต้อง" }, { status: 400 });
+      const [document] = await db.select().from(applicationDocuments).where(eq(applicationDocuments.id, documentId)).limit(1);
+      if (!document) return Response.json({ error: "ไม่พบเอกสารที่เลือก" }, { status: 404 });
+      const actor = authenticatedActor(request);
+      const now = new Date().toISOString();
+      await db.update(applicationDocuments).set({ status, note: payload.note?.trim().slice(0, 500) ?? "", verifiedBy: actor.name, verifiedAt: now }).where(eq(applicationDocuments.id, documentId));
+      return Response.json({ applicationDocument: { ...document, status, note: payload.note?.trim().slice(0, 500) ?? "", verifiedBy: actor.name, verifiedAt: now } });
+    }
+
+    if (payload.action === "createContract") {
+      const employeeId = payload.employeeId ?? "";
+      const [employee] = await db.select({ id: employees.id }).from(employees).where(eq(employees.id, employeeId)).limit(1);
+      if (!employee) return Response.json({ error: "ไม่พบพนักงานที่เลือก" }, { status: 404 });
+      const title = payload.title?.trim().slice(0, 200) ?? "";
+      if (!title || !/^\d{4}-\d{2}-\d{2}$/.test(payload.effectiveDate ?? "")) return Response.json({ error: "กรุณาระบุชื่อสัญญาและวันที่มีผล" }, { status: 400 });
+      const documentId = payload.documentId?.trim() || null;
+      if (!documentId) return Response.json({ error: "กรุณาอัปโหลดและเลือกไฟล์สัญญาก่อนส่งให้ลงนาม" }, { status: 400 });
+      const [document] = await db.select().from(applicationDocuments).where(and(eq(applicationDocuments.id, documentId), eq(applicationDocuments.employeeId, employeeId))).limit(1);
+      if (!document || document.documentType !== "contract") return Response.json({ error: "ไฟล์สัญญาไม่ตรงกับพนักงานที่เลือก" }, { status: 400 });
+      const actor = authenticatedActor(request);
+      const now = new Date().toISOString();
+      const status = payload.status ?? "sent";
+      const contract = {
+        id: `contract-${crypto.randomUUID()}`,
+        employeeId,
+        documentId,
+        title,
+        version: payload.version?.trim().slice(0, 30) || "1.0",
+        status,
+        effectiveDate: payload.effectiveDate as string,
+        expiryDate: /^\d{4}-\d{2}-\d{2}$/.test(payload.expiryDate ?? "") ? payload.expiryDate as string : null,
+        sentAt: status === "sent" ? now : null,
+        signedName: null,
+        signedAt: null,
+        consentText: "",
+        signerUserId: null,
+        signerEmail: null,
+        createdBy: actor.name,
+        createdAt: now,
+        updatedAt: now,
+      };
+      await db.insert(employmentContracts).values(contract);
+      return Response.json({ employmentContract: contract }, { status: 201 });
+    }
+
+    if (payload.action === "signContract") {
+      const contractId = payload.contractId ?? "";
+      const [contract] = await db.select().from(employmentContracts).where(eq(employmentContracts.id, contractId)).limit(1);
+      if (!contract) return Response.json({ error: "ไม่พบสัญญาที่เลือก" }, { status: 404 });
+      const [employee] = await db.select().from(employees).where(eq(employees.id, contract.employeeId)).limit(1);
+      if (!employee) return Response.json({ error: "ไม่พบข้อมูลพนักงานของสัญญา" }, { status: 404 });
+      if (contract.status === "signed") return Response.json({ employmentContract: contract });
+      if (contract.status !== "sent" && contract.status !== "viewed") return Response.json({ error: "สัญญานี้ยังไม่อยู่ในขั้นตอนลงนาม" }, { status: 409 });
+      const signedName = payload.signedName?.replace(/\s+/g, " ").trim() ?? "";
+      const expectedName = employee.name.replace(/\s+/g, " ").trim();
+      if (!payload.consent || signedName !== expectedName) return Response.json({ error: "กรุณาพิมพ์ชื่อ–นามสกุลให้ตรงกับโปรไฟล์ และยืนยันความยินยอม" }, { status: 400 });
+      const actor = authenticatedActor(request);
+      const now = new Date().toISOString();
+      const consentText = "ข้าพเจ้าได้อ่าน เข้าใจ และยอมรับข้อกำหนดในสัญญาจ้างฉบับนี้ และยืนยันใช้ชื่อที่พิมพ์เป็นลายเซ็นอิเล็กทรอนิกส์";
+      await db.update(employmentContracts).set({ status: "signed", signedName, signedAt: now, consentText, signerUserId: actor.userId, signerEmail: actor.email, updatedAt: now }).where(eq(employmentContracts.id, contractId));
+      return Response.json({ employmentContract: { ...contract, status: "signed", signedName, signedAt: now, consentText, signerUserId: actor.userId, signerEmail: actor.email, updatedAt: now } });
+    }
+
+    if (payload.action === "sendContract") {
+      const contractId = payload.contractId ?? "";
+      const [contract] = await db.select().from(employmentContracts).where(eq(employmentContracts.id, contractId)).limit(1);
+      if (!contract) return Response.json({ error: "ไม่พบสัญญาที่เลือก" }, { status: 404 });
+      if (contract.status !== "draft") return Response.json({ error: "ส่งได้เฉพาะสัญญาฉบับร่าง" }, { status: 409 });
+      const now = new Date().toISOString();
+      await db.update(employmentContracts).set({ status: "sent", sentAt: now, updatedAt: now }).where(eq(employmentContracts.id, contractId));
+      return Response.json({ employmentContract: { ...contract, status: "sent", sentAt: now, updatedAt: now } });
     }
 
     return Response.json({ error: "คำขอไม่ถูกต้อง" }, { status: 400 });

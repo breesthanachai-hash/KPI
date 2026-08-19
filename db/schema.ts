@@ -135,3 +135,63 @@ export const rewardRedemptions = sqliteTable("reward_redemptions", {
   index("reward_redemptions_employee_created_idx").on(table.employeeId, table.createdAt),
   index("reward_redemptions_status_idx").on(table.status),
 ]);
+
+export const employeeProfiles = sqliteTable("employee_profiles", {
+  employeeId: text("employee_id").primaryKey().references(() => employees.id, { onDelete: "cascade" }),
+  personalEmail: text("personal_email").notNull().default(""),
+  phone: text("phone").notNull().default(""),
+  birthDate: text("birth_date").notNull().default(""),
+  nationalIdLast4: text("national_id_last4").notNull().default(""),
+  address: text("address").notNull().default(""),
+  emergencyName: text("emergency_name").notNull().default(""),
+  emergencyPhone: text("emergency_phone").notNull().default(""),
+  startDate: text("start_date").notNull().default(""),
+  employmentType: text("employment_type", { enum: ["permanent", "contract", "probation", "intern"] }).notNull().default("permanent"),
+  education: text("education").notNull().default(""),
+  experienceYears: integer("experience_years").notNull().default(0),
+  applicationSource: text("application_source").notNull().default(""),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
+export const applicationDocuments = sqliteTable("application_documents", {
+  id: text("id").primaryKey(),
+  employeeId: text("employee_id").notNull().references(() => employees.id, { onDelete: "cascade" }),
+  documentType: text("document_type", { enum: ["resume", "id_card", "house_registration", "transcript", "portfolio", "bank_account", "medical_certificate", "contract", "other"] }).notNull(),
+  title: text("title").notNull(),
+  fileName: text("file_name").notNull(),
+  storageKey: text("storage_key").notNull().default(""),
+  contentType: text("content_type").notNull().default("application/octet-stream"),
+  sizeBytes: integer("size_bytes").notNull().default(0),
+  status: text("status", { enum: ["pending", "verified", "rejected"] }).notNull().default("pending"),
+  note: text("note").notNull().default(""),
+  uploadedBy: text("uploaded_by").notNull().default(""),
+  uploadedAt: text("uploaded_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  verifiedBy: text("verified_by"),
+  verifiedAt: text("verified_at"),
+}, (table) => [
+  uniqueIndex("application_documents_required_type_unique").on(table.employeeId, table.documentType).where(sql`${table.documentType} NOT IN ('contract', 'other')`),
+  index("application_documents_employee_status_idx").on(table.employeeId, table.status),
+]);
+
+export const employmentContracts = sqliteTable("employment_contracts", {
+  id: text("id").primaryKey(),
+  employeeId: text("employee_id").notNull().references(() => employees.id, { onDelete: "cascade" }),
+  documentId: text("document_id").references(() => applicationDocuments.id, { onDelete: "set null" }),
+  title: text("title").notNull(),
+  version: text("version").notNull().default("1.0"),
+  status: text("status", { enum: ["draft", "sent", "viewed", "signed", "cancelled"] }).notNull().default("draft"),
+  effectiveDate: text("effective_date").notNull(),
+  expiryDate: text("expiry_date"),
+  sentAt: text("sent_at"),
+  signedName: text("signed_name"),
+  signedAt: text("signed_at"),
+  consentText: text("consent_text").notNull().default(""),
+  signerUserId: text("signer_user_id"),
+  signerEmail: text("signer_email"),
+  createdBy: text("created_by").notNull().default("ฝ่ายทรัพยากรบุคคล"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  index("employment_contracts_employee_created_idx").on(table.employeeId, table.createdAt),
+  index("employment_contracts_status_idx").on(table.status),
+]);

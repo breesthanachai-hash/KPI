@@ -2,7 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
+  type ApplicationDocumentRecord,
   type EmployeeRecord,
+  type EmployeeProfileRecord,
+  type EmploymentContractRecord,
   type EvaluationRecord,
   type HrProfileRecord,
   type PointLedgerRecord,
@@ -18,6 +21,9 @@ import {
   roles,
   scoreStatus,
   seedEmployees,
+  seedApplicationDocuments,
+  seedEmployeeProfiles,
+  seedEmploymentContracts,
   seedHrProfiles,
   seedPointLedger,
   seedProjects,
@@ -27,7 +33,7 @@ import {
   seedWorkItems,
 } from "../lib/kpi-data";
 
-type View = "overview" | "employees" | "skills" | "hr" | "work";
+type View = "overview" | "employees" | "profiles" | "skills" | "hr" | "work";
 
 type TalentDimensionId = "analysis" | "communication" | "problemSolving" | "leadership" | "execution";
 
@@ -180,6 +186,47 @@ function projectStatusLabel(status: ProjectRecord["status"]) {
   return { planned: "เตรียมเริ่ม", active: "กำลังดำเนินการ", on_hold: "พักไว้", completed: "เสร็จแล้ว" }[status];
 }
 
+const requiredDocumentTypes: ApplicationDocumentRecord["documentType"][] = ["resume", "id_card", "house_registration", "transcript", "bank_account"];
+
+const documentTypeLabels: Record<ApplicationDocumentRecord["documentType"], string> = {
+  resume: "ประวัติย่อ (Resume)",
+  id_card: "สำเนาบัตรประชาชน",
+  house_registration: "สำเนาทะเบียนบ้าน",
+  transcript: "วุฒิการศึกษา / Transcript",
+  portfolio: "Portfolio / ผลงาน",
+  bank_account: "สำเนาบัญชีธนาคาร",
+  medical_certificate: "ใบรับรองแพทย์",
+  contract: "เอกสารสัญญาจ้าง",
+  other: "เอกสารอื่น",
+};
+
+function documentStatusLabel(status: ApplicationDocumentRecord["status"]) {
+  return { pending: "รอตรวจ", verified: "ตรวจแล้ว", rejected: "ต้องแก้ไข" }[status];
+}
+
+function employmentTypeLabel(type: EmployeeProfileRecord["employmentType"]) {
+  return { permanent: "พนักงานประจำ", contract: "พนักงานสัญญาจ้าง", probation: "ทดลองงาน", intern: "ฝึกงาน" }[type];
+}
+
+function contractStatusLabel(status: EmploymentContractRecord["status"]) {
+  return { draft: "ฉบับร่าง", sent: "ส่งให้ลงนาม", viewed: "เปิดอ่านแล้ว", signed: "ลงนามแล้ว", cancelled: "ยกเลิก" }[status];
+}
+
+function formatFileSize(bytes: number) {
+  if (!bytes) return "—";
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+const viewMeta: Record<View, { eyebrow: string; title: string; description: string }> = {
+  overview: { eyebrow: "ภาพรวมองค์กร", title: "ภาพรวม KPI พนักงาน", description: "ติดตามเป้าหมาย ประเมินผลงาน และวางแผนพัฒนาทีมในที่เดียว" },
+  employees: { eyebrow: "ทะเบียนและการประเมิน", title: "พนักงานและผลประเมิน", description: "ค้นหา เพิ่มพนักงาน และบันทึกผล KPI พร้อมระดับสกิลรายบุคคล" },
+  profiles: { eyebrow: "EMPLOYEE DIGITAL DOSSIER", title: "แฟ้มประวัติพนักงาน", description: "รวมข้อมูลส่วนตัว เอกสารสมัครงาน การตรวจเอกสาร และสัญญาจ้างพร้อมลายเซ็นอิเล็กทรอนิกส์" },
+  skills: { eyebrow: "COMPETENCY MATRIX", title: "ภาพรวมสกิลของทีม", description: "มองเห็นจุดแข็ง ช่องว่าง และความพร้อมของแต่ละสายงาน" },
+  hr: { eyebrow: "WORKFORCE MANAGEMENT", title: "บริหารทรัพยากรบุคคล", description: "เชื่อมผลงาน สกิล การทดสอบ แผนพัฒนา ตำแหน่งที่เหมาะสม และค่าตอบแทน เพื่อการตัดสินใจที่รอบด้าน" },
+  work: { eyebrow: "MISSION & REWARD CENTER", title: "งาน โปรเจกต์ และภารกิจ", description: "จัดการ To-do รีเควสต์ และภารกิจ ติดตามความคืบหน้า รับแต้ม และแลกรางวัลในที่เดียว" },
+};
+
 export default function Home() {
   const [view, setView] = useState<View>("overview");
   const [activeDepartment, setActiveDepartment] = useState("all");
@@ -195,6 +242,9 @@ export default function Home() {
   const [rewards, setRewards] = useState<RewardRecord[]>(seedRewards);
   const [pointLedger, setPointLedger] = useState<PointLedgerRecord[]>(seedPointLedger);
   const [rewardRedemptions, setRewardRedemptions] = useState<RewardRedemptionRecord[]>(seedRewardRedemptions);
+  const [employeeProfiles, setEmployeeProfiles] = useState<EmployeeProfileRecord[]>(seedEmployeeProfiles);
+  const [applicationDocuments, setApplicationDocuments] = useState<ApplicationDocumentRecord[]>(seedApplicationDocuments);
+  const [employmentContracts, setEmploymentContracts] = useState<EmploymentContractRecord[]>(seedEmploymentContracts);
   const [selectedEmployee, setSelectedEmployee] = useState<EmployeeRecord | null>(null);
   const [skillProfileEmployee, setSkillProfileEmployee] = useState<EmployeeRecord | null>(null);
   const [hrEmployee, setHrEmployee] = useState<EmployeeRecord | null>(null);
@@ -211,6 +261,11 @@ export default function Home() {
   const [showProjectForm, setShowProjectForm] = useState(false);
   const [editingWorkItem, setEditingWorkItem] = useState<WorkItemRecord | null>(null);
   const [rewardToRedeem, setRewardToRedeem] = useState<RewardRecord | null>(null);
+  const [profileEmployeeId, setProfileEmployeeId] = useState(seedEmployees[0].id);
+  const [showProfileEditor, setShowProfileEditor] = useState(false);
+  const [showContractForm, setShowContractForm] = useState(false);
+  const [contractToSign, setContractToSign] = useState<EmploymentContractRecord | null>(null);
+  const [uploadingDocumentType, setUploadingDocumentType] = useState<ApplicationDocumentRecord["documentType"] | null>(null);
   const [workFilter, setWorkFilter] = useState<"all" | WorkItemRecord["kind"]>("all");
   const [workSearch, setWorkSearch] = useState("");
   const [employeeForm, setEmployeeForm] = useState({ name: "", email: "", roleId: roles[0].id, manager: "" });
@@ -218,12 +273,15 @@ export default function Home() {
   const [workForm, setWorkForm] = useState({ projectId: seedProjects[0].id, assigneeEmployeeId: seedEmployees[0].id, kind: "task" as WorkItemRecord["kind"], title: "", description: "", priority: "medium" as WorkItemRecord["priority"], status: "todo" as WorkItemRecord["status"], progress: 0, points: 100, dueDate: "2026-09-05" });
   const [projectForm, setProjectForm] = useState({ name: "", description: "", ownerEmployeeId: seedEmployees[0].id, status: "active" as ProjectRecord["status"], dueDate: "2026-10-30", color: "forest" });
   const [rewardEmployeeId, setRewardEmployeeId] = useState(seedEmployees[0].id);
+  const [profileForm, setProfileForm] = useState<Omit<EmployeeProfileRecord, "employeeId" | "updatedAt">>({ personalEmail: "", phone: "", birthDate: "", nationalIdLast4: "", address: "", emergencyName: "", emergencyPhone: "", startDate: "", employmentType: "permanent", education: "", experienceYears: 0, applicationSource: "" });
+  const [contractForm, setContractForm] = useState({ title: "สัญญาจ้างพนักงาน", version: "1.0", status: "sent" as "draft" | "sent", effectiveDate: "2026-09-01", expiryDate: "", documentId: "" });
+  const [signatureForm, setSignatureForm] = useState({ signedName: "", consent: false });
 
   useEffect(() => {
     const controller = new AbortController();
     fetch(`/api/dashboard?period=${encodeURIComponent(period)}`, { signal: controller.signal })
       .then(async (response) => {
-        const body = await response.json() as { employees?: EmployeeRecord[]; evaluations?: EvaluationRecord[]; hrProfiles?: HrProfileRecord[]; talentActions?: TalentActionRecord[]; projects?: ProjectRecord[]; workItems?: WorkItemRecord[]; rewards?: RewardRecord[]; pointLedger?: PointLedgerRecord[]; rewardRedemptions?: RewardRedemptionRecord[]; error?: string };
+        const body = await response.json() as { employees?: EmployeeRecord[]; evaluations?: EvaluationRecord[]; hrProfiles?: HrProfileRecord[]; talentActions?: TalentActionRecord[]; projects?: ProjectRecord[]; workItems?: WorkItemRecord[]; rewards?: RewardRecord[]; pointLedger?: PointLedgerRecord[]; rewardRedemptions?: RewardRedemptionRecord[]; employeeProfiles?: EmployeeProfileRecord[]; applicationDocuments?: ApplicationDocumentRecord[]; employmentContracts?: EmploymentContractRecord[]; error?: string };
         if (!response.ok) throw new Error(body.error ?? "โหลดข้อมูลไม่สำเร็จ");
         setEmployees(body.employees ?? []);
         setEvaluations(body.evaluations ?? []);
@@ -234,6 +292,9 @@ export default function Home() {
         setRewards(body.rewards ?? []);
         setPointLedger(body.pointLedger ?? []);
         setRewardRedemptions(body.rewardRedemptions ?? []);
+        setEmployeeProfiles(body.employeeProfiles ?? []);
+        setApplicationDocuments(body.applicationDocuments ?? []);
+        setEmploymentContracts(body.employmentContracts ?? []);
         setDataWarning("");
       })
       .catch((error: unknown) => {
@@ -247,7 +308,7 @@ export default function Home() {
   }, [period]);
 
   useEffect(() => {
-    if (!selectedEmployee && !skillProfileEmployee && !hrEmployee && !showAddEmployee && !showWorkForm && !showProjectForm && !rewardToRedeem) return;
+    if (!selectedEmployee && !skillProfileEmployee && !hrEmployee && !showAddEmployee && !showWorkForm && !showProjectForm && !rewardToRedeem && !showProfileEditor && !showContractForm && !contractToSign) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setSelectedEmployee(null);
@@ -257,11 +318,14 @@ export default function Home() {
         setShowWorkForm(false);
         setShowProjectForm(false);
         setRewardToRedeem(null);
+        setShowProfileEditor(false);
+        setShowContractForm(false);
+        setContractToSign(null);
       }
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [selectedEmployee, skillProfileEmployee, hrEmployee, showAddEmployee, showWorkForm, showProjectForm, rewardToRedeem]);
+  }, [selectedEmployee, skillProfileEmployee, hrEmployee, showAddEmployee, showWorkForm, showProjectForm, rewardToRedeem, showProfileEditor, showContractForm, contractToSign]);
 
   const evaluationsByEmployee = useMemo(
     () => new Map(evaluations.filter((evaluation) => evaluation.period === period).map((evaluation) => [evaluation.employeeId, evaluation])),
@@ -315,6 +379,15 @@ export default function Home() {
   const skillGapCount = workforceInsights.filter(({ evaluation, role }) => evaluation && (evaluation.skillScore < 80 || role.skills.some((skill) => (evaluation.skillScores[skill.id] ?? 0) < skill.targetLevel))).length;
   const visibleWorkforce = workforceInsights.filter(({ employee }) => filteredEmployees.some((item) => item.id === employee.id));
   const employeesById = useMemo(() => new Map(employees.map((employee) => [employee.id, employee])), [employees]);
+  const employeeProfilesById = useMemo(() => new Map(employeeProfiles.map((profile) => [profile.employeeId, profile])), [employeeProfiles]);
+  const profileEmployee = employeesById.get(profileEmployeeId) ?? employees[0] ?? null;
+  const profileRecord = profileEmployee ? employeeProfilesById.get(profileEmployee.id) ?? null : null;
+  const profileDocuments = profileEmployee ? applicationDocuments.filter((document) => document.employeeId === profileEmployee.id) : [];
+  const profileContractDocuments = profileDocuments.filter((document) => document.documentType === "contract").sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt));
+  const profileContracts = profileEmployee ? employmentContracts.filter((contract) => contract.employeeId === profileEmployee.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt)) : [];
+  const verifiedRequiredDocuments = requiredDocumentTypes.filter((type) => profileDocuments.some((document) => document.documentType === type && document.status === "verified")).length;
+  const profileFilledFields = profileRecord ? [profileRecord.personalEmail, profileRecord.phone, profileRecord.birthDate, profileRecord.nationalIdLast4, profileRecord.address, profileRecord.emergencyName, profileRecord.emergencyPhone, profileRecord.startDate, profileRecord.education, profileRecord.applicationSource].filter(Boolean).length : 0;
+  const dossierCompleteness = Math.round((profileFilledFields / 10 * .45 + verifiedRequiredDocuments / requiredDocumentTypes.length * .4 + (profileContracts.some((contract) => contract.status === "signed") ? .15 : 0)) * 100);
   const hrEmployeeInsight = hrEmployee ? workforceInsights.find(({ employee }) => employee.id === hrEmployee.id) ?? null : null;
   const projectsById = useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects]);
   const pointBalances = useMemo(() => {
@@ -527,6 +600,137 @@ export default function Home() {
     }
   };
 
+  const openProfileEditor = () => {
+    if (!profileEmployee) return;
+    setProfileForm(profileRecord ? {
+      personalEmail: profileRecord.personalEmail,
+      phone: profileRecord.phone,
+      birthDate: profileRecord.birthDate,
+      nationalIdLast4: profileRecord.nationalIdLast4,
+      address: profileRecord.address,
+      emergencyName: profileRecord.emergencyName,
+      emergencyPhone: profileRecord.emergencyPhone,
+      startDate: profileRecord.startDate,
+      employmentType: profileRecord.employmentType,
+      education: profileRecord.education,
+      experienceYears: profileRecord.experienceYears,
+      applicationSource: profileRecord.applicationSource,
+    } : { personalEmail: "", phone: "", birthDate: "", nationalIdLast4: "", address: "", emergencyName: "", emergencyPhone: "", startDate: new Date().toISOString().slice(0, 10), employmentType: "probation", education: "", experienceYears: 0, applicationSource: "" });
+    setShowProfileEditor(true);
+  };
+
+  const saveEmployeeProfile = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!profileEmployee) return;
+    setIsSaving(true);
+    try {
+      const response = await fetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "saveEmployeeProfile", employeeId: profileEmployee.id, ...profileForm }) });
+      const body = await response.json() as { employeeProfile?: EmployeeProfileRecord; error?: string };
+      if (!response.ok || !body.employeeProfile) throw new Error(body.error ?? "บันทึกโปรไฟล์ไม่สำเร็จ");
+      setEmployeeProfiles((items) => [...items.filter((item) => item.employeeId !== body.employeeProfile?.employeeId), body.employeeProfile as EmployeeProfileRecord]);
+      setShowProfileEditor(false);
+      showToast(`อัปเดตแฟ้มประวัติของ ${profileEmployee.name} แล้ว`);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "บันทึกโปรไฟล์ไม่สำเร็จ");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const uploadEmployeeDocument = async (documentType: ApplicationDocumentRecord["documentType"], file?: File) => {
+    if (!profileEmployee || !file) return;
+    setUploadingDocumentType(documentType);
+    try {
+      const formData = new FormData();
+      formData.set("employeeId", profileEmployee.id);
+      formData.set("documentType", documentType);
+      formData.set("file", file);
+      const response = await fetch("/api/documents", { method: "POST", body: formData });
+      const body = await response.json() as { applicationDocument?: ApplicationDocumentRecord; error?: string };
+      if (!response.ok || !body.applicationDocument) throw new Error(body.error ?? "อัปโหลดเอกสารไม่สำเร็จ");
+      const allowsMultiple = documentType === "contract" || documentType === "other";
+      setApplicationDocuments((items) => [...items.filter((item) => item.id !== body.applicationDocument?.id && (allowsMultiple || !(item.employeeId === profileEmployee.id && item.documentType === documentType))), body.applicationDocument as ApplicationDocumentRecord]);
+      showToast(`อัปโหลด ${documentTypeLabels[documentType]} แล้ว รอตรวจเอกสาร`);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "อัปโหลดเอกสารไม่สำเร็จ");
+    } finally {
+      setUploadingDocumentType(null);
+    }
+  };
+
+  const reviewEmployeeDocument = async (document: ApplicationDocumentRecord, status: "verified" | "rejected") => {
+    try {
+      const note = status === "rejected" ? "เอกสารไม่ผ่านการตรวจ กรุณาอัปโหลดไฟล์ใหม่" : "ตรวจสอบข้อมูลเรียบร้อย";
+      const response = await fetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "updateDocumentStatus", documentId: document.id, status, note }) });
+      const body = await response.json() as { applicationDocument?: ApplicationDocumentRecord; error?: string };
+      if (!response.ok || !body.applicationDocument) throw new Error(body.error ?? "อัปเดตสถานะเอกสารไม่สำเร็จ");
+      setApplicationDocuments((items) => items.map((item) => item.id === document.id ? body.applicationDocument as ApplicationDocumentRecord : item));
+      showToast(status === "verified" ? "ตรวจเอกสารผ่านแล้ว" : "ส่งเอกสารกลับให้แก้ไขแล้ว");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "อัปเดตสถานะเอกสารไม่สำเร็จ");
+    }
+  };
+
+  const openContractCreator = () => {
+    if (!profileEmployee) return;
+    const contractDocument = profileContractDocuments[0];
+    setContractForm({ title: profileRecord?.employmentType === "probation" ? "สัญญาจ้างและเงื่อนไขทดลองงาน" : "สัญญาจ้างพนักงาน", version: "1.0", status: "sent", effectiveDate: profileRecord?.startDate || new Date().toISOString().slice(0, 10), expiryDate: "", documentId: contractDocument?.id ?? "" });
+    setShowContractForm(true);
+  };
+
+  const createEmploymentContract = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!profileEmployee) return;
+    setIsSaving(true);
+    try {
+      const response = await fetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "createContract", employeeId: profileEmployee.id, ...contractForm }) });
+      const body = await response.json() as { employmentContract?: EmploymentContractRecord; error?: string };
+      if (!response.ok || !body.employmentContract) throw new Error(body.error ?? "สร้างสัญญาไม่สำเร็จ");
+      setEmploymentContracts((items) => [...items, body.employmentContract as EmploymentContractRecord]);
+      setShowContractForm(false);
+      showToast(contractForm.status === "sent" ? "สร้างและส่งสัญญาให้ลงนามแล้ว" : "บันทึกฉบับร่างสัญญาแล้ว");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "สร้างสัญญาไม่สำเร็จ");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const openContractSignature = (contract: EmploymentContractRecord) => {
+    setContractToSign(contract);
+    setSignatureForm({ signedName: profileEmployee?.name ?? "", consent: false });
+  };
+
+  const sendEmploymentContract = async (contract: EmploymentContractRecord) => {
+    try {
+      const response = await fetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "sendContract", contractId: contract.id }) });
+      const body = await response.json() as { employmentContract?: EmploymentContractRecord; error?: string };
+      if (!response.ok || !body.employmentContract) throw new Error(body.error ?? "ส่งสัญญาไม่สำเร็จ");
+      setEmploymentContracts((items) => items.map((item) => item.id === contract.id ? body.employmentContract as EmploymentContractRecord : item));
+      showToast("ส่งสัญญาให้พนักงานลงนามแล้ว");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "ส่งสัญญาไม่สำเร็จ");
+    }
+  };
+
+  const signEmploymentContract = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!contractToSign) return;
+    setIsSaving(true);
+    try {
+      const response = await fetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "signContract", contractId: contractToSign.id, ...signatureForm }) });
+      const body = await response.json() as { employmentContract?: EmploymentContractRecord; error?: string };
+      if (!response.ok || !body.employmentContract) throw new Error(body.error ?? "ลงนามสัญญาไม่สำเร็จ");
+      setEmploymentContracts((items) => items.map((item) => item.id === contractToSign.id ? body.employmentContract as EmploymentContractRecord : item));
+      setContractToSign(null);
+      showToast("ลงนามสัญญาและบันทึกหลักฐานเรียบร้อยแล้ว");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "ลงนามสัญญาไม่สำเร็จ");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const saveEvaluation = async () => {
     if (!selectedEmployee) return;
     setIsSaving(true);
@@ -567,10 +771,11 @@ export default function Home() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ action: "createEmployee", ...employeeForm }),
       });
-      const body = await response.json() as { employee?: EmployeeRecord; hrProfile?: HrProfileRecord; error?: string };
+      const body = await response.json() as { employee?: EmployeeRecord; hrProfile?: HrProfileRecord; employeeProfile?: EmployeeProfileRecord; error?: string };
       if (!response.ok || !body.employee) throw new Error(body.error ?? "เพิ่มพนักงานไม่สำเร็จ");
       setEmployees((items) => [...items, body.employee as EmployeeRecord]);
       if (body.hrProfile) setHrProfiles((items) => [...items, body.hrProfile as HrProfileRecord]);
+      if (body.employeeProfile) setEmployeeProfiles((items) => [...items, body.employeeProfile as EmployeeProfileRecord]);
       setShowAddEmployee(false);
       setEmployeeForm({ name: "", email: "", roleId: roles[0].id, manager: "" });
       showToast(`เพิ่ม ${body.employee.name} ในระบบแล้ว`);
@@ -631,6 +836,7 @@ export default function Home() {
         <nav aria-label="เมนูหลัก">
           <button className={view === "overview" ? "active" : ""} onClick={() => setView("overview")}>ภาพรวม</button>
           <button className={view === "employees" ? "active" : ""} onClick={() => setView("employees")}>พนักงาน</button>
+          <button className={view === "profiles" ? "active" : ""} onClick={() => setView("profiles")}>แฟ้มพนักงาน</button>
           <button className={view === "skills" ? "active" : ""} onClick={() => setView("skills")}>สกิลทีม</button>
           <button className={view === "hr" ? "active" : ""} onClick={() => setView("hr")}>บริหารบุคลากร</button>
           <button className={view === "work" ? "active" : ""} onClick={() => setView("work")}>งานและรางวัล</button>
@@ -651,15 +857,19 @@ export default function Home() {
         {dataWarning && <div className="data-warning" role="status"><span>!</span>{dataWarning}</div>}
         <div className="page-heading">
           <div>
-            <p className="eyebrow">{view === "overview" ? "ภาพรวมองค์กร" : view === "employees" ? "ทะเบียนและการประเมิน" : view === "skills" ? "COMPETENCY MATRIX" : view === "hr" ? "WORKFORCE MANAGEMENT" : "MISSION & REWARD CENTER"}</p>
-            <h1>{view === "overview" ? "ภาพรวม KPI พนักงาน" : view === "employees" ? "พนักงานและผลประเมิน" : view === "skills" ? "ภาพรวมสกิลของทีม" : view === "hr" ? "บริหารทรัพยากรบุคคล" : "งาน โปรเจกต์ และภารกิจ"}</h1>
-            <p>{view === "overview" ? "ติดตามเป้าหมาย ประเมินผลงาน และวางแผนพัฒนาทีมในที่เดียว" : view === "employees" ? "ค้นหา เพิ่มพนักงาน และบันทึกผล KPI พร้อมระดับสกิลรายบุคคล" : view === "skills" ? "มองเห็นจุดแข็ง ช่องว่าง และความพร้อมของแต่ละสายงาน" : view === "hr" ? "เชื่อมผลงาน สกิล การทดสอบ แผนพัฒนา ตำแหน่งที่เหมาะสม และค่าตอบแทน เพื่อการตัดสินใจที่รอบด้าน" : "จัดการ To-do รีเควสต์ และภารกิจ ติดตามความคืบหน้า รับแต้ม และแลกรางวัลในที่เดียว"}</p>
+            <p className="eyebrow">{viewMeta[view].eyebrow}</p>
+            <h1>{viewMeta[view].title}</h1>
+            <p>{viewMeta[view].description}</p>
           </div>
           <div className="heading-actions">
-            <button className="secondary-button" onClick={() => view === "work" ? setShowProjectForm(true) : exportReport()}><span aria-hidden="true">{view === "work" ? "◇" : "↓"}</span> {view === "work" ? "สร้างโปรเจกต์" : "ส่งออกรายงาน"}</button>
+            <button className="secondary-button" onClick={() => view === "work" ? setShowProjectForm(true) : view === "profiles" ? showToast(`${requiredDocumentTypes.length - verifiedRequiredDocuments} เอกสารจำเป็นยังตรวจไม่ครบ`) : exportReport()}><span aria-hidden="true">{view === "work" ? "◇" : view === "profiles" ? "▣" : "↓"}</span> {view === "work" ? "สร้างโปรเจกต์" : view === "profiles" ? "เช็กเอกสารที่ขาด" : "ส่งออกรายงาน"}</button>
             <button className="primary-button" onClick={() => {
               if (view === "work") {
                 openWorkItemForm();
+                return;
+              }
+              if (view === "profiles") {
+                openProfileEditor();
                 return;
               }
               if (view === "hr") {
@@ -669,7 +879,7 @@ export default function Home() {
               }
               if (pendingEmployees[0]) openEvaluation(pendingEmployees[0]);
               else setView("employees");
-            }}><span aria-hidden="true">＋</span> {view === "work" ? "เพิ่มงานหรือภารกิจ" : view === "hr" ? "เพิ่มแผนบุคลากร" : "เริ่มประเมิน"}</button>
+            }}><span aria-hidden="true">＋</span> {view === "work" ? "เพิ่มงานหรือภารกิจ" : view === "hr" ? "เพิ่มแผนบุคลากร" : view === "profiles" ? "แก้ไขโปรไฟล์" : "เริ่มประเมิน"}</button>
           </div>
         </div>
 
@@ -754,6 +964,7 @@ export default function Home() {
                     <ScoreCell value={evaluation?.skillScore ?? null} />
                     <span><b className={`status-pill ${status === "ควรติดตาม" ? "alert" : status === "รอประเมิน" ? "pending" : ""}`}>{status}</b><small>{evaluation ? `อัปเดต ${formatUpdatedAt(evaluation.evaluatedAt)}` : "ยังไม่มีผลรอบนี้"}</small></span>
                     <span className="table-actions">
+                      <button className="dossier-button" onClick={() => { setProfileEmployeeId(employee.id); setView("profiles"); }}>ดูแฟ้ม</button>
                       <button className="skill-profile-button" onClick={() => setSkillProfileEmployee(employee)}>ดูสกิล</button>
                       <button className="evaluate-button" onClick={() => openEvaluation(employee)}>{evaluation ? "แก้ไขผล" : "ประเมิน"}</button>
                     </span>
@@ -762,6 +973,99 @@ export default function Home() {
               })}
               {!filteredEmployees.length && <div className="empty-state">ไม่พบพนักงานตามเงื่อนไขที่เลือก</div>}
             </div>
+          </section>
+        )}
+
+        {view === "profiles" && (
+          <section className="dossier-layout">
+            <aside className="dossier-roster">
+              <div className="dossier-roster-heading"><div><p className="eyebrow">EMPLOYEE FILES</p><h2>เลือกพนักงาน</h2></div><span>{filteredEmployees.length}</span></div>
+              <label className="dossier-search"><span>⌕</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="ค้นหาชื่อหรือตำแหน่ง" /></label>
+              <div className="dossier-people">
+                {filteredEmployees.map((employee) => {
+                  const employeeDocuments = applicationDocuments.filter((document) => document.employeeId === employee.id);
+                  const verified = requiredDocumentTypes.filter((type) => employeeDocuments.some((document) => document.documentType === type && document.status === "verified")).length;
+                  const signed = employmentContracts.some((contract) => contract.employeeId === employee.id && contract.status === "signed");
+                  return <button key={employee.id} className={profileEmployee?.id === employee.id ? "active" : ""} onClick={() => setProfileEmployeeId(employee.id)}><i>{employee.initials || makeInitials(employee.name)}</i><span><strong>{employee.name}</strong><small>{getRole(employee.roleId).shortName} · เอกสาร {verified}/{requiredDocumentTypes.length}</small></span><b className={signed ? "signed" : ""}>{signed ? "✓" : "!"}</b></button>;
+                })}
+              </div>
+            </aside>
+
+            {profileEmployee ? (
+              <section className="dossier-main">
+                <header className="dossier-hero">
+                  <div className="dossier-person"><span>{profileEmployee.initials || makeInitials(profileEmployee.name)}</span><div><p className="eyebrow">DIGITAL EMPLOYEE FILE</p><h2>{profileEmployee.name}</h2><small>{getRole(profileEmployee.roleId).name} · {getRole(profileEmployee.roleId).department}</small></div></div>
+                  <div className="dossier-completeness"><span style={{ "--dossier-score": `${dossierCompleteness}%` } as React.CSSProperties}><b>{dossierCompleteness}%</b></span><div><strong>ความสมบูรณ์ของแฟ้ม</strong><small>{dossierCompleteness >= 85 ? "ข้อมูลพร้อมใช้งาน" : "ยังมีข้อมูลหรือเอกสารที่ต้องเติม"}</small></div></div>
+                  <button onClick={openProfileEditor}>แก้ไขข้อมูล</button>
+                </header>
+
+                <div className="dossier-metrics">
+                  <article><span>▣</span><div><small>เอกสารจำเป็น</small><strong>{verifiedRequiredDocuments}/{requiredDocumentTypes.length}</strong><em>{verifiedRequiredDocuments === requiredDocumentTypes.length ? "ตรวจครบแล้ว" : `ขาด ${requiredDocumentTypes.length - verifiedRequiredDocuments} รายการ`}</em></div></article>
+                  <article><span>✎</span><div><small>สถานะสัญญา</small><strong>{profileContracts[0] ? contractStatusLabel(profileContracts[0].status) : "ยังไม่มีสัญญา"}</strong><em>{profileContracts[0]?.signedAt ? `ลงนาม ${formatUpdatedAt(profileContracts[0].signedAt)}` : "ติดตามในแฟ้มนี้"}</em></div></article>
+                  <article><span>◷</span><div><small>วันเริ่มงาน</small><strong>{profileRecord?.startDate ? new Date(`${profileRecord.startDate}T00:00:00`).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" }) : "ยังไม่ระบุ"}</strong><em>{profileRecord ? employmentTypeLabel(profileRecord.employmentType) : "กรอกข้อมูลการจ้าง"}</em></div></article>
+                </div>
+
+                <div className="dossier-content-grid">
+                  <section className="profile-detail-card">
+                    <div className="dossier-section-heading"><div><p className="eyebrow">PERSONAL & EMPLOYMENT</p><h3>ข้อมูลพนักงานแบบละเอียด</h3></div><button onClick={openProfileEditor}>แก้ไข</button></div>
+                    <div className="profile-facts">
+                      <span><small>อีเมลบริษัท</small><strong>{profileEmployee.email}</strong></span>
+                      <span><small>อีเมลส่วนตัว</small><strong>{profileRecord?.personalEmail || "—"}</strong></span>
+                      <span><small>โทรศัพท์</small><strong>{profileRecord?.phone || "—"}</strong></span>
+                      <span><small>เลขบัตรประชาชน</small><strong>{profileRecord?.nationalIdLast4 ? `X-XXXX-XXXXX-${profileRecord.nationalIdLast4}` : "—"}</strong></span>
+                      <span className="wide"><small>ที่อยู่ปัจจุบัน</small><strong>{profileRecord?.address || "—"}</strong></span>
+                      <span><small>ผู้ติดต่อฉุกเฉิน</small><strong>{profileRecord?.emergencyName || "—"}</strong></span>
+                      <span><small>เบอร์ฉุกเฉิน</small><strong>{profileRecord?.emergencyPhone || "—"}</strong></span>
+                      <span className="wide"><small>การศึกษา</small><strong>{profileRecord?.education || "—"}</strong></span>
+                      <span><small>ประสบการณ์</small><strong>{profileRecord ? `${profileRecord.experienceYears} ปี` : "—"}</strong></span>
+                      <span><small>ช่องทางสมัครงาน</small><strong>{profileRecord?.applicationSource || "—"}</strong></span>
+                    </div>
+                    <div className="privacy-note"><span>⌁</span><p>แสดงเลขบัตรประชาชนเพียง 4 หลักท้าย เพื่อลดการเปิดเผยข้อมูลส่วนบุคคลเกินความจำเป็น</p></div>
+                  </section>
+
+                  <section className="application-documents-card">
+                    <div className="dossier-section-heading"><div><p className="eyebrow">APPLICATION DOCUMENTS</p><h3>เอกสารสมัครงาน</h3></div><span>{verifiedRequiredDocuments}/{requiredDocumentTypes.length} ผ่าน</span></div>
+                    <div className="application-document-list">
+                      {requiredDocumentTypes.map((documentType) => {
+                        const document = profileDocuments.find((item) => item.documentType === documentType);
+                        return <article key={documentType} className={document ? document.status : "missing"}>
+                          <span className="document-mark">{document?.status === "verified" ? "✓" : document?.status === "rejected" ? "!" : document ? "◷" : "＋"}</span>
+                          <div><strong>{documentTypeLabels[documentType]}</strong><small>{document ? `${document.fileName} · ${formatFileSize(document.sizeBytes)}` : "ยังไม่ได้อัปโหลด"}</small>{document?.note && <em>{document.note}</em>}</div>
+                          <b>{document ? documentStatusLabel(document.status) : "ขาดเอกสาร"}</b>
+                          <div className="document-actions">
+                            {document?.storageKey && <a href={`/api/documents?id=${encodeURIComponent(document.id)}`}>ดาวน์โหลด</a>}
+                            {document?.status === "pending" && <><button onClick={() => reviewEmployeeDocument(document, "verified")}>ตรวจผ่าน</button><button className="reject" onClick={() => reviewEmployeeDocument(document, "rejected")}>ให้แก้ไข</button></>}
+                            <label className="upload-document-button">{uploadingDocumentType === documentType ? "กำลังอัปโหลด..." : document ? "อัปโหลดใหม่" : "อัปโหลด"}<input type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" disabled={uploadingDocumentType !== null} onChange={(event) => { const file = event.target.files?.[0]; void uploadEmployeeDocument(documentType, file); event.currentTarget.value = ""; }} /></label>
+                          </div>
+                        </article>;
+                      })}
+                    </div>
+                    <p className="document-help">รองรับ PDF, Word, JPG และ PNG ขนาดไม่เกิน 10 MB ต่อไฟล์</p>
+                  </section>
+
+                  <section className="contracts-card">
+                    <div className="dossier-section-heading"><div><p className="eyebrow">EMPLOYMENT CONTRACTS</p><h3>สัญญาจ้างและการลงนาม</h3></div><button className="contract-create-button" onClick={openContractCreator}>＋ สร้างสัญญา</button></div>
+                    <div className="contract-file-strip">
+                      <span>▤</span><div><strong>ไฟล์ต้นฉบับสัญญา</strong><small>{profileContractDocuments[0]?.fileName ?? "อัปโหลด PDF หรือ Word ก่อนผูกกับสัญญา"}</small></div>
+                      {profileContractDocuments[0]?.storageKey && <a href={`/api/documents?id=${encodeURIComponent(profileContractDocuments[0].id)}`}>ดาวน์โหลด</a>}
+                      <label>{uploadingDocumentType === "contract" ? "กำลังอัปโหลด..." : "อัปโหลดไฟล์"}<input type="file" accept=".pdf,.doc,.docx" disabled={uploadingDocumentType !== null} onChange={(event) => { const file = event.target.files?.[0]; void uploadEmployeeDocument("contract", file); event.currentTarget.value = ""; }} /></label>
+                    </div>
+                    <div className="contract-list">
+                      {profileContracts.map((contract, index) => {
+                        const linkedDocument = applicationDocuments.find((document) => document.id === contract.documentId);
+                        return <article key={contract.id} className={contract.status}>
+                          <span className="contract-sequence">{String(profileContracts.length - index).padStart(2, "0")}</span>
+                          <div className="contract-copy"><span><b className={`contract-status ${contract.status}`}>{contractStatusLabel(contract.status)}</b><small>เวอร์ชัน {contract.version}</small></span><strong>{contract.title}</strong><p>มีผล {new Date(`${contract.effectiveDate}T00:00:00`).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" })}{contract.expiryDate ? ` ถึง ${new Date(`${contract.expiryDate}T00:00:00`).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" })}` : " · ไม่มีกำหนด"}</p>{contract.status === "signed" && <em>ลงนามโดย {contract.signedName} · {formatUpdatedAt(contract.signedAt ?? contract.updatedAt)} · {contract.signerEmail}</em>}</div>
+                          <div className="contract-actions">{linkedDocument?.storageKey && <a href={`/api/documents?id=${encodeURIComponent(linkedDocument.id)}`}>เปิดไฟล์</a>}{contract.status === "draft" && <button onClick={() => void sendEmploymentContract(contract)}>ส่งให้ลงนาม</button>}{(contract.status === "sent" || contract.status === "viewed") && <button onClick={() => openContractSignature(contract)}>ลงนามสัญญา</button>}{contract.status === "signed" && <span>✓ หลักฐานครบ</span>}</div>
+                        </article>;
+                      })}
+                      {!profileContracts.length && <div className="contract-empty"><span>✎</span><div><strong>ยังไม่มีสัญญาจ้าง</strong><p>อัปโหลดไฟล์ต้นฉบับ แล้วสร้างสัญญาเพื่อส่งให้พนักงานลงนาม</p></div><button onClick={openContractCreator}>เริ่มสร้างสัญญา</button></div>}
+                    </div>
+                    <div className="signature-trust-note"><span>i</span><p>การลงนามจะเก็บชื่อผู้ลงนาม คำยินยอม บัญชีผู้ใช้งาน และวันเวลาไว้เป็นหลักฐานอิเล็กทรอนิกส์</p></div>
+                  </section>
+                </div>
+              </section>
+            ) : <div className="empty-state">ยังไม่มีพนักงานในระบบ</div>}
           </section>
         )}
 
@@ -1005,7 +1309,68 @@ export default function Home() {
         )}
       </section>
 
-      <footer><span>PEOPLE PULSE</span><p>KPI · Skill · Work · Mission · Reward Management</p></footer>
+      <footer><span>PEOPLE PULSE</span><p>Profile · Document · Contract · KPI · Skill · Work · Reward</p></footer>
+
+      {showProfileEditor && profileEmployee && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setShowProfileEditor(false)}>
+          <form className="employee-profile-modal" onSubmit={saveEmployeeProfile} role="dialog" aria-modal="true" aria-labelledby="employee-profile-title">
+            <div className="profile-editor-hero"><div className="profile-identity"><span>{profileEmployee.initials || makeInitials(profileEmployee.name)}</span><div><p className="eyebrow">EMPLOYEE PROFILE</p><h2 id="employee-profile-title">ข้อมูลของ {profileEmployee.name}</h2><small>{getRole(profileEmployee.roleId).name} · เก็บเฉพาะข้อมูลที่จำเป็นต่อการจ้างงาน</small></div></div><button type="button" className="modal-close dark" onClick={() => setShowProfileEditor(false)} aria-label="ปิดหน้าต่าง">×</button></div>
+            <div className="profile-editor-body">
+              <div className="form-grid profile-editor-grid">
+                <label><span>อีเมลส่วนตัว</span><input type="email" value={profileForm.personalEmail} onChange={(event) => setProfileForm((form) => ({ ...form, personalEmail: event.target.value }))} placeholder="name@example.com" /></label>
+                <label><span>เบอร์โทรศัพท์</span><input value={profileForm.phone} onChange={(event) => setProfileForm((form) => ({ ...form, phone: event.target.value }))} placeholder="08X-XXX-XXXX" /></label>
+                <label><span>วันเกิด</span><input type="date" value={profileForm.birthDate} onChange={(event) => setProfileForm((form) => ({ ...form, birthDate: event.target.value }))} /></label>
+                <label><span>เลขบัตรประชาชน 4 หลักท้าย</span><input inputMode="numeric" pattern="[0-9]{0,4}" maxLength={4} value={profileForm.nationalIdLast4} onChange={(event) => setProfileForm((form) => ({ ...form, nationalIdLast4: event.target.value.replace(/\D/g, "").slice(0, 4) }))} placeholder="XXXX" /></label>
+                <label className="wide"><span>ที่อยู่ปัจจุบัน</span><textarea value={profileForm.address} onChange={(event) => setProfileForm((form) => ({ ...form, address: event.target.value }))} placeholder="ที่อยู่สำหรับติดต่อและจัดส่งเอกสาร" /></label>
+                <label><span>ผู้ติดต่อฉุกเฉิน</span><input value={profileForm.emergencyName} onChange={(event) => setProfileForm((form) => ({ ...form, emergencyName: event.target.value }))} /></label>
+                <label><span>เบอร์โทรฉุกเฉิน</span><input value={profileForm.emergencyPhone} onChange={(event) => setProfileForm((form) => ({ ...form, emergencyPhone: event.target.value }))} /></label>
+                <label><span>วันเริ่มงาน</span><input required type="date" value={profileForm.startDate} onChange={(event) => setProfileForm((form) => ({ ...form, startDate: event.target.value }))} /></label>
+                <label><span>ประเภทการจ้าง</span><select value={profileForm.employmentType} onChange={(event) => setProfileForm((form) => ({ ...form, employmentType: event.target.value as EmployeeProfileRecord["employmentType"] }))}><option value="permanent">พนักงานประจำ</option><option value="contract">พนักงานสัญญาจ้าง</option><option value="probation">ทดลองงาน</option><option value="intern">ฝึกงาน</option></select></label>
+                <label className="wide"><span>การศึกษาสูงสุด</span><input value={profileForm.education} onChange={(event) => setProfileForm((form) => ({ ...form, education: event.target.value }))} placeholder="วุฒิการศึกษา สาขา และสถาบัน" /></label>
+                <label><span>ประสบการณ์รวม (ปี)</span><input type="number" min="0" max="60" value={profileForm.experienceYears} onChange={(event) => setProfileForm((form) => ({ ...form, experienceYears: Number(event.target.value) }))} /></label>
+                <label><span>ช่องทางสมัครงาน</span><input value={profileForm.applicationSource} onChange={(event) => setProfileForm((form) => ({ ...form, applicationSource: event.target.value }))} placeholder="เช่น Career Page, Referral" /></label>
+              </div>
+              <div className="privacy-note"><span>⌁</span><p>ข้อมูลส่วนบุคคลและเอกสารพนักงานควรให้เฉพาะผู้มีหน้าที่ด้าน HR เข้าถึง และใช้ตามวัตถุประสงค์การจ้างงานเท่านั้น</p></div>
+            </div>
+            <div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setShowProfileEditor(false)}>ยกเลิก</button><button className="primary-button" disabled={isSaving}>{isSaving ? "กำลังบันทึก..." : "บันทึกโปรไฟล์"}</button></div>
+          </form>
+        </div>
+      )}
+
+      {showContractForm && profileEmployee && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setShowContractForm(false)}>
+          <form className="contract-form-modal" onSubmit={createEmploymentContract} role="dialog" aria-modal="true" aria-labelledby="contract-form-title">
+            <div className="contract-form-hero"><div><p className="eyebrow">NEW EMPLOYMENT CONTRACT</p><h2 id="contract-form-title">สร้างสัญญาของ {profileEmployee.name}</h2><p>ผูกไฟล์ต้นฉบับ กำหนดวันที่มีผล และส่งเข้าสู่ขั้นตอนลงนาม</p></div><button type="button" className="modal-close dark" onClick={() => setShowContractForm(false)} aria-label="ปิดหน้าต่าง">×</button></div>
+            <div className="contract-form-body">
+              <div className="form-grid contract-form-grid">
+                <label className="wide"><span>ชื่อสัญญา</span><input required value={contractForm.title} onChange={(event) => setContractForm((form) => ({ ...form, title: event.target.value }))} /></label>
+                <label><span>เวอร์ชัน</span><input required value={contractForm.version} onChange={(event) => setContractForm((form) => ({ ...form, version: event.target.value }))} /></label>
+                <label><span>สถานะเริ่มต้น</span><select value={contractForm.status} onChange={(event) => setContractForm((form) => ({ ...form, status: event.target.value as "draft" | "sent" }))}><option value="sent">ส่งให้ลงนาม</option><option value="draft">เก็บเป็นฉบับร่าง</option></select></label>
+                <label><span>วันที่มีผล</span><input required type="date" value={contractForm.effectiveDate} onChange={(event) => setContractForm((form) => ({ ...form, effectiveDate: event.target.value }))} /></label>
+                <label><span>วันสิ้นสุด (ถ้ามี)</span><input type="date" value={contractForm.expiryDate} onChange={(event) => setContractForm((form) => ({ ...form, expiryDate: event.target.value }))} /></label>
+                <label className="wide"><span>ไฟล์ต้นฉบับสัญญา</span><select required value={contractForm.documentId} onChange={(event) => setContractForm((form) => ({ ...form, documentId: event.target.value }))}><option value="">เลือกไฟล์สัญญา</option>{profileContractDocuments.map((document) => <option key={document.id} value={document.id}>{document.fileName} · อัปโหลด {formatUpdatedAt(document.uploadedAt)}</option>)}</select></label>
+              </div>
+              {!profileContractDocuments.length && <div className="contract-file-warning"><span>!</span><p><strong>ยังไม่มีไฟล์สัญญา</strong> ปิดหน้าต่างนี้แล้วอัปโหลดไฟล์สัญญาในส่วน “สัญญาจ้างและการลงนาม” ก่อน</p></div>}
+            </div>
+            <div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setShowContractForm(false)}>ยกเลิก</button><button className="primary-button" disabled={isSaving || !contractForm.documentId}>{isSaving ? "กำลังสร้าง..." : contractForm.status === "sent" ? "สร้างและส่งให้ลงนาม" : "บันทึกฉบับร่าง"}</button></div>
+          </form>
+        </div>
+      )}
+
+      {contractToSign && profileEmployee && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setContractToSign(null)}>
+          <form className="signature-modal" onSubmit={signEmploymentContract} role="dialog" aria-modal="true" aria-labelledby="signature-title">
+            <div className="signature-hero"><span>✎</span><div><p className="eyebrow">ELECTRONIC SIGNATURE</p><h2 id="signature-title">ลงนามสัญญาอิเล็กทรอนิกส์</h2><p>{contractToSign.title} · เวอร์ชัน {contractToSign.version}</p></div><button type="button" className="modal-close dark" onClick={() => setContractToSign(null)} aria-label="ปิดหน้าต่าง">×</button></div>
+            <div className="signature-body">
+              <div className="contract-sign-summary"><span><small>ผู้ลงนาม</small><strong>{profileEmployee.name}</strong></span><span><small>วันที่มีผล</small><strong>{new Date(`${contractToSign.effectiveDate}T00:00:00`).toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric" })}</strong></span></div>
+              <label className="signature-name-field"><span>พิมพ์ชื่อ–นามสกุลให้ตรงกับโปรไฟล์</span><input required value={signatureForm.signedName} onChange={(event) => setSignatureForm((form) => ({ ...form, signedName: event.target.value }))} /><em>{signatureForm.signedName || "ชื่อผู้ลงนาม"}</em></label>
+              <label className="signature-consent"><input type="checkbox" checked={signatureForm.consent} onChange={(event) => setSignatureForm((form) => ({ ...form, consent: event.target.checked }))} /><span><strong>ยืนยันการลงนาม</strong> ข้าพเจ้าได้อ่าน เข้าใจ และยอมรับข้อกำหนดในสัญญาจ้างฉบับนี้ และยืนยันใช้ชื่อที่พิมพ์เป็นลายเซ็นอิเล็กทรอนิกส์</span></label>
+              <div className="signature-audit"><span>⌁</span><p>ระบบจะบันทึกบัญชีผู้ใช้งาน ชื่อผู้ลงนาม คำยินยอม และวันเวลาที่ลงนามไว้ในประวัติสัญญา</p></div>
+            </div>
+            <div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setContractToSign(null)}>ยกเลิก</button><button className="primary-button" disabled={isSaving || !signatureForm.consent || signatureForm.signedName.trim() !== profileEmployee.name.trim()}>{isSaving ? "กำลังลงนาม..." : "ยืนยันและลงนามสัญญา"}</button></div>
+          </form>
+        </div>
+      )}
 
       {showWorkForm && (
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setShowWorkForm(false)}>

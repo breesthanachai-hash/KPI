@@ -7,8 +7,8 @@ export async function generateMetadata(): Promise<Metadata> {
   const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host") ?? "localhost:3000";
   const protocol = requestHeaders.get("x-forwarded-proto") ?? (host.includes("localhost") ? "http" : "https");
   const origin = `${protocol}://${host}`;
-  const title = "People Pulse — ระบบบริหารบุคลากร งาน และรางวัล";
-  const description = "เชื่อม KPI สกิล โปรเจกต์ งาน ภารกิจ Talent Fit เงินเดือน และระบบสะสมแต้มแลกรางวัลไว้ในที่เดียว";
+  const title = "People Pulse — แฟ้มพนักงาน เอกสาร และสัญญา";
+  const description = "บริหารโปรไฟล์พนักงาน เอกสารสมัครงาน สัญญาจ้าง ลายเซ็นอิเล็กทรอนิกส์ KPI สกิล งาน และรางวัลไว้ในระบบเดียว";
 
   return {
     metadataBase: new URL(origin),
@@ -19,7 +19,7 @@ export async function generateMetadata(): Promise<Metadata> {
       description,
       type: "website",
       locale: "th_TH",
-      images: [{ url: new URL("/og.png", origin).toString(), width: 1536, height: 1024, alt: "People Pulse Mission and Reward Center" }],
+      images: [{ url: new URL("/og.png", origin).toString(), width: 1536, height: 1024, alt: "People Pulse Employee Digital Dossier" }],
     },
     twitter: {
       card: "summary_large_image",

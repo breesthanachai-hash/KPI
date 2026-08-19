@@ -36,26 +36,40 @@ test("builds the People Pulse KPI product bundle", async () => {
   assert.match(pageAsset, /saveWorkItem/);
   assert.match(pageAsset, /saveProject/);
   assert.match(pageAsset, /redeemReward/);
+  assert.match(pageAsset, /แฟ้มพนักงาน/);
+  assert.match(pageAsset, /EMPLOYEE DIGITAL DOSSIER/);
+  assert.match(pageAsset, /เอกสารสมัครงาน/);
+  assert.match(pageAsset, /ลงนามสัญญาอิเล็กทรอนิกส์/);
+  assert.match(pageAsset, /saveEmployeeProfile/);
+  assert.match(pageAsset, /createContract/);
+  assert.match(pageAsset, /signContract/);
   assert.match(pageAsset, /รายละเอียดสกิล \(ปัจจุบัน\/เป้าหมาย\)/);
-  assert.match(layout, /People Pulse — ระบบบริหารบุคลากร งาน และรางวัล/);
+  assert.match(layout, /People Pulse — แฟ้มพนักงาน เอกสาร และสัญญา/);
   assert.match(layout, /\/og\.png/);
   assert.doesNotMatch(pageAsset, /Your site is taking shape|Building your site|codex-preview/i);
 });
 
-test("ships durable KPI, skill, work and reward storage", async () => {
-  const [hosting, migration, workforceMigration, workMigration, packagedMigration, packagedWorkforceMigration, packagedWorkMigration, page, schema] = await Promise.all([
+test("ships durable people, document, contract, work and reward storage", async () => {
+  const [hosting, migration, workforceMigration, workMigration, dossierMigration, dossierIndexMigration, packagedMigration, packagedWorkforceMigration, packagedWorkMigration, packagedDossierMigration, packagedDossierIndexMigration, page, schema, documentRoute, nextConfig] = await Promise.all([
     readFile(new URL("../.openai/hosting.json", import.meta.url), "utf8"),
     readFile(new URL("../drizzle/0000_marvelous_pandemic.sql", import.meta.url), "utf8"),
     readFile(new URL("../drizzle/0001_outstanding_leper_queen.sql", import.meta.url), "utf8"),
     readFile(new URL("../drizzle/0002_legal_vector.sql", import.meta.url), "utf8"),
+    readFile(new URL("../drizzle/0003_light_runaways.sql", import.meta.url), "utf8"),
+    readFile(new URL("../drizzle/0004_tricky_domino.sql", import.meta.url), "utf8"),
     readFile(new URL("../dist/.openai/drizzle/0000_marvelous_pandemic.sql", import.meta.url), "utf8"),
     readFile(new URL("../dist/.openai/drizzle/0001_outstanding_leper_queen.sql", import.meta.url), "utf8"),
     readFile(new URL("../dist/.openai/drizzle/0002_legal_vector.sql", import.meta.url), "utf8"),
+    readFile(new URL("../dist/.openai/drizzle/0003_light_runaways.sql", import.meta.url), "utf8"),
+    readFile(new URL("../dist/.openai/drizzle/0004_tricky_domino.sql", import.meta.url), "utf8"),
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/documents/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../next.config.ts", import.meta.url), "utf8"),
   ]);
 
   assert.match(hosting, /"d1":\s*"DB"/);
+  assert.match(hosting, /"r2":\s*"FILES"/);
   assert.match(migration, /CREATE TABLE `employees`/);
   assert.match(migration, /CREATE TABLE `evaluations`/);
   assert.equal(packagedMigration, migration);
@@ -68,6 +82,12 @@ test("ships durable KPI, skill, work and reward storage", async () => {
   assert.match(workMigration, /CREATE TABLE `rewards`/);
   assert.match(workMigration, /CREATE TABLE `reward_redemptions`/);
   assert.equal(packagedWorkMigration, workMigration);
+  assert.match(dossierMigration, /CREATE TABLE `employee_profiles`/);
+  assert.match(dossierMigration, /CREATE TABLE `application_documents`/);
+  assert.match(dossierMigration, /CREATE TABLE `employment_contracts`/);
+  assert.equal(packagedDossierMigration, dossierMigration);
+  assert.match(dossierIndexMigration, /application_documents_required_type_unique/);
+  assert.equal(packagedDossierIndexMigration, dossierIndexMigration);
   assert.match(schema, /kpiScores/);
   assert.match(schema, /skillScores/);
   assert.match(schema, /currentSalary/);
@@ -77,10 +97,18 @@ test("ships durable KPI, skill, work and reward storage", async () => {
   assert.match(schema, /workItems/);
   assert.match(schema, /pointLedger/);
   assert.match(schema, /rewardRedemptions/);
+  assert.match(schema, /employeeProfiles/);
+  assert.match(schema, /applicationDocuments/);
+  assert.match(schema, /employmentContracts/);
   assert.match(page, /saveEvaluation/);
   assert.match(page, /saveHrPlan/);
   assert.match(page, /saveWorkItem/);
   assert.match(page, /redeemReward/);
+  assert.match(page, /saveEmployeeProfile/);
+  assert.match(page, /signEmploymentContract/);
+  assert.match(documentRoute, /getFilesBucket/);
+  assert.match(documentRoute, /10 \* 1024 \* 1024/);
+  assert.match(nextConfig, /bodySizeLimit:\s*"10mb"/);
   assert.match(page, /exportReport/);
   await assert.rejects(access(new URL("app/_sites-preview", projectRoot)));
 });

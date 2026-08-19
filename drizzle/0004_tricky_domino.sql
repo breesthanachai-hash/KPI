@@ -1,0 +1,2 @@
+DROP INDEX `application_documents_employee_type_unique`;--> statement-breakpoint
+CREATE UNIQUE INDEX `application_documents_required_type_unique` ON `application_documents` (`employee_id`,`document_type`) WHERE "application_documents"."document_type" NOT IN ('contract', 'other');

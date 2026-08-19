@@ -121,6 +121,60 @@ export type RewardRedemptionRecord = {
   updatedAt: string;
 };
 
+export type EmployeeProfileRecord = {
+  employeeId: string;
+  personalEmail: string;
+  phone: string;
+  birthDate: string;
+  nationalIdLast4: string;
+  address: string;
+  emergencyName: string;
+  emergencyPhone: string;
+  startDate: string;
+  employmentType: "permanent" | "contract" | "probation" | "intern";
+  education: string;
+  experienceYears: number;
+  applicationSource: string;
+  updatedAt: string;
+};
+
+export type ApplicationDocumentRecord = {
+  id: string;
+  employeeId: string;
+  documentType: "resume" | "id_card" | "house_registration" | "transcript" | "portfolio" | "bank_account" | "medical_certificate" | "contract" | "other";
+  title: string;
+  fileName: string;
+  storageKey: string;
+  contentType: string;
+  sizeBytes: number;
+  status: "pending" | "verified" | "rejected";
+  note: string;
+  uploadedBy: string;
+  uploadedAt: string;
+  verifiedBy: string | null;
+  verifiedAt: string | null;
+};
+
+export type EmploymentContractRecord = {
+  id: string;
+  employeeId: string;
+  documentId: string | null;
+  title: string;
+  version: string;
+  status: "draft" | "sent" | "viewed" | "signed" | "cancelled";
+  effectiveDate: string;
+  expiryDate: string | null;
+  sentAt: string | null;
+  signedName: string | null;
+  signedAt: string | null;
+  consentText: string;
+  signerUserId: string | null;
+  signerEmail: string | null;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type EvaluationRecord = {
   id: string;
   employeeId: string;
@@ -318,6 +372,32 @@ export const seedPointLedger: PointLedgerRecord[] = [
 ];
 
 export const seedRewardRedemptions: RewardRedemptionRecord[] = [];
+
+export const seedEmployeeProfiles: EmployeeProfileRecord[] = [
+  { employeeId: "emp-narin", personalEmail: "narin.k@example.com", phone: "089-245-6712", birthDate: "1990-04-18", nationalIdLast4: "4821", address: "เขตบางรัก กรุงเทพมหานคร", emergencyName: "นลินี กิตติคุณ", emergencyPhone: "081-345-9981", startDate: "2022-02-01", employmentType: "permanent", education: "บริหารธุรกิจบัณฑิต มหาวิทยาลัยเชียงใหม่", experienceYears: 9, applicationSource: "Employee Referral", updatedAt: "2026-08-10T07:00:00.000Z" },
+  { employeeId: "emp-pimchanok", personalEmail: "pim.s@example.com", phone: "086-725-1840", birthDate: "1995-11-09", nationalIdLast4: "1906", address: "เขตพญาไท กรุงเทพมหานคร", emergencyName: "ภาณุ สุขใจ", emergencyPhone: "094-551-2088", startDate: "2023-06-15", employmentType: "permanent", education: "นิเทศศาสตรบัณฑิต มหาวิทยาลัยกรุงเทพ", experienceYears: 5, applicationSource: "LinkedIn", updatedAt: "2026-08-08T07:00:00.000Z" },
+  { employeeId: "emp-thanawat", personalEmail: "thanawat.p@example.com", phone: "092-448-3207", birthDate: "1997-01-21", nationalIdLast4: "7334", address: "อำเภอเมือง นนทบุรี", emergencyName: "ธัญชนก พงศ์ศรี", emergencyPhone: "089-780-4421", startDate: "2024-01-08", employmentType: "permanent", education: "ศิลปศาสตรบัณฑิต มหาวิทยาลัยรามคำแหง", experienceYears: 4, applicationSource: "JobsDB", updatedAt: "2026-08-09T07:00:00.000Z" },
+  { employeeId: "emp-supakorn", personalEmail: "supakorn.w@example.com", phone: "095-113-7846", birthDate: "1992-07-02", nationalIdLast4: "6158", address: "เขตสวนหลวง กรุงเทพมหานคร", emergencyName: "ศิริพร วัฒนะ", emergencyPhone: "086-331-0094", startDate: "2021-09-01", employmentType: "permanent", education: "วิศวกรรมศาสตรบัณฑิต มหาวิทยาลัยเทคโนโลยีพระจอมเกล้าธนบุรี", experienceYears: 8, applicationSource: "Tech Community", updatedAt: "2026-08-10T07:00:00.000Z" },
+  { employeeId: "emp-kanyarat", personalEmail: "kanyarat.c@example.com", phone: "081-624-9155", birthDate: "1993-05-13", nationalIdLast4: "3407", address: "เขตจตุจักร กรุงเทพมหานคร", emergencyName: "กฤตชัย ชัยพร", emergencyPhone: "098-205-7814", startDate: "2022-11-16", employmentType: "permanent", education: "รัฐศาสตรบัณฑิต มหาวิทยาลัยธรรมศาสตร์", experienceYears: 7, applicationSource: "Career Page", updatedAt: "2026-08-11T07:00:00.000Z" },
+  { employeeId: "emp-nattapong", personalEmail: "nattapong.t@example.com", phone: "088-275-6339", birthDate: "1991-09-27", nationalIdLast4: "9274", address: "อำเภอปากเกร็ด นนทบุรี", emergencyName: "นิชา ตั้งใจ", emergencyPhone: "082-661-7400", startDate: "2023-03-01", employmentType: "permanent", education: "บริหารธุรกิจมหาบัณฑิต มหาวิทยาลัยเกษตรศาสตร์", experienceYears: 10, applicationSource: "Recruiter", updatedAt: "2026-08-08T07:00:00.000Z" },
+  { employeeId: "emp-sirilak", personalEmail: "sirilak.r@example.com", phone: "093-508-2871", birthDate: "1998-12-04", nationalIdLast4: "2059", address: "เขตดินแดง กรุงเทพมหานคร", emergencyName: "สุกัญญา รุ่งเรือง", emergencyPhone: "090-664-5271", startDate: "2026-07-01", employmentType: "probation", education: "อักษรศาสตรบัณฑิต มหาวิทยาลัยศิลปากร", experienceYears: 3, applicationSource: "University Alumni", updatedAt: "2026-08-07T07:00:00.000Z" },
+  { employeeId: "emp-pattarapon", personalEmail: "pattarapon.p@example.com", phone: "097-362-8814", birthDate: "1996-08-19", nationalIdLast4: "7740", address: "เขตบางนา กรุงเทพมหานคร", emergencyName: "พรพิมล พูนทรัพย์", emergencyPhone: "084-411-7350", startDate: "2026-06-16", employmentType: "probation", education: "วิทยาศาสตรบัณฑิต มหาวิทยาลัยมหิดล", experienceYears: 4, applicationSource: "GitHub Portfolio", updatedAt: "2026-08-07T07:00:00.000Z" },
+];
+
+export const seedApplicationDocuments: ApplicationDocumentRecord[] = [
+  { id: "doc-narin-resume", employeeId: "emp-narin", documentType: "resume", title: "ประวัติย่อ (Resume)", fileName: "resume-narin.pdf", storageKey: "", contentType: "application/pdf", sizeBytes: 428000, status: "verified", note: "นำเข้าจากแฟ้มเดิม", uploadedBy: "ฝ่ายทรัพยากรบุคคล", uploadedAt: "2022-01-12T04:00:00.000Z", verifiedBy: "ฝ่ายทรัพยากรบุคคล", verifiedAt: "2022-01-13T04:00:00.000Z" },
+  { id: "doc-narin-id", employeeId: "emp-narin", documentType: "id_card", title: "สำเนาบัตรประชาชน", fileName: "id-card-narin.pdf", storageKey: "", contentType: "application/pdf", sizeBytes: 316000, status: "verified", note: "นำเข้าจากแฟ้มเดิม", uploadedBy: "ฝ่ายทรัพยากรบุคคล", uploadedAt: "2022-01-12T04:10:00.000Z", verifiedBy: "ฝ่ายทรัพยากรบุคคล", verifiedAt: "2022-01-13T04:10:00.000Z" },
+  { id: "doc-narin-transcript", employeeId: "emp-narin", documentType: "transcript", title: "วุฒิการศึกษา / Transcript", fileName: "transcript-narin.pdf", storageKey: "", contentType: "application/pdf", sizeBytes: 520000, status: "verified", note: "นำเข้าจากแฟ้มเดิม", uploadedBy: "ฝ่ายทรัพยากรบุคคล", uploadedAt: "2022-01-12T04:20:00.000Z", verifiedBy: "ฝ่ายทรัพยากรบุคคล", verifiedAt: "2022-01-13T04:20:00.000Z" },
+  { id: "doc-pim-resume", employeeId: "emp-pimchanok", documentType: "resume", title: "ประวัติย่อ (Resume)", fileName: "resume-pimchanok.pdf", storageKey: "", contentType: "application/pdf", sizeBytes: 376000, status: "verified", note: "นำเข้าจากระบบสรรหา", uploadedBy: "Recruitment Team", uploadedAt: "2023-05-20T04:00:00.000Z", verifiedBy: "ฝ่ายทรัพยากรบุคคล", verifiedAt: "2023-05-22T04:00:00.000Z" },
+  { id: "doc-sirilak-resume", employeeId: "emp-sirilak", documentType: "resume", title: "ประวัติย่อ (Resume)", fileName: "resume-sirilak.pdf", storageKey: "", contentType: "application/pdf", sizeBytes: 390000, status: "verified", note: "ตรวจแล้วจากระบบสรรหา", uploadedBy: "Recruitment Team", uploadedAt: "2026-05-18T04:00:00.000Z", verifiedBy: "ฝ่ายทรัพยากรบุคคล", verifiedAt: "2026-05-20T04:00:00.000Z" },
+  { id: "doc-sirilak-id", employeeId: "emp-sirilak", documentType: "id_card", title: "สำเนาบัตรประชาชน", fileName: "id-card-sirilak.pdf", storageKey: "", contentType: "application/pdf", sizeBytes: 280000, status: "pending", note: "รอตรวจความชัดเจน", uploadedBy: "ศิริลักษณ์ รุ่งเรือง", uploadedAt: "2026-06-20T04:00:00.000Z", verifiedBy: null, verifiedAt: null },
+];
+
+export const seedEmploymentContracts: EmploymentContractRecord[] = [
+  { id: "contract-narin-2022", employeeId: "emp-narin", documentId: null, title: "สัญญาจ้างพนักงานประจำ", version: "1.0", status: "signed", effectiveDate: "2022-02-01", expiryDate: null, sentAt: "2022-01-18T04:00:00.000Z", signedName: "นรินทร์ กิตติคุณ", signedAt: "2022-01-19T06:30:00.000Z", consentText: "ข้าพเจ้าได้อ่านและยอมรับข้อกำหนดในสัญญาจ้างฉบับนี้", signerUserId: "legacy-import", signerEmail: "narin@peoplepulse.co", createdBy: "ฝ่ายทรัพยากรบุคคล", createdAt: "2022-01-18T04:00:00.000Z", updatedAt: "2022-01-19T06:30:00.000Z" },
+  { id: "contract-sirilak-2026", employeeId: "emp-sirilak", documentId: null, title: "สัญญาจ้างและเงื่อนไขทดลองงาน", version: "1.0", status: "sent", effectiveDate: "2026-07-01", expiryDate: "2026-10-28", sentAt: "2026-06-18T03:00:00.000Z", signedName: null, signedAt: null, consentText: "", signerUserId: null, signerEmail: null, createdBy: "ฝ่ายทรัพยากรบุคคล", createdAt: "2026-06-18T03:00:00.000Z", updatedAt: "2026-06-18T03:00:00.000Z" },
+  { id: "contract-pattarapon-2026", employeeId: "emp-pattarapon", documentId: null, title: "สัญญาจ้างและเงื่อนไขทดลองงาน", version: "1.0", status: "draft", effectiveDate: "2026-06-16", expiryDate: "2026-10-13", sentAt: null, signedName: null, signedAt: null, consentText: "", signerUserId: null, signerEmail: null, createdBy: "ฝ่ายทรัพยากรบุคคล", createdAt: "2026-06-10T03:00:00.000Z", updatedAt: "2026-06-10T03:00:00.000Z" },
+];
 
 export function getRole(roleId: string) {
   return roles.find((role) => role.id === roleId) ?? roles[0];
