@@ -95,6 +95,29 @@ export const workItems = sqliteTable("work_items", {
   index("work_items_due_idx").on(table.dueDate),
 ]);
 
+export const workSubmissions = sqliteTable("work_submissions", {
+  id: text("id").primaryKey(),
+  workItemId: text("work_item_id").notNull().references(() => workItems.id, { onDelete: "cascade" }),
+  employeeId: text("employee_id").notNull().references(() => employees.id, { onDelete: "cascade" }),
+  submissionType: text("submission_type", { enum: ["video", "drive", "social", "document", "design", "code", "sales", "service", "hr", "other"] }).notNull().default("other"),
+  title: text("title").notNull(),
+  linkUrl: text("link_url").notNull().default(""),
+  note: text("note").notNull().default(""),
+  fileName: text("file_name").notNull().default(""),
+  storageKey: text("storage_key").notNull().default(""),
+  contentType: text("content_type").notNull().default("application/octet-stream"),
+  sizeBytes: integer("size_bytes").notNull().default(0),
+  status: text("status", { enum: ["submitted", "approved", "revision"] }).notNull().default("submitted"),
+  submittedBy: text("submitted_by").notNull().default(""),
+  submittedAt: text("submitted_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  reviewedBy: text("reviewed_by"),
+  reviewedAt: text("reviewed_at"),
+  reviewerNote: text("reviewer_note").notNull().default(""),
+}, (table) => [
+  index("work_submissions_work_status_idx").on(table.workItemId, table.status),
+  index("work_submissions_employee_submitted_idx").on(table.employeeId, table.submittedAt),
+]);
+
 export const rewards = sqliteTable("rewards", {
   id: text("id").primaryKey(),
   title: text("title").notNull(),
@@ -150,6 +173,9 @@ export const employeeProfiles = sqliteTable("employee_profiles", {
   education: text("education").notNull().default(""),
   experienceYears: integer("experience_years").notNull().default(0),
   applicationSource: text("application_source").notNull().default(""),
+  profileImageKey: text("profile_image_key").notNull().default(""),
+  profileImageContentType: text("profile_image_content_type").notNull().default(""),
+  profileImageUpdatedAt: text("profile_image_updated_at"),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 

@@ -135,7 +135,30 @@ export type EmployeeProfileRecord = {
   education: string;
   experienceYears: number;
   applicationSource: string;
+  profileImageKey?: string;
+  profileImageContentType?: string;
+  profileImageUpdatedAt?: string | null;
   updatedAt: string;
+};
+
+export type WorkSubmissionRecord = {
+  id: string;
+  workItemId: string;
+  employeeId: string;
+  submissionType: "video" | "drive" | "social" | "document" | "design" | "code" | "sales" | "service" | "hr" | "other";
+  title: string;
+  linkUrl: string;
+  note: string;
+  fileName: string;
+  storageKey: string;
+  contentType: string;
+  sizeBytes: number;
+  status: "submitted" | "approved" | "revision";
+  submittedBy: string;
+  submittedAt: string;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+  reviewerNote: string;
 };
 
 export type ApplicationDocumentRecord = {
@@ -277,6 +300,26 @@ export const roles: RoleTemplate[] = [
     ],
   },
   {
+    id: "video-editor",
+    name: "นักตัดต่อวิดีโอ",
+    shortName: "ครีเอทีฟ",
+    department: "ครีเอทีฟและโปรดักชัน",
+    departmentId: "creative",
+    trend: 3.4,
+    kpis: [
+      { id: "edit-delivery", name: "ส่งงานตัดต่อตรงเวลา", weight: 30, target: "≥ 95%" },
+      { id: "revision-rate", name: "จำนวนรอบแก้ไขเฉลี่ย", weight: 25, target: "≤ 2 รอบ" },
+      { id: "quality-approval", name: "งานผ่านคุณภาพครั้งแรก", weight: 25, target: "≥ 85%" },
+      { id: "content-performance", name: "ผลงานคอนเทนต์หลังเผยแพร่", weight: 20, target: "ตามเป้าแคมเปญ" },
+    ],
+    skills: [
+      { id: "video-editing", name: "การตัดต่อและเล่าเรื่อง", target: "ระดับ 4 จาก 5", targetLevel: 4 },
+      { id: "motion-graphics", name: "โมชั่นกราฟิก", target: "ระดับ 3 จาก 5", targetLevel: 3 },
+      { id: "sound-design", name: "การออกแบบเสียง", target: "ระดับ 3 จาก 5", targetLevel: 3 },
+      { id: "creative-collaboration", name: "การทำงานร่วมกับทีมครีเอทีฟ", target: "ระดับ 4 จาก 5", targetLevel: 4 },
+    ],
+  },
+  {
     id: "hr",
     name: "เจ้าหน้าที่ทรัพยากรบุคคล",
     shortName: "บุคคล",
@@ -303,6 +346,7 @@ export const roleSalaryBands: Record<string, { min: number; mid: number; max: nu
   marketing: { min: 30000, mid: 42000, max: 58000 },
   "customer-service": { min: 24000, mid: 32000, max: 42000 },
   developer: { min: 45000, mid: 65000, max: 90000 },
+  "video-editor": { min: 28000, mid: 40000, max: 60000 },
   hr: { min: 32000, mid: 45000, max: 62000 },
 };
 

@@ -24,8 +24,23 @@ interface D1Database {
   dump(): Promise<ArrayBuffer>;
 }
 
+interface R2ObjectBody {
+  body: ReadableStream;
+  size: number;
+}
+
+interface R2Bucket {
+  put(key: string, value: ReadableStream | ArrayBuffer | Blob | string, options?: {
+    httpMetadata?: { contentType?: string };
+    customMetadata?: Record<string, string>;
+  }): Promise<unknown>;
+  get(key: string): Promise<R2ObjectBody | null>;
+  delete(key: string): Promise<void>;
+}
+
 declare module "cloudflare:workers" {
   export const env: {
     DB?: D1Database;
+    FILES?: R2Bucket;
   };
 }

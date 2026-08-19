@@ -89,6 +89,27 @@ export function ensureDatabase() {
     d1.prepare("CREATE INDEX IF NOT EXISTS work_items_project_status_idx ON work_items (project_id, status)"),
     d1.prepare("CREATE INDEX IF NOT EXISTS work_items_assignee_status_idx ON work_items (assignee_employee_id, status)"),
     d1.prepare("CREATE INDEX IF NOT EXISTS work_items_due_idx ON work_items (due_date)"),
+    d1.prepare(`CREATE TABLE IF NOT EXISTS work_submissions (
+      id TEXT PRIMARY KEY NOT NULL,
+      work_item_id TEXT NOT NULL REFERENCES work_items(id) ON DELETE CASCADE,
+      employee_id TEXT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+      submission_type TEXT NOT NULL DEFAULT 'other',
+      title TEXT NOT NULL,
+      link_url TEXT NOT NULL DEFAULT '',
+      note TEXT NOT NULL DEFAULT '',
+      file_name TEXT NOT NULL DEFAULT '',
+      storage_key TEXT NOT NULL DEFAULT '',
+      content_type TEXT NOT NULL DEFAULT 'application/octet-stream',
+      size_bytes INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'submitted',
+      submitted_by TEXT NOT NULL DEFAULT '',
+      submitted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      reviewed_by TEXT,
+      reviewed_at TEXT,
+      reviewer_note TEXT NOT NULL DEFAULT ''
+    )`),
+    d1.prepare("CREATE INDEX IF NOT EXISTS work_submissions_work_status_idx ON work_submissions (work_item_id, status)"),
+    d1.prepare("CREATE INDEX IF NOT EXISTS work_submissions_employee_submitted_idx ON work_submissions (employee_id, submitted_at)"),
     d1.prepare(`CREATE TABLE IF NOT EXISTS rewards (
       id TEXT PRIMARY KEY NOT NULL,
       title TEXT NOT NULL,
@@ -138,6 +159,9 @@ export function ensureDatabase() {
       education TEXT NOT NULL DEFAULT '',
       experience_years INTEGER NOT NULL DEFAULT 0,
       application_source TEXT NOT NULL DEFAULT '',
+      profile_image_key TEXT NOT NULL DEFAULT '',
+      profile_image_content_type TEXT NOT NULL DEFAULT '',
+      profile_image_updated_at TEXT,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )`),
     d1.prepare(`CREATE TABLE IF NOT EXISTS application_documents (

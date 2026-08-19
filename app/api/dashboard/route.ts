@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { ensureDatabase } from "../../../db/initialize";
-import { applicationDocuments, employeeProfiles, employees, employmentContracts, evaluations, hrProfiles, pointLedger, projects, rewardRedemptions, rewards, talentActions, workItems } from "../../../db/schema";
+import { applicationDocuments, employeeProfiles, employees, employmentContracts, evaluations, hrProfiles, pointLedger, projects, rewardRedemptions, rewards, talentActions, workItems, workSubmissions } from "../../../db/schema";
 import {
   clampScore,
   clampSkillLevel,
@@ -137,13 +137,14 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const period = url.searchParams.get("period") ?? periods[0];
     const db = getDb();
-    const [employeeRows, evaluationRows, hrProfileRows, talentActionRows, projectRows, workItemRows, rewardRows, pointRows, redemptionRows, employeeProfileRows, applicationDocumentRows, employmentContractRows] = await Promise.all([
+    const [employeeRows, evaluationRows, hrProfileRows, talentActionRows, projectRows, workItemRows, workSubmissionRows, rewardRows, pointRows, redemptionRows, employeeProfileRows, applicationDocumentRows, employmentContractRows] = await Promise.all([
       db.select().from(employees),
       db.select().from(evaluations).where(eq(evaluations.period, period)),
       db.select().from(hrProfiles),
       db.select().from(talentActions),
       db.select().from(projects),
       db.select().from(workItems),
+      db.select().from(workSubmissions),
       db.select().from(rewards),
       db.select().from(pointLedger),
       db.select().from(rewardRedemptions),
@@ -152,7 +153,7 @@ export async function GET(request: Request) {
       db.select().from(employmentContracts),
     ]);
 
-    return Response.json({ employees: employeeRows, evaluations: evaluationRows, hrProfiles: hrProfileRows, talentActions: talentActionRows, projects: projectRows, workItems: workItemRows, rewards: rewardRows, pointLedger: pointRows, rewardRedemptions: redemptionRows, employeeProfiles: employeeProfileRows, applicationDocuments: applicationDocumentRows, employmentContracts: employmentContractRows, period });
+    return Response.json({ employees: employeeRows, evaluations: evaluationRows, hrProfiles: hrProfileRows, talentActions: talentActionRows, projects: projectRows, workItems: workItemRows, workSubmissions: workSubmissionRows, rewards: rewardRows, pointLedger: pointRows, rewardRedemptions: redemptionRows, employeeProfiles: employeeProfileRows, applicationDocuments: applicationDocumentRows, employmentContracts: employmentContractRows, period });
   } catch (error) {
     return apiError(error);
   }
@@ -220,6 +221,13 @@ type WorkItemPayload = {
   dueDate?: string;
 };
 
+type ReviewWorkSubmissionPayload = {
+  action: "reviewWorkSubmission";
+  submissionId?: string;
+  status?: "approved" | "revision";
+  reviewerNote?: string;
+};
+
 type RedeemRewardPayload = {
   action: "redeemReward";
   employeeId?: string;
@@ -276,7 +284,7 @@ type SendContractPayload = {
 export async function POST(request: Request) {
   try {
     await ensureSeedData();
-    const payload = await request.json() as EmployeePayload | EvaluationPayload | HrPlanPayload | CompleteTalentActionPayload | ProjectPayload | WorkItemPayload | RedeemRewardPayload | EmployeeProfilePayload | DocumentStatusPayload | ContractPayload | SignContractPayload | SendContractPayload;
+    const payload = await request.json() as EmployeePayload | EvaluationPayload | HrPlanPayload | CompleteTalentActionPayload | ProjectPayload | WorkItemPayload | ReviewWorkSubmissionPayload | RedeemRewardPayload | EmployeeProfilePayload | DocumentStatusPayload | ContractPayload | SignContractPayload | SendContractPayload;
     const db = getDb();
 
     if (payload.action === "createEmployee") {
@@ -508,6 +516,35 @@ export async function POST(request: Request) {
         [pointEntry] = await db.select().from(pointLedger).where(eq(pointLedger.id, pointId)).limit(1);
       }
       return Response.json({ workItem, pointEntry });
+    }
+
+    if (payload.action === "reviewWorkSubmission") {
+      const submissionId = payload.submissionId ?? "";
+      const status = payload.status;
+      if (status !== "approved" && status !== "revision") return Response.json({ error: "สถานะตรวจหลักฐานไม่ถูกต้อง" }, { status: 400 });
+      const [submission] = await db.select().from(workSubmissions).where(eq(workSubmissions.id, submissionId)).limit(1);
+      if (!submission) return Response.json({ error: "ไม่พบหลักฐานงานที่เลือก" }, { status: 404 });
+      const [workItem] = await db.select().from(workItems).where(eq(workItems.id, submission.workItemId)).limit(1);
+      if (!workItem) return Response.json({ error: "ไม่พบงานของหลักฐานรายการนี้" }, { status: 404 });
+      const now = new Date().toISOString();
+      const actor = authenticatedActor(request);
+      const reviewerNote = payload.reviewerNote?.trim().slice(0, 1000) ?? "";
+      const reviewedSubmission = { ...submission, status, reviewedBy: actor.name, reviewedAt: now, reviewerNote };
+      await db.update(workSubmissions).set({ status, reviewedBy: actor.name, reviewedAt: now, reviewerNote }).where(eq(workSubmissions.id, submissionId));
+
+      const updatedWorkItem = status === "approved"
+        ? { ...workItem, status: "done" as const, progress: 100, updatedAt: now }
+        : { ...workItem, status: "in_progress" as const, progress: Math.min(90, workItem.progress), updatedAt: now };
+      await db.update(workItems).set({ status: updatedWorkItem.status, progress: updatedWorkItem.progress, updatedAt: now }).where(eq(workItems.id, workItem.id));
+
+      let pointEntry = null;
+      if (status === "approved" && workItem.points > 0) {
+        const sourceType = workItem.kind === "mission" ? "mission" as const : "task" as const;
+        const pointId = `points-${workItem.id}`;
+        await db.insert(pointLedger).values({ id: pointId, employeeId: workItem.assigneeEmployeeId, sourceType, sourceId: workItem.id, points: workItem.points, note: `อนุมัติหลักฐานและปิด${workItem.kind === "mission" ? "ภารกิจ" : "งาน"}: ${workItem.title}`, createdAt: now }).onConflictDoNothing();
+        [pointEntry] = await db.select().from(pointLedger).where(eq(pointLedger.id, pointId)).limit(1);
+      }
+      return Response.json({ workSubmission: reviewedSubmission, workItem: updatedWorkItem, pointEntry });
     }
 
     if (payload.action === "redeemReward") {

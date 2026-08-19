@@ -14,6 +14,7 @@ import {
   type RewardRedemptionRecord,
   type TalentActionRecord,
   type WorkItemRecord,
+  type WorkSubmissionRecord,
   getRole,
   makeInitials,
   periods,
@@ -108,6 +109,7 @@ const roleTalentProfiles: Record<string, Record<TalentDimensionId, number>> = {
   marketing: { analysis: 5, communication: 4, problemSolving: 4, leadership: 3, execution: 4 },
   "customer-service": { analysis: 3, communication: 5, problemSolving: 5, leadership: 3, execution: 4 },
   developer: { analysis: 5, communication: 3, problemSolving: 5, leadership: 3, execution: 5 },
+  "video-editor": { analysis: 4, communication: 4, problemSolving: 4, leadership: 3, execution: 5 },
   hr: { analysis: 4, communication: 5, problemSolving: 4, leadership: 5, execution: 4 },
 };
 
@@ -128,11 +130,39 @@ const skillDimensionWeights: Record<string, Partial<Record<TalentDimensionId, nu
   "system-design": { analysis: .6, problemSolving: .4 },
   quality: { execution: .6, problemSolving: .4 },
   collaboration: { communication: .7, leadership: .3 },
+  "video-editing": { execution: .6, analysis: .25, communication: .15 },
+  "motion-graphics": { execution: .6, problemSolving: .4 },
+  "sound-design": { analysis: .4, execution: .6 },
+  "creative-collaboration": { communication: .7, leadership: .3 },
   "people-analytics": { analysis: .8, problemSolving: .2 },
   "labor-practice": { execution: .7, analysis: .3 },
   facilitation: { communication: .7, leadership: .3 },
   "talent-development": { leadership: .6, communication: .4 },
 };
+
+const submissionTypeLabels: Record<WorkSubmissionRecord["submissionType"], string> = {
+  video: "วิดีโอ / Showreel",
+  drive: "Drive / Cloud Storage",
+  social: "โพสต์ Social Media",
+  document: "เอกสาร / รายงาน",
+  design: "งานออกแบบ / Artwork",
+  code: "โค้ด / Pull Request / Deploy",
+  sales: "ยอดขาย / CRM / ใบเสนอราคา",
+  service: "Ticket / หลักฐานบริการลูกค้า",
+  hr: "เอกสาร HR / การอบรม",
+  other: "หลักฐานประเภทอื่น",
+};
+
+const roleProofGuides: Record<string, { defaultType: WorkSubmissionRecord["submissionType"]; headline: string; examples: string[] }> = {
+  "video-editor": { defaultType: "video", headline: "งานตัดต่อและโปรดักชัน", examples: ["ลิงก์วิดีโอฉบับ Final", "โฟลเดอร์ Drive ที่เก็บไฟล์ต้นฉบับ", "ลิงก์โพสต์ Social Media ที่เผยแพร่แล้ว"] },
+  marketing: { defaultType: "social", headline: "งานการตลาดและคอนเทนต์", examples: ["ลิงก์โพสต์หรือหน้าแคมเปญ", "รายงานผลโฆษณา / Dashboard", "ไฟล์ Artwork, Copy หรือแผนคอนเทนต์"] },
+  developer: { defaultType: "code", headline: "งานพัฒนาซอฟต์แวร์", examples: ["ลิงก์ Pull Request หรือ Commit", "ลิงก์ระบบที่ Deploy แล้ว", "Test report, Screenshot หรือคู่มือใช้งาน"] },
+  "sales-manager": { defaultType: "sales", headline: "งานขายและบริหารลูกค้า", examples: ["เลขดีลหรือรายงานจาก CRM", "ใบเสนอราคา / PO / หลักฐานปิดการขาย", "บันทึกประชุมหรือการยืนยันจากลูกค้า"] },
+  "customer-service": { defaultType: "service", headline: "งานบริการลูกค้า", examples: ["เลข Ticket หรือ Case ที่ปิดแล้ว", "บทสนทนาที่ปกปิดข้อมูลอ่อนไหว", "ผล CSAT หรือรายงานการแก้ปัญหา"] },
+  hr: { defaultType: "hr", headline: "งานทรัพยากรบุคคล", examples: ["แบบฟอร์มหรือเอกสารที่อนุมัติแล้ว", "รายชื่อผู้เข้าอบรม / ผลประเมิน", "รายงานสรรหา Onboarding หรือนโยบาย"] },
+};
+
+const defaultProofGuide = { defaultType: "document" as const, headline: "หลักฐานการส่งมอบงาน", examples: ["ลิงก์ผลงานหรือระบบที่ใช้งานจริง", "ไฟล์รายงาน รูปภาพ หรือเอกสารยืนยัน", "ข้อความสรุปผลลัพธ์และเกณฑ์ที่ทำสำเร็จ"] };
 
 const emptyTalentProfile = (): Record<TalentDimensionId, number> => ({ analysis: 0, communication: 0, problemSolving: 0, leadership: 0, execution: 0 });
 
@@ -236,6 +266,10 @@ function workStatusLabel(status: WorkItemRecord["status"]) {
   return { todo: "ต้องทำ", in_progress: "กำลังทำ", review: "รอตรวจ", done: "เสร็จแล้ว" }[status];
 }
 
+function workSubmissionStatusLabel(status: WorkSubmissionRecord["status"]) {
+  return { submitted: "รอตรวจหลักฐาน", approved: "อนุมัติแล้ว", revision: "ส่งกลับให้แก้ไข" }[status];
+}
+
 function workPriorityLabel(priority: WorkItemRecord["priority"]) {
   return { low: "ทั่วไป", medium: "ปานกลาง", high: "สำคัญ", urgent: "เร่งด่วน" }[priority];
 }
@@ -298,6 +332,7 @@ export default function Home() {
   const [talentActions, setTalentActions] = useState<TalentActionRecord[]>(seedTalentActions);
   const [projects, setProjects] = useState<ProjectRecord[]>(seedProjects);
   const [workItems, setWorkItems] = useState<WorkItemRecord[]>(seedWorkItems);
+  const [workSubmissions, setWorkSubmissions] = useState<WorkSubmissionRecord[]>([]);
   const [rewards, setRewards] = useState<RewardRecord[]>(seedRewards);
   const [pointLedger, setPointLedger] = useState<PointLedgerRecord[]>(seedPointLedger);
   const [rewardRedemptions, setRewardRedemptions] = useState<RewardRedemptionRecord[]>(seedRewardRedemptions);
@@ -319,12 +354,16 @@ export default function Home() {
   const [showWorkForm, setShowWorkForm] = useState(false);
   const [showProjectForm, setShowProjectForm] = useState(false);
   const [editingWorkItem, setEditingWorkItem] = useState<WorkItemRecord | null>(null);
+  const [submissionWorkItem, setSubmissionWorkItem] = useState<WorkItemRecord | null>(null);
+  const [submissionFile, setSubmissionFile] = useState<File | null>(null);
+  const [reviewerNote, setReviewerNote] = useState("");
   const [rewardToRedeem, setRewardToRedeem] = useState<RewardRecord | null>(null);
   const [profileEmployeeId, setProfileEmployeeId] = useState(seedEmployees[0].id);
   const [showProfileEditor, setShowProfileEditor] = useState(false);
   const [showContractForm, setShowContractForm] = useState(false);
   const [contractToSign, setContractToSign] = useState<EmploymentContractRecord | null>(null);
   const [uploadingDocumentType, setUploadingDocumentType] = useState<ApplicationDocumentRecord["documentType"] | null>(null);
+  const [uploadingProfileImage, setUploadingProfileImage] = useState(false);
   const [powerLeftId, setPowerLeftId] = useState(seedEmployees[0]?.id ?? "");
   const [powerRightId, setPowerRightId] = useState(seedEmployees[1]?.id ?? seedEmployees[0]?.id ?? "");
   const [workFilter, setWorkFilter] = useState<"all" | WorkItemRecord["kind"]>("all");
@@ -332,6 +371,7 @@ export default function Home() {
   const [employeeForm, setEmployeeForm] = useState({ name: "", email: "", roleId: roles[0].id, manager: "" });
   const [hrForm, setHrForm] = useState({ actionId: "", currentSalary: 0, salaryReviewMonth: "มกราคม 2570", planType: "upskill" as TalentActionRecord["type"], title: "", dueDate: "2026-09-30", targetRoleId: roles[0].id });
   const [workForm, setWorkForm] = useState({ projectId: seedProjects[0].id, assigneeEmployeeId: seedEmployees[0].id, kind: "task" as WorkItemRecord["kind"], title: "", description: "", priority: "medium" as WorkItemRecord["priority"], status: "todo" as WorkItemRecord["status"], progress: 0, points: 100, dueDate: "2026-09-05" });
+  const [submissionForm, setSubmissionForm] = useState({ submissionType: "document" as WorkSubmissionRecord["submissionType"], title: "", linkUrl: "", note: "" });
   const [projectForm, setProjectForm] = useState({ name: "", description: "", ownerEmployeeId: seedEmployees[0].id, status: "active" as ProjectRecord["status"], dueDate: "2026-10-30", color: "forest" });
   const [rewardEmployeeId, setRewardEmployeeId] = useState(seedEmployees[0].id);
   const [profileForm, setProfileForm] = useState<Omit<EmployeeProfileRecord, "employeeId" | "updatedAt">>({ personalEmail: "", phone: "", birthDate: "", nationalIdLast4: "", address: "", emergencyName: "", emergencyPhone: "", startDate: "", employmentType: "permanent", education: "", experienceYears: 0, applicationSource: "" });
@@ -342,7 +382,7 @@ export default function Home() {
     const controller = new AbortController();
     fetch(`/api/dashboard?period=${encodeURIComponent(period)}`, { signal: controller.signal })
       .then(async (response) => {
-        const body = await response.json() as { employees?: EmployeeRecord[]; evaluations?: EvaluationRecord[]; hrProfiles?: HrProfileRecord[]; talentActions?: TalentActionRecord[]; projects?: ProjectRecord[]; workItems?: WorkItemRecord[]; rewards?: RewardRecord[]; pointLedger?: PointLedgerRecord[]; rewardRedemptions?: RewardRedemptionRecord[]; employeeProfiles?: EmployeeProfileRecord[]; applicationDocuments?: ApplicationDocumentRecord[]; employmentContracts?: EmploymentContractRecord[]; error?: string };
+        const body = await response.json() as { employees?: EmployeeRecord[]; evaluations?: EvaluationRecord[]; hrProfiles?: HrProfileRecord[]; talentActions?: TalentActionRecord[]; projects?: ProjectRecord[]; workItems?: WorkItemRecord[]; workSubmissions?: WorkSubmissionRecord[]; rewards?: RewardRecord[]; pointLedger?: PointLedgerRecord[]; rewardRedemptions?: RewardRedemptionRecord[]; employeeProfiles?: EmployeeProfileRecord[]; applicationDocuments?: ApplicationDocumentRecord[]; employmentContracts?: EmploymentContractRecord[]; error?: string };
         if (!response.ok) throw new Error(body.error ?? "โหลดข้อมูลไม่สำเร็จ");
         setEmployees(body.employees ?? []);
         setEvaluations(body.evaluations ?? []);
@@ -350,6 +390,7 @@ export default function Home() {
         setTalentActions(body.talentActions ?? []);
         setProjects(body.projects ?? []);
         setWorkItems(body.workItems ?? []);
+        setWorkSubmissions(body.workSubmissions ?? []);
         setRewards(body.rewards ?? []);
         setPointLedger(body.pointLedger ?? []);
         setRewardRedemptions(body.rewardRedemptions ?? []);
@@ -369,7 +410,7 @@ export default function Home() {
   }, [period]);
 
   useEffect(() => {
-    if (!selectedEmployee && !skillProfileEmployee && !hrEmployee && !showAddEmployee && !showWorkForm && !showProjectForm && !rewardToRedeem && !showProfileEditor && !showContractForm && !contractToSign) return;
+    if (!selectedEmployee && !skillProfileEmployee && !hrEmployee && !showAddEmployee && !showWorkForm && !showProjectForm && !submissionWorkItem && !rewardToRedeem && !showProfileEditor && !showContractForm && !contractToSign) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setSelectedEmployee(null);
@@ -378,6 +419,7 @@ export default function Home() {
         setShowAddEmployee(false);
         setShowWorkForm(false);
         setShowProjectForm(false);
+        setSubmissionWorkItem(null);
         setRewardToRedeem(null);
         setShowProfileEditor(false);
         setShowContractForm(false);
@@ -386,7 +428,7 @@ export default function Home() {
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [selectedEmployee, skillProfileEmployee, hrEmployee, showAddEmployee, showWorkForm, showProjectForm, rewardToRedeem, showProfileEditor, showContractForm, contractToSign]);
+  }, [selectedEmployee, skillProfileEmployee, hrEmployee, showAddEmployee, showWorkForm, showProjectForm, submissionWorkItem, rewardToRedeem, showProfileEditor, showContractForm, contractToSign]);
 
   const evaluationsByEmployee = useMemo(
     () => new Map(evaluations.filter((evaluation) => evaluation.period === period).map((evaluation) => [evaluation.employeeId, evaluation])),
@@ -476,6 +518,17 @@ export default function Home() {
   }, [activeDepartment, employeesById, projectsById, workFilter, workItems, workSearch]);
   const openWorkItems = workItems.filter((item) => item.status !== "done");
   const workCompletion = workItems.length ? workItems.filter((item) => item.status === "done").length / workItems.length * 100 : 0;
+  const workSubmissionsByItem = useMemo(() => {
+    const grouped = new Map<string, WorkSubmissionRecord[]>();
+    workSubmissions.slice().sort((a, b) => b.submittedAt.localeCompare(a.submittedAt)).forEach((submission) => {
+      grouped.set(submission.workItemId, [...(grouped.get(submission.workItemId) ?? []), submission]);
+    });
+    return grouped;
+  }, [workSubmissions]);
+  const pendingSubmissionCount = workSubmissions.filter((submission) => submission.status === "submitted").length;
+  const activeWorkSubmissions = submissionWorkItem ? workSubmissionsByItem.get(submissionWorkItem.id) ?? [] : [];
+  const submissionAssignee = submissionWorkItem ? employeesById.get(submissionWorkItem.assigneeEmployeeId) ?? null : null;
+  const activeProofGuide = submissionAssignee ? roleProofGuides[submissionAssignee.roleId] ?? defaultProofGuide : defaultProofGuide;
   const totalPoints = [...pointBalances.values()].reduce((sum, points) => sum + points, 0);
   const allPowerProfiles = useMemo(
     () => employees
@@ -656,6 +709,62 @@ export default function Home() {
     }
   };
 
+  const openSubmissionCenter = (item: WorkItemRecord) => {
+    const assignee = employeesById.get(item.assigneeEmployeeId);
+    const guide = assignee ? roleProofGuides[assignee.roleId] ?? defaultProofGuide : defaultProofGuide;
+    setSubmissionWorkItem(item);
+    setSubmissionForm({ submissionType: guide.defaultType, title: item.title, linkUrl: "", note: "" });
+    setSubmissionFile(null);
+    setReviewerNote("");
+  };
+
+  const submitWorkProof = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!submissionWorkItem) return;
+    setIsSaving(true);
+    try {
+      const formData = new FormData();
+      formData.set("workItemId", submissionWorkItem.id);
+      formData.set("submissionType", submissionForm.submissionType);
+      formData.set("title", submissionForm.title);
+      formData.set("linkUrl", submissionForm.linkUrl);
+      formData.set("note", submissionForm.note);
+      if (submissionFile) formData.set("file", submissionFile);
+      const response = await fetch("/api/work-submissions", { method: "POST", body: formData });
+      const body = await response.json() as { workSubmission?: WorkSubmissionRecord; workItem?: WorkItemRecord; error?: string };
+      if (!response.ok || !body.workSubmission || !body.workItem) throw new Error(body.error ?? "ส่งหลักฐานงานไม่สำเร็จ");
+      setWorkSubmissions((items) => [body.workSubmission as WorkSubmissionRecord, ...items]);
+      setWorkItems((items) => items.map((item) => item.id === body.workItem?.id ? body.workItem as WorkItemRecord : item));
+      setSubmissionWorkItem(body.workItem);
+      setSubmissionForm((form) => ({ ...form, title: submissionWorkItem.title, linkUrl: "", note: "" }));
+      setSubmissionFile(null);
+      showToast("ส่งหลักฐานแล้ว งานถูกย้ายไปรอตรวจ");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "ส่งหลักฐานงานไม่สำเร็จ");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const reviewWorkProof = async (submission: WorkSubmissionRecord, status: "approved" | "revision") => {
+    setIsSaving(true);
+    try {
+      const response = await fetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "reviewWorkSubmission", submissionId: submission.id, status, reviewerNote }) });
+      const body = await response.json() as { workSubmission?: WorkSubmissionRecord; workItem?: WorkItemRecord; pointEntry?: PointLedgerRecord | null; error?: string };
+      if (!response.ok || !body.workSubmission || !body.workItem) throw new Error(body.error ?? "ตรวจหลักฐานไม่สำเร็จ");
+      setWorkSubmissions((items) => items.map((item) => item.id === body.workSubmission?.id ? body.workSubmission as WorkSubmissionRecord : item));
+      setWorkItems((items) => items.map((item) => item.id === body.workItem?.id ? body.workItem as WorkItemRecord : item));
+      if (body.pointEntry) setPointLedger((items) => [...items.filter((item) => item.id !== body.pointEntry?.id), body.pointEntry as PointLedgerRecord]);
+      setSubmissionWorkItem(body.workItem);
+      setReviewerNote("");
+      showToast(status === "approved" ? `อนุมัติหลักฐานและมอบ ${body.workItem.points} แต้มแล้ว` : "ส่งงานกลับให้แก้ไขแล้ว");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "ตรวจหลักฐานไม่สำเร็จ");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const saveProject = async (event: React.FormEvent) => {
     event.preventDefault();
     setIsSaving(true);
@@ -729,6 +838,25 @@ export default function Home() {
       showToast(error instanceof Error ? error.message : "บันทึกโปรไฟล์ไม่สำเร็จ");
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const uploadProfileImage = async (file?: File) => {
+    if (!profileEmployee || !file) return;
+    setUploadingProfileImage(true);
+    try {
+      const formData = new FormData();
+      formData.set("employeeId", profileEmployee.id);
+      formData.set("file", file);
+      const response = await fetch("/api/profile-image", { method: "POST", body: formData });
+      const body = await response.json() as { employeeProfile?: EmployeeProfileRecord; error?: string };
+      if (!response.ok || !body.employeeProfile) throw new Error(body.error ?? "อัปโหลดรูปโปรไฟล์ไม่สำเร็จ");
+      setEmployeeProfiles((items) => [...items.filter((item) => item.employeeId !== body.employeeProfile?.employeeId), body.employeeProfile as EmployeeProfileRecord]);
+      showToast(`อัปเดตรูปโปรไฟล์ของ ${profileEmployee.name} แล้ว`);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "อัปโหลดรูปโปรไฟล์ไม่สำเร็จ");
+    } finally {
+      setUploadingProfileImage(false);
     }
   };
 
@@ -1058,7 +1186,7 @@ export default function Home() {
                 const status = scoreStatus(evaluation?.totalScore ?? null);
                 return (
                   <div className="employee-table-row" role="row" key={employee.id}>
-                    <span className="employee-identity"><i>{employee.initials || makeInitials(employee.name)}</i><span><strong>{employee.name}</strong><small>{employee.email}</small></span></span>
+                    <span className="employee-identity"><EmployeeAvatar employee={employee} profile={employeeProfilesById.get(employee.id)} className="avatar-table" /><span><strong>{employee.name}</strong><small>{employee.email}</small></span></span>
                     <span><strong>{role.name}</strong><small>{role.department} · ผู้จัดการ {employee.manager || "—"}</small></span>
                     <ScoreCell value={evaluation?.kpiScore ?? null} />
                     <ScoreCell value={evaluation?.skillScore ?? null} />
@@ -1086,7 +1214,7 @@ export default function Home() {
                   const employeeDocuments = applicationDocuments.filter((document) => document.employeeId === employee.id);
                   const verified = requiredDocumentTypes.filter((type) => employeeDocuments.some((document) => document.documentType === type && document.status === "verified")).length;
                   const signed = employmentContracts.some((contract) => contract.employeeId === employee.id && contract.status === "signed");
-                  return <button key={employee.id} className={profileEmployee?.id === employee.id ? "active" : ""} onClick={() => setProfileEmployeeId(employee.id)}><i>{employee.initials || makeInitials(employee.name)}</i><span><strong>{employee.name}</strong><small>{getRole(employee.roleId).shortName} · เอกสาร {verified}/{requiredDocumentTypes.length}</small></span><b className={signed ? "signed" : ""}>{signed ? "✓" : "!"}</b></button>;
+                  return <button key={employee.id} className={profileEmployee?.id === employee.id ? "active" : ""} onClick={() => setProfileEmployeeId(employee.id)}><EmployeeAvatar employee={employee} profile={employeeProfilesById.get(employee.id)} className="avatar-roster" /><span><strong>{employee.name}</strong><small>{getRole(employee.roleId).shortName} · เอกสาร {verified}/{requiredDocumentTypes.length}</small></span><b className={signed ? "signed" : ""}>{signed ? "✓" : "!"}</b></button>;
                 })}
               </div>
             </aside>
@@ -1094,7 +1222,7 @@ export default function Home() {
             {profileEmployee ? (
               <section className="dossier-main">
                 <header className="dossier-hero">
-                  <div className="dossier-person"><span>{profileEmployee.initials || makeInitials(profileEmployee.name)}</span><div><p className="eyebrow">DIGITAL EMPLOYEE FILE</p><h2>{profileEmployee.name}</h2><small>{getRole(profileEmployee.roleId).name} · {getRole(profileEmployee.roleId).department}</small></div></div>
+                  <div className="dossier-person"><div className="profile-photo-control"><EmployeeAvatar employee={profileEmployee} profile={profileRecord} className="avatar-dossier" /><label>{uploadingProfileImage ? "กำลังอัปโหลด" : "เปลี่ยนรูป"}<input type="file" accept=".jpg,.jpeg,.png,.webp" disabled={uploadingProfileImage} onChange={(event) => { const file = event.target.files?.[0]; void uploadProfileImage(file); event.currentTarget.value = ""; }} /></label></div><div><p className="eyebrow">DIGITAL EMPLOYEE FILE</p><h2>{profileEmployee.name}</h2><small>{getRole(profileEmployee.roleId).name} · {getRole(profileEmployee.roleId).department}</small></div></div>
                   <div className="dossier-completeness"><span style={{ "--dossier-score": `${dossierCompleteness}%` } as React.CSSProperties}><b>{dossierCompleteness}%</b></span><div><strong>ความสมบูรณ์ของแฟ้ม</strong><small>{dossierCompleteness >= 85 ? "ข้อมูลพร้อมใช้งาน" : "ยังมีข้อมูลหรือเอกสารที่ต้องเติม"}</small></div></div>
                   <button onClick={openProfileEditor}>แก้ไขข้อมูล</button>
                 </header>
@@ -1212,7 +1340,7 @@ export default function Home() {
                   return (
                     <article className="individual-skill-card" key={employee.id}>
                       <div className="person-skill-head">
-                        <span className="employee-avatar">{employee.initials || makeInitials(employee.name)}</span>
+                        <EmployeeAvatar employee={employee} profile={employeeProfilesById.get(employee.id)} className="avatar-skill" />
                         <span><strong>{employee.name}</strong><small>{role.name}</small></span>
                         <b className={evaluation && evaluation.skillScore < 80 ? "develop" : ""}>{evaluation ? evaluation.skillScore.toFixed(0) : "—"}<small>/100</small></b>
                       </div>
@@ -1266,7 +1394,7 @@ export default function Home() {
               </div>
               <div className="power-card-grid">
                 {visiblePowerProfiles.map((profile, index) => (
-                  <EmployeePowerCard key={profile.employee.id} profile={profile} rank={index + 1} onCompare={() => comparePowerProfile(profile.employee.id)} />
+                  <EmployeePowerCard key={profile.employee.id} profile={profile} employeeProfile={employeeProfilesById.get(profile.employee.id)} rank={index + 1} onCompare={() => comparePowerProfile(profile.employee.id)} />
                 ))}
                 {!visiblePowerProfiles.length && <div className="empty-state">ไม่พบการ์ดค่าพลังตามเงื่อนไขที่เลือก</div>}
               </div>
@@ -1286,7 +1414,7 @@ export default function Home() {
                   </div>
                   <div className="power-matchup">
                     <div className={`matchup-person ${powerDifference !== null && powerDifference > 0 ? "winner" : ""}`}>
-                      <span>{powerLeft.employee.initials || makeInitials(powerLeft.employee.name)}</span>
+                      <EmployeeAvatar employee={powerLeft.employee} profile={employeeProfilesById.get(powerLeft.employee.id)} className="avatar-matchup" />
                       <div><small>{powerLeft.role.department}</small><strong>{powerLeft.employee.name}</strong><p>{powerLeft.role.name}</p></div>
                       <b>{powerLeft.overall ?? "—"}<small>OVR</small></b>
                     </div>
@@ -1297,7 +1425,7 @@ export default function Home() {
                     <div className={`matchup-person right ${powerDifference !== null && powerDifference < 0 ? "winner" : ""}`}>
                       <b>{powerRight.overall ?? "—"}<small>OVR</small></b>
                       <div><small>{powerRight.role.department}</small><strong>{powerRight.employee.name}</strong><p>{powerRight.role.name}</p></div>
-                      <span>{powerRight.employee.initials || makeInitials(powerRight.employee.name)}</span>
+                      <EmployeeAvatar employee={powerRight.employee} profile={employeeProfilesById.get(powerRight.employee.id)} className="avatar-matchup" />
                     </div>
                   </div>
                   <div className="power-comparison-list">
@@ -1344,7 +1472,7 @@ export default function Home() {
                     const salaryPoint = hrProfile ? Math.min(100, Math.max(0, (hrProfile.currentSalary - salaryBand.min) / (salaryBand.max - salaryBand.min) * 100)) : 0;
                     return (
                       <article className="workforce-row" role="row" key={employee.id}>
-                        <span className="workforce-person"><i>{employee.initials || makeInitials(employee.name)}</i><span><strong>{employee.name}</strong><small>{role.name} · {role.department}</small></span></span>
+                        <span className="workforce-person"><EmployeeAvatar employee={employee} profile={employeeProfilesById.get(employee.id)} className="avatar-workforce" /><span><strong>{employee.name}</strong><small>{role.name} · {role.department}</small></span></span>
                         <span className="workforce-scores"><b>{evaluation ? evaluation.totalScore.toFixed(0) : "—"}<small>KPI รวม</small></b><b className={evaluation && evaluation.skillScore < 80 ? "attention" : ""}>{evaluation ? evaluation.skillScore.toFixed(0) : "—"}<small>สกิล</small></b></span>
                         <span className="workforce-fit"><strong>{bestFit ? `${bestFit.score}%` : "รอประเมิน"}</strong><small>{bestFit?.role.name ?? "ยังไม่มีข้อมูลสกิล"}</small><i><b style={{ width: `${bestFit?.score ?? 0}%` }} /></i></span>
                         <span className="workforce-salary"><strong>{hrProfile ? `฿${formatMoney(hrProfile.currentSalary)}` : "—"}</strong><small>กรอบ ฿{formatMoney(salaryBand.min)}–{formatMoney(salaryBand.max)}</small><i><b style={{ left: `${salaryPoint}%` }} /></i></span>
@@ -1398,7 +1526,7 @@ export default function Home() {
           <section className="mission-layout">
             <div className="mission-summary-grid">
               <MetricCard label="โปรเจกต์ที่กำลังเดิน" value={`${projects.filter((project) => project.status === "active").length} โปรเจกต์`} copy={`${projects.length} โปรเจกต์ทั้งหมด`} icon="◇" />
-              <MetricCard label="งานที่ต้องจัดการ" value={`${openWorkItems.length} รายการ`} copy={`${workItems.filter((item) => item.priority === "urgent" && item.status !== "done").length} งานเร่งด่วน`} tone="warning" icon="✓" />
+              <MetricCard label="งานที่ต้องจัดการ" value={`${openWorkItems.length} รายการ`} copy={`${pendingSubmissionCount} หลักฐานรอตรวจ · ${workItems.filter((item) => item.priority === "urgent" && item.status !== "done").length} งานเร่งด่วน`} tone="warning" icon="✓" />
               <MetricCard label="ความสำเร็จรวม" value={`${workCompletion.toFixed(0)}%`} copy={`${workItems.filter((item) => item.status === "done").length} จาก ${workItems.length} รายการเสร็จแล้ว`} tone="positive" progress={workCompletion} icon="↗" />
               <MetricCard label="แต้มพร้อมใช้ในทีม" value={`${formatMoney(totalPoints)} แต้ม`} copy={`${rewardRedemptions.length} คำขอแลกรางวัล`} icon="★" />
             </div>
@@ -1413,7 +1541,7 @@ export default function Home() {
                       <article key={project.id} className={`project-pulse ${project.color}`}>
                         <div className="project-pulse-top"><b>{projectStatusLabel(project.status)}</b><span>{formatDueDate(project.dueDate)}</span></div>
                         <h3>{project.name}</h3><p>{project.description}</p>
-                        <div className="project-owner"><i>{owner?.initials ?? "PP"}</i><span><small>เจ้าของโปรเจกต์</small><strong>{owner?.name ?? "People Pulse"}</strong></span></div>
+                        <div className="project-owner">{owner ? <EmployeeAvatar employee={owner} profile={employeeProfilesById.get(owner.id)} className="avatar-project" /> : <i className="avatar-media avatar-project">PP</i>}<span><small>เจ้าของโปรเจกต์</small><strong>{owner?.name ?? "People Pulse"}</strong></span></div>
                         <div className="project-progress"><span><small>ความคืบหน้า</small><strong>{progress.toFixed(0)}%</strong></span><i><b style={{ width: `${progress}%` }} /></i><small>{completed}/{items.length} งานเสร็จแล้ว</small></div>
                       </article>
                     );
@@ -1424,7 +1552,7 @@ export default function Home() {
               <aside className="points-leaderboard-card">
                 <div className="section-heading compact"><div><p className="eyebrow">POINTS LEADERBOARD</p><h2>อันดับสะสมแต้ม</h2></div><span className="points-crown">★</span></div>
                 <div className="points-leaderboard-list">
-                  {leaderboard.slice(0, 6).map(({ employee, points }, index) => <article key={employee.id} className={index === 0 ? "champion" : ""}><span className="leader-rank">{index + 1}</span><i>{employee.initials}</i><p><strong>{employee.name}</strong><small>{getRole(employee.roleId).name}</small></p><b>{formatMoney(points)}<small> แต้ม</small></b></article>)}
+                  {leaderboard.slice(0, 6).map(({ employee, points }, index) => <article key={employee.id} className={index === 0 ? "champion" : ""}><span className="leader-rank">{index + 1}</span><EmployeeAvatar employee={employee} profile={employeeProfilesById.get(employee.id)} className="avatar-leader" /><p><strong>{employee.name}</strong><small>{getRole(employee.roleId).name}</small></p><b>{formatMoney(points)}<small> แต้ม</small></b></article>)}
                 </div>
                 <p className="points-note">ทำงานหรือภารกิจสำเร็จ ระบบจะเพิ่มแต้มให้ครั้งเดียวโดยอัตโนมัติ</p>
               </aside>
@@ -1432,7 +1560,7 @@ export default function Home() {
 
             <section className="work-board-card">
               <div className="work-board-heading">
-                <div><p className="eyebrow">SMART TO-DO BOARD</p><h2>งาน รีเควสต์ และภารกิจ</h2><p>ทุกงานเชื่อมกับโปรเจกต์ ผู้รับผิดชอบ ความคืบหน้า และแต้มที่จะได้รับ</p></div>
+                <div><p className="eyebrow">SMART TO-DO BOARD</p><h2>งาน รีเควสต์ และภารกิจ</h2><p>ทุกงานเชื่อมกับผู้รับผิดชอบ หลักฐานการส่งมอบ ขั้นตอนตรวจงาน และแต้มที่จะได้รับ</p></div>
                 <div className="work-board-tools">
                   <div className="work-kind-filter" aria-label="กรองประเภทงาน">
                     {([{ id: "all", label: "ทั้งหมด" }, { id: "task", label: "งาน" }, { id: "request", label: "รีเควสต์" }, { id: "mission", label: "ภารกิจ" }] as const).map((filter) => <button key={filter.id} className={workFilter === filter.id ? "active" : ""} onClick={() => setWorkFilter(filter.id)}>{filter.label}</button>)}
@@ -1450,13 +1578,19 @@ export default function Home() {
                         {items.map((item) => {
                           const project = projectsById.get(item.projectId);
                           const assignee = employeesById.get(item.assigneeEmployeeId);
+                          const submissions = workSubmissionsByItem.get(item.id) ?? [];
+                          const latestSubmission = submissions[0];
                           return (
-                            <button key={item.id} className="work-ticket" onClick={() => openWorkItemForm(item)}>
-                              <span className="work-ticket-meta"><b className={`work-kind ${item.kind}`}>{workKindLabel(item.kind)}</b><i className={`work-priority ${item.priority}`}>{workPriorityLabel(item.priority)}</i></span>
-                              <strong>{item.title}</strong><small>{project?.name ?? "ไม่ระบุโปรเจกต์"}</small>
-                              <span className="ticket-progress"><i><b style={{ width: `${item.progress}%` }} /></i><em>{item.progress}%</em></span>
-                              <span className="work-ticket-foot"><i>{assignee?.initials ?? "PP"}</i><small>{formatDueDate(item.dueDate)}</small><b>★ {item.points}</b></span>
-                            </button>
+                            <article key={item.id} className="work-ticket">
+                              <button className="work-ticket-main" onClick={() => openWorkItemForm(item)}>
+                                <span className="work-ticket-meta"><b className={`work-kind ${item.kind}`}>{workKindLabel(item.kind)}</b><i className={`work-priority ${item.priority}`}>{workPriorityLabel(item.priority)}</i></span>
+                                <strong>{item.title}</strong><small>{project?.name ?? "ไม่ระบุโปรเจกต์"}</small>
+                                {latestSubmission && <span className={`proof-status ${latestSubmission.status}`}>{workSubmissionStatusLabel(latestSubmission.status)} · {submissions.length} รายการ</span>}
+                                <span className="ticket-progress"><i><b style={{ width: `${item.progress}%` }} /></i><em>{item.progress}%</em></span>
+                                <span className="work-ticket-foot">{assignee ? <EmployeeAvatar employee={assignee} profile={employeeProfilesById.get(assignee.id)} className="avatar-ticket" /> : <i className="avatar-media avatar-ticket">PP</i>}<small>{formatDueDate(item.dueDate)}</small><b>★ {item.points}</b></span>
+                              </button>
+                              <div className="work-ticket-actions"><button onClick={() => openWorkItemForm(item)}>รายละเอียด</button><button className="proof" onClick={() => openSubmissionCenter(item)}>{submissions.length ? `หลักฐาน (${submissions.length})` : "ส่งหลักฐาน"}</button></div>
+                            </article>
                           );
                         })}
                         {!items.length && <div className="kanban-empty">ไม่มีรายการ</div>}
@@ -1493,7 +1627,7 @@ export default function Home() {
       {showProfileEditor && profileEmployee && (
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setShowProfileEditor(false)}>
           <form className="employee-profile-modal" onSubmit={saveEmployeeProfile} role="dialog" aria-modal="true" aria-labelledby="employee-profile-title">
-            <div className="profile-editor-hero"><div className="profile-identity"><span>{profileEmployee.initials || makeInitials(profileEmployee.name)}</span><div><p className="eyebrow">EMPLOYEE PROFILE</p><h2 id="employee-profile-title">ข้อมูลของ {profileEmployee.name}</h2><small>{getRole(profileEmployee.roleId).name} · เก็บเฉพาะข้อมูลที่จำเป็นต่อการจ้างงาน</small></div></div><button type="button" className="modal-close dark" onClick={() => setShowProfileEditor(false)} aria-label="ปิดหน้าต่าง">×</button></div>
+            <div className="profile-editor-hero"><div className="profile-identity"><EmployeeAvatar employee={profileEmployee} profile={profileRecord} className="avatar-modal" /><div><p className="eyebrow">EMPLOYEE PROFILE</p><h2 id="employee-profile-title">ข้อมูลของ {profileEmployee.name}</h2><small>{getRole(profileEmployee.roleId).name} · เก็บเฉพาะข้อมูลที่จำเป็นต่อการจ้างงาน</small></div></div><button type="button" className="modal-close dark" onClick={() => setShowProfileEditor(false)} aria-label="ปิดหน้าต่าง">×</button></div>
             <div className="profile-editor-body">
               <div className="form-grid profile-editor-grid">
                 <label><span>อีเมลส่วนตัว</span><input type="email" value={profileForm.personalEmail} onChange={(event) => setProfileForm((form) => ({ ...form, personalEmail: event.target.value }))} placeholder="name@example.com" /></label>
@@ -1579,6 +1713,56 @@ export default function Home() {
         </div>
       )}
 
+      {submissionWorkItem && submissionAssignee && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setSubmissionWorkItem(null)}>
+          <section className="work-submission-modal" role="dialog" aria-modal="true" aria-labelledby="work-submission-title">
+            <div className="submission-hero">
+              <EmployeeAvatar employee={submissionAssignee} profile={employeeProfilesById.get(submissionAssignee.id)} className="avatar-submission" />
+              <div><p className="eyebrow">WORK PROOF CENTER</p><h2 id="work-submission-title">ส่งหลักฐานงาน</h2><p>{submissionWorkItem.title} · {submissionAssignee.name}</p></div>
+              <button className="modal-close dark" onClick={() => setSubmissionWorkItem(null)} aria-label="ปิดหน้าต่าง">×</button>
+            </div>
+            <div className="submission-body">
+              <aside className="proof-guide">
+                <p className="eyebrow">หลักฐานแนะนำตามตำแหน่ง</p>
+                <h3>{activeProofGuide.headline}</h3>
+                <ul>{activeProofGuide.examples.map((example) => <li key={example}>{example}</li>)}</ul>
+                <div><span>i</span><p>ลิงก์ต้องเปิดให้ผู้ตรวจเข้าถึงได้ และไม่ควรมีข้อมูลลูกค้าหรือข้อมูลส่วนบุคคลที่ไม่จำเป็น</p></div>
+              </aside>
+              <div className="submission-workspace">
+                <section className="submission-history">
+                  <div className="submission-section-heading"><div><p className="eyebrow">SUBMISSION HISTORY</p><h3>หลักฐานที่ส่งแล้ว</h3></div><span>{activeWorkSubmissions.length}</span></div>
+                  <div className="submission-list">
+                    {activeWorkSubmissions.map((submission) => (
+                      <article key={submission.id} className={submission.status}>
+                        <div className="submission-list-top"><b>{submissionTypeLabels[submission.submissionType]}</b><span>{workSubmissionStatusLabel(submission.status)}</span></div>
+                        <strong>{submission.title}</strong>
+                        {submission.note && <p>{submission.note}</p>}
+                        <div className="submission-links">{submission.linkUrl && <a href={submission.linkUrl} target="_blank" rel="noreferrer">เปิดลิงก์ผลงาน ↗</a>}{submission.storageKey && <a href={`/api/work-submissions?id=${encodeURIComponent(submission.id)}`}>ดาวน์โหลด {submission.fileName}</a>}</div>
+                        <small>ส่งโดย {submission.submittedBy} · {formatUpdatedAt(submission.submittedAt)}</small>
+                        {submission.reviewerNote && <em>หมายเหตุผู้ตรวจ: {submission.reviewerNote}</em>}
+                        {submission.status === "submitted" && <div className="submission-review"><input value={reviewerNote} onChange={(event) => setReviewerNote(event.target.value)} placeholder="หมายเหตุจากผู้ตรวจ (ถ้ามี)" /><button disabled={isSaving} onClick={() => void reviewWorkProof(submission, "revision")}>ส่งกลับแก้ไข</button><button className="approve" disabled={isSaving} onClick={() => void reviewWorkProof(submission, "approved")}>อนุมัติและปิดงาน ✓</button></div>}
+                      </article>
+                    ))}
+                    {!activeWorkSubmissions.length && <div className="submission-empty"><span>↗</span><strong>ยังไม่มีหลักฐานงาน</strong><p>เพิ่มลิงก์หรือแนบไฟล์ด้วยแบบฟอร์มด้านล่าง</p></div>}
+                  </div>
+                </section>
+                <form className="submission-form" onSubmit={submitWorkProof}>
+                  <div className="submission-section-heading"><div><p className="eyebrow">NEW SUBMISSION</p><h3>เพิ่มหลักฐาน</h3></div><span>รอตรวจ</span></div>
+                  <div className="submission-form-grid">
+                    <label><span>ประเภทหลักฐาน</span><select value={submissionForm.submissionType} onChange={(event) => setSubmissionForm((form) => ({ ...form, submissionType: event.target.value as WorkSubmissionRecord["submissionType"] }))}>{(Object.entries(submissionTypeLabels) as [WorkSubmissionRecord["submissionType"], string][]).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+                    <label><span>ชื่อผลงาน / เวอร์ชัน</span><input required value={submissionForm.title} onChange={(event) => setSubmissionForm((form) => ({ ...form, title: event.target.value }))} placeholder="เช่น Final V3 / Campaign Live" /></label>
+                    <label className="wide"><span>ลิงก์ผลงาน</span><input type="url" value={submissionForm.linkUrl} onChange={(event) => setSubmissionForm((form) => ({ ...form, linkUrl: event.target.value }))} placeholder="https://drive.google.com/... หรือ URL ผลงาน" /></label>
+                    <label className="wide submission-file"><span>ไฟล์แนบ (ถ้ามี)</span><input type="file" accept=".pdf,.doc,.docx,.xlsx,.csv,.txt,.jpg,.jpeg,.png,.webp,.mp4,.zip" onChange={(event) => setSubmissionFile(event.target.files?.[0] ?? null)} /><small>{submissionFile ? `${submissionFile.name} · ${formatFileSize(submissionFile.size)}` : "ไม่เกิน 25 MB — วิดีโอขนาดใหญ่ควรส่งเป็นลิงก์ Drive หรือ YouTube"}</small></label>
+                    <label className="wide"><span>สรุปสิ่งที่ส่งมอบ</span><textarea value={submissionForm.note} onChange={(event) => setSubmissionForm((form) => ({ ...form, note: event.target.value }))} placeholder="อธิบายผลลัพธ์ จุดที่ต้องการให้ตรวจ และรหัสผ่านหากมี" /></label>
+                  </div>
+                  <div className="submission-form-actions"><span>ต้องมีลิงก์หรือไฟล์อย่างน้อย 1 รายการ</span><button disabled={isSaving || (!submissionForm.linkUrl.trim() && !submissionFile)}>{isSaving ? "กำลังส่ง..." : "ส่งหลักฐานเพื่อตรวจ"}</button></div>
+                </form>
+              </div>
+            </div>
+          </section>
+        </div>
+      )}
+
       {showProjectForm && (
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setShowProjectForm(false)}>
           <form className="employee-modal project-form-modal" onSubmit={saveProject} role="dialog" aria-modal="true" aria-labelledby="project-form-title">
@@ -1615,7 +1799,7 @@ export default function Home() {
           <section className="skill-profile-modal" role="dialog" aria-modal="true" aria-labelledby="skill-profile-title">
             <div className="skill-profile-hero">
               <div className="profile-identity">
-                <span>{skillProfileEmployee.initials || makeInitials(skillProfileEmployee.name)}</span>
+                <EmployeeAvatar employee={skillProfileEmployee} profile={employeeProfilesById.get(skillProfileEmployee.id)} className="avatar-modal" />
                 <div><p className="eyebrow">INDIVIDUAL SKILL PROFILE</p><h2 id="skill-profile-title">{skillProfileEmployee.name}</h2><small>{skillProfileRole.name} · {skillProfileRole.department}</small></div>
               </div>
               <button className="modal-close dark" onClick={() => setSkillProfileEmployee(null)} aria-label="ปิดหน้าต่าง">×</button>
@@ -1697,7 +1881,7 @@ export default function Home() {
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setHrEmployee(null)}>
           <form className="hr-plan-modal" onSubmit={saveHrPlan} role="dialog" aria-modal="true" aria-labelledby="hr-plan-title">
             <div className="hr-plan-hero">
-              <div className="profile-identity"><span>{hrEmployee.initials || makeInitials(hrEmployee.name)}</span><div><p className="eyebrow">WORKFORCE PLAN</p><h2 id="hr-plan-title">จัดการแผนของ {hrEmployee.name}</h2><small>{hrEmployeeInsight.role.name} · {hrEmployeeInsight.role.department}</small></div></div>
+              <div className="profile-identity"><EmployeeAvatar employee={hrEmployee} profile={employeeProfilesById.get(hrEmployee.id)} className="avatar-modal" /><div><p className="eyebrow">WORKFORCE PLAN</p><h2 id="hr-plan-title">จัดการแผนของ {hrEmployee.name}</h2><small>{hrEmployeeInsight.role.name} · {hrEmployeeInsight.role.department}</small></div></div>
               <button type="button" className="modal-close dark" onClick={() => setHrEmployee(null)} aria-label="ปิดหน้าต่าง">×</button>
               <div className="hr-plan-snapshot">
                 <span><small>KPI รวม</small><strong>{hrEmployeeInsight.evaluation ? hrEmployeeInsight.evaluation.totalScore.toFixed(1) : "—"}</strong></span>
@@ -1734,7 +1918,7 @@ export default function Home() {
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setSelectedEmployee(null)}>
           <section className="evaluation-modal" role="dialog" aria-modal="true" aria-labelledby="evaluation-title">
             <div className="modal-header">
-              <div className="modal-person"><span>{selectedEmployee.initials}</span><div><p className="eyebrow">แบบประเมินรายบุคคล</p><h2 id="evaluation-title">{selectedEmployee.name}</h2><small>{selectedRole.name} · {period}</small></div></div>
+              <div className="modal-person"><EmployeeAvatar employee={selectedEmployee} profile={employeeProfilesById.get(selectedEmployee.id)} className="avatar-modal" /><div><p className="eyebrow">แบบประเมินรายบุคคล</p><h2 id="evaluation-title">{selectedEmployee.name}</h2><small>{selectedRole.name} · {period}</small></div></div>
               <button className="modal-close" onClick={() => setSelectedEmployee(null)} aria-label="ปิดหน้าต่าง">×</button>
             </div>
             <div className="modal-score-summary">
@@ -1791,7 +1975,19 @@ export default function Home() {
   );
 }
 
-function EmployeePowerCard({ profile, rank, onCompare }: { profile: EmployeePowerProfile; rank: number; onCompare: () => void }) {
+function EmployeeAvatar({ employee, profile, className = "avatar-md" }: { employee: EmployeeRecord; profile?: EmployeeProfileRecord | null; className?: string }) {
+  const imageVersion = profile?.profileImageUpdatedAt ? encodeURIComponent(profile.profileImageUpdatedAt) : "1";
+  return (
+    <i className={`avatar-media ${className}`} aria-hidden="true">
+      {profile?.profileImageKey
+        // The authenticated R2 route serves private employee images and is not compatible with public image optimization.
+        ? <img src={`/api/profile-image?employeeId=${encodeURIComponent(employee.id)}&v=${imageVersion}`} alt="" loading="lazy" /> // eslint-disable-line @next/next/no-img-element
+        : employee.initials || makeInitials(employee.name)}
+    </i>
+  );
+}
+
+function EmployeePowerCard({ profile, employeeProfile, rank, onCompare }: { profile: EmployeePowerProfile; employeeProfile?: EmployeeProfileRecord | null; rank: number; onCompare: () => void }) {
   const { employee, role, overall, potential, stats, tier } = profile;
   return (
     <article className={`employee-power-card ${tier.id}`}>
@@ -1801,7 +1997,7 @@ function EmployeePowerCard({ profile, rank, onCompare }: { profile: EmployeePowe
         <div className="power-card-rank"><span>#{String(rank).padStart(2, "0")}</span><small>LIVE CARD</small></div>
       </header>
       <div className="power-card-person">
-        <span>{employee.initials || makeInitials(employee.name)}</span>
+        <EmployeeAvatar employee={employee} profile={employeeProfile} className="avatar-power" />
         <div><small>{role.department}</small><h3>{employee.name}</h3><p>{role.name}</p></div>
       </div>
       {overall === null ? (
