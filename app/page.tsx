@@ -1249,8 +1249,8 @@ export default function Home() {
               <article className="power-hero-card">
                 <div className="power-hero-copy">
                   <p className="eyebrow">POWER INDEX · {period}</p>
-                  <h2>เห็นจุดเด่นของคน<br />เหมือนดูโปรไฟล์นักกีฬา</h2>
-                  <p>ค่าพลัง 6 ด้านถูกแปลงจาก KPI สกิล และความคืบหน้างานจริง เพื่อให้โค้ชทีมและวางแผนพัฒนาได้ง่ายขึ้น</p>
+                  <h2>เห็นศักยภาพของคน<br />เพื่อจัดทีมได้ตรงจุด</h2>
+                  <p>ค่าพลัง 6 ด้านถูกแปลงจาก KPI สกิล และความคืบหน้างานจริง เพื่อให้หัวหน้าทีมวางแผนพัฒนาและจัดคนให้เหมาะกับงานได้ง่ายขึ้น</p>
                   <div className="power-formula"><span><b>70%</b> ค่าพลังสกิล</span><i>+</i><span><b>30%</b> ผลงาน KPI</span></div>
                 </div>
                 <div className="power-hero-score"><small>TEAM OVR</small><strong>{averagePower ? averagePower.toFixed(0) : "—"}</strong><span>ค่าพลังเฉลี่ยของทีม</span></div>
