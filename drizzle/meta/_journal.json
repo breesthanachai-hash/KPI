@@ -15,6 +15,13 @@
       "when": 1786610429559,
       "tag": "0001_outstanding_leper_queen",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1787152280132,
+      "tag": "0002_legal_vector",
+      "breakpoints": true
     }
   ]
 }

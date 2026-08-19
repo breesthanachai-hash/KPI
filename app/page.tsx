@@ -5,7 +5,12 @@ import {
   type EmployeeRecord,
   type EvaluationRecord,
   type HrProfileRecord,
+  type PointLedgerRecord,
+  type ProjectRecord,
+  type RewardRecord,
+  type RewardRedemptionRecord,
   type TalentActionRecord,
+  type WorkItemRecord,
   getRole,
   makeInitials,
   periods,
@@ -14,10 +19,15 @@ import {
   scoreStatus,
   seedEmployees,
   seedHrProfiles,
+  seedPointLedger,
+  seedProjects,
+  seedRewardRedemptions,
+  seedRewards,
   seedTalentActions,
+  seedWorkItems,
 } from "../lib/kpi-data";
 
-type View = "overview" | "employees" | "skills" | "hr";
+type View = "overview" | "employees" | "skills" | "hr" | "work";
 
 type TalentDimensionId = "analysis" | "communication" | "problemSolving" | "leadership" | "execution";
 
@@ -154,6 +164,22 @@ function actionStatusLabel(status: TalentActionRecord["status"]) {
   return { planned: "วางแผนแล้ว", in_progress: "กำลังดำเนินการ", completed: "เสร็จแล้ว" }[status];
 }
 
+function workKindLabel(kind: WorkItemRecord["kind"]) {
+  return { task: "งาน", request: "รีเควสต์", mission: "ภารกิจ" }[kind];
+}
+
+function workStatusLabel(status: WorkItemRecord["status"]) {
+  return { todo: "ต้องทำ", in_progress: "กำลังทำ", review: "รอตรวจ", done: "เสร็จแล้ว" }[status];
+}
+
+function workPriorityLabel(priority: WorkItemRecord["priority"]) {
+  return { low: "ทั่วไป", medium: "ปานกลาง", high: "สำคัญ", urgent: "เร่งด่วน" }[priority];
+}
+
+function projectStatusLabel(status: ProjectRecord["status"]) {
+  return { planned: "เตรียมเริ่ม", active: "กำลังดำเนินการ", on_hold: "พักไว้", completed: "เสร็จแล้ว" }[status];
+}
+
 export default function Home() {
   const [view, setView] = useState<View>("overview");
   const [activeDepartment, setActiveDepartment] = useState("all");
@@ -164,6 +190,11 @@ export default function Home() {
   );
   const [hrProfiles, setHrProfiles] = useState<HrProfileRecord[]>(seedHrProfiles);
   const [talentActions, setTalentActions] = useState<TalentActionRecord[]>(seedTalentActions);
+  const [projects, setProjects] = useState<ProjectRecord[]>(seedProjects);
+  const [workItems, setWorkItems] = useState<WorkItemRecord[]>(seedWorkItems);
+  const [rewards, setRewards] = useState<RewardRecord[]>(seedRewards);
+  const [pointLedger, setPointLedger] = useState<PointLedgerRecord[]>(seedPointLedger);
+  const [rewardRedemptions, setRewardRedemptions] = useState<RewardRedemptionRecord[]>(seedRewardRedemptions);
   const [selectedEmployee, setSelectedEmployee] = useState<EmployeeRecord | null>(null);
   const [skillProfileEmployee, setSkillProfileEmployee] = useState<EmployeeRecord | null>(null);
   const [hrEmployee, setHrEmployee] = useState<EmployeeRecord | null>(null);
@@ -176,19 +207,33 @@ export default function Home() {
   const [isSaving, setIsSaving] = useState(false);
   const [dataWarning, setDataWarning] = useState("");
   const [showAddEmployee, setShowAddEmployee] = useState(false);
+  const [showWorkForm, setShowWorkForm] = useState(false);
+  const [showProjectForm, setShowProjectForm] = useState(false);
+  const [editingWorkItem, setEditingWorkItem] = useState<WorkItemRecord | null>(null);
+  const [rewardToRedeem, setRewardToRedeem] = useState<RewardRecord | null>(null);
+  const [workFilter, setWorkFilter] = useState<"all" | WorkItemRecord["kind"]>("all");
+  const [workSearch, setWorkSearch] = useState("");
   const [employeeForm, setEmployeeForm] = useState({ name: "", email: "", roleId: roles[0].id, manager: "" });
   const [hrForm, setHrForm] = useState({ actionId: "", currentSalary: 0, salaryReviewMonth: "มกราคม 2570", planType: "upskill" as TalentActionRecord["type"], title: "", dueDate: "2026-09-30", targetRoleId: roles[0].id });
+  const [workForm, setWorkForm] = useState({ projectId: seedProjects[0].id, assigneeEmployeeId: seedEmployees[0].id, kind: "task" as WorkItemRecord["kind"], title: "", description: "", priority: "medium" as WorkItemRecord["priority"], status: "todo" as WorkItemRecord["status"], progress: 0, points: 100, dueDate: "2026-09-05" });
+  const [projectForm, setProjectForm] = useState({ name: "", description: "", ownerEmployeeId: seedEmployees[0].id, status: "active" as ProjectRecord["status"], dueDate: "2026-10-30", color: "forest" });
+  const [rewardEmployeeId, setRewardEmployeeId] = useState(seedEmployees[0].id);
 
   useEffect(() => {
     const controller = new AbortController();
     fetch(`/api/dashboard?period=${encodeURIComponent(period)}`, { signal: controller.signal })
       .then(async (response) => {
-        const body = await response.json() as { employees?: EmployeeRecord[]; evaluations?: EvaluationRecord[]; hrProfiles?: HrProfileRecord[]; talentActions?: TalentActionRecord[]; error?: string };
+        const body = await response.json() as { employees?: EmployeeRecord[]; evaluations?: EvaluationRecord[]; hrProfiles?: HrProfileRecord[]; talentActions?: TalentActionRecord[]; projects?: ProjectRecord[]; workItems?: WorkItemRecord[]; rewards?: RewardRecord[]; pointLedger?: PointLedgerRecord[]; rewardRedemptions?: RewardRedemptionRecord[]; error?: string };
         if (!response.ok) throw new Error(body.error ?? "โหลดข้อมูลไม่สำเร็จ");
         setEmployees(body.employees ?? []);
         setEvaluations(body.evaluations ?? []);
         setHrProfiles(body.hrProfiles ?? []);
         setTalentActions(body.talentActions ?? []);
+        setProjects(body.projects ?? []);
+        setWorkItems(body.workItems ?? []);
+        setRewards(body.rewards ?? []);
+        setPointLedger(body.pointLedger ?? []);
+        setRewardRedemptions(body.rewardRedemptions ?? []);
         setDataWarning("");
       })
       .catch((error: unknown) => {
@@ -202,18 +247,21 @@ export default function Home() {
   }, [period]);
 
   useEffect(() => {
-    if (!selectedEmployee && !skillProfileEmployee && !hrEmployee && !showAddEmployee) return;
+    if (!selectedEmployee && !skillProfileEmployee && !hrEmployee && !showAddEmployee && !showWorkForm && !showProjectForm && !rewardToRedeem) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setSelectedEmployee(null);
         setSkillProfileEmployee(null);
         setHrEmployee(null);
         setShowAddEmployee(false);
+        setShowWorkForm(false);
+        setShowProjectForm(false);
+        setRewardToRedeem(null);
       }
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [selectedEmployee, skillProfileEmployee, hrEmployee, showAddEmployee]);
+  }, [selectedEmployee, skillProfileEmployee, hrEmployee, showAddEmployee, showWorkForm, showProjectForm, rewardToRedeem]);
 
   const evaluationsByEmployee = useMemo(
     () => new Map(evaluations.filter((evaluation) => evaluation.period === period).map((evaluation) => [evaluation.employeeId, evaluation])),
@@ -266,8 +314,35 @@ export default function Home() {
   const highPotentialCount = workforceInsights.filter(({ evaluation }) => (evaluation?.totalScore ?? 0) >= 85 && (evaluation?.skillScore ?? 0) >= 80).length;
   const skillGapCount = workforceInsights.filter(({ evaluation, role }) => evaluation && (evaluation.skillScore < 80 || role.skills.some((skill) => (evaluation.skillScores[skill.id] ?? 0) < skill.targetLevel))).length;
   const visibleWorkforce = workforceInsights.filter(({ employee }) => filteredEmployees.some((item) => item.id === employee.id));
-  const employeesById = new Map(employees.map((employee) => [employee.id, employee]));
+  const employeesById = useMemo(() => new Map(employees.map((employee) => [employee.id, employee])), [employees]);
   const hrEmployeeInsight = hrEmployee ? workforceInsights.find(({ employee }) => employee.id === hrEmployee.id) ?? null : null;
+  const projectsById = useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects]);
+  const pointBalances = useMemo(() => {
+    const balances = new Map<string, number>();
+    pointLedger.forEach((entry) => balances.set(entry.employeeId, (balances.get(entry.employeeId) ?? 0) + entry.points));
+    return balances;
+  }, [pointLedger]);
+  const leaderboard = useMemo(() => employees.filter((employee) => employee.status === "active").map((employee) => ({ employee, points: pointBalances.get(employee.id) ?? 0 })).sort((a, b) => b.points - a.points), [employees, pointBalances]);
+  const projectInsights = useMemo(() => projects.map((project) => {
+    const items = workItems.filter((item) => item.projectId === project.id);
+    const progress = items.length ? items.reduce((sum, item) => sum + item.progress, 0) / items.length : 0;
+    const completed = items.filter((item) => item.status === "done").length;
+    return { project, items, progress, completed };
+  }), [projects, workItems]);
+  const visibleWorkItems = useMemo(() => {
+    const query = workSearch.trim().toLocaleLowerCase("th");
+    return workItems.filter((item) => {
+      const project = projectsById.get(item.projectId);
+      const assignee = employeesById.get(item.assigneeEmployeeId);
+      const departmentMatches = activeDepartment === "all" || project?.departmentId === activeDepartment;
+      const kindMatches = workFilter === "all" || item.kind === workFilter;
+      const queryMatches = !query || `${item.title} ${item.description} ${project?.name ?? ""} ${assignee?.name ?? ""}`.toLocaleLowerCase("th").includes(query);
+      return departmentMatches && kindMatches && queryMatches;
+    });
+  }, [activeDepartment, employeesById, projectsById, workFilter, workItems, workSearch]);
+  const openWorkItems = workItems.filter((item) => item.status !== "done");
+  const workCompletion = workItems.length ? workItems.filter((item) => item.status === "done").length / workItems.length * 100 : 0;
+  const totalPoints = [...pointBalances.values()].reduce((sum, points) => sum + points, 0);
 
   const selectedRole = selectedEmployee ? getRole(selectedEmployee.roleId) : null;
   const skillProfileRole = skillProfileEmployee ? getRole(skillProfileEmployee.roleId) : null;
@@ -363,6 +438,92 @@ export default function Home() {
       showToast(`ปิดงาน “${action.title}” แล้ว`);
     } catch (error) {
       showToast(error instanceof Error ? error.message : "อัปเดตสถานะไม่สำเร็จ");
+    }
+  };
+
+  const openWorkItemForm = (item?: WorkItemRecord) => {
+    setEditingWorkItem(item ?? null);
+    setWorkForm(item ? {
+      projectId: item.projectId,
+      assigneeEmployeeId: item.assigneeEmployeeId,
+      kind: item.kind,
+      title: item.title,
+      description: item.description,
+      priority: item.priority,
+      status: item.status,
+      progress: item.progress,
+      points: item.points,
+      dueDate: item.dueDate,
+    } : {
+      projectId: projects[0]?.id ?? "",
+      assigneeEmployeeId: employees[0]?.id ?? "",
+      kind: "task",
+      title: "",
+      description: "",
+      priority: "medium",
+      status: "todo",
+      progress: 0,
+      points: 100,
+      dueDate: "2026-09-05",
+    });
+    setShowWorkForm(true);
+  };
+
+  const saveWorkItem = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setIsSaving(true);
+    try {
+      const response = await fetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "saveWorkItem", workItemId: editingWorkItem?.id, ...workForm }) });
+      const body = await response.json() as { workItem?: WorkItemRecord; pointEntry?: PointLedgerRecord | null; error?: string };
+      if (!response.ok || !body.workItem) throw new Error(body.error ?? "บันทึกงานไม่สำเร็จ");
+      setWorkItems((items) => [...items.filter((item) => item.id !== body.workItem?.id), body.workItem as WorkItemRecord]);
+      if (body.pointEntry) setPointLedger((items) => [...items.filter((item) => item.id !== body.pointEntry?.id), body.pointEntry as PointLedgerRecord]);
+      setShowWorkForm(false);
+      setEditingWorkItem(null);
+      showToast(body.pointEntry ? `ทำภารกิจสำเร็จ รับ ${body.pointEntry.points} แต้ม` : "บันทึกงานและความคืบหน้าแล้ว");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "บันทึกงานไม่สำเร็จ");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const saveProject = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setIsSaving(true);
+    try {
+      const owner = employeesById.get(projectForm.ownerEmployeeId);
+      const response = await fetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "saveProject", ...projectForm, departmentId: owner ? getRole(owner.roleId).departmentId : "" }) });
+      const body = await response.json() as { project?: ProjectRecord; error?: string };
+      if (!response.ok || !body.project) throw new Error(body.error ?? "สร้างโปรเจกต์ไม่สำเร็จ");
+      setProjects((items) => [...items, body.project as ProjectRecord]);
+      setProjectForm({ name: "", description: "", ownerEmployeeId: employees[0]?.id ?? "", status: "active", dueDate: "2026-10-30", color: "forest" });
+      setShowProjectForm(false);
+      showToast(`สร้างโปรเจกต์ “${body.project.name}” แล้ว`);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "สร้างโปรเจกต์ไม่สำเร็จ");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const redeemReward = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!rewardToRedeem) return;
+    setIsSaving(true);
+    try {
+      const response = await fetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "redeemReward", employeeId: rewardEmployeeId, rewardId: rewardToRedeem.id }) });
+      const body = await response.json() as { redemption?: RewardRedemptionRecord; pointEntry?: PointLedgerRecord; reward?: RewardRecord; error?: string };
+      if (!response.ok || !body.redemption || !body.pointEntry || !body.reward) throw new Error(body.error ?? "แลกรางวัลไม่สำเร็จ");
+      setRewardRedemptions((items) => [...items, body.redemption as RewardRedemptionRecord]);
+      setPointLedger((items) => [...items, body.pointEntry as PointLedgerRecord]);
+      setRewards((items) => items.map((reward) => reward.id === body.reward?.id ? body.reward as RewardRecord : reward));
+      setRewardToRedeem(null);
+      showToast(`ส่งคำขอแลก “${body.reward.title}” แล้ว`);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "แลกรางวัลไม่สำเร็จ");
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -472,6 +633,7 @@ export default function Home() {
           <button className={view === "employees" ? "active" : ""} onClick={() => setView("employees")}>พนักงาน</button>
           <button className={view === "skills" ? "active" : ""} onClick={() => setView("skills")}>สกิลทีม</button>
           <button className={view === "hr" ? "active" : ""} onClick={() => setView("hr")}>บริหารบุคลากร</button>
+          <button className={view === "work" ? "active" : ""} onClick={() => setView("work")}>งานและรางวัล</button>
         </nav>
         <div className="header-actions">
           <label className="period-select">
@@ -489,13 +651,17 @@ export default function Home() {
         {dataWarning && <div className="data-warning" role="status"><span>!</span>{dataWarning}</div>}
         <div className="page-heading">
           <div>
-            <p className="eyebrow">{view === "overview" ? "ภาพรวมองค์กร" : view === "employees" ? "ทะเบียนและการประเมิน" : view === "skills" ? "COMPETENCY MATRIX" : "WORKFORCE MANAGEMENT"}</p>
-            <h1>{view === "overview" ? "ภาพรวม KPI พนักงาน" : view === "employees" ? "พนักงานและผลประเมิน" : view === "skills" ? "ภาพรวมสกิลของทีม" : "บริหารทรัพยากรบุคคล"}</h1>
-            <p>{view === "overview" ? "ติดตามเป้าหมาย ประเมินผลงาน และวางแผนพัฒนาทีมในที่เดียว" : view === "employees" ? "ค้นหา เพิ่มพนักงาน และบันทึกผล KPI พร้อมระดับสกิลรายบุคคล" : view === "skills" ? "มองเห็นจุดแข็ง ช่องว่าง และความพร้อมของแต่ละสายงาน" : "เชื่อมผลงาน สกิล การทดสอบ แผนพัฒนา ตำแหน่งที่เหมาะสม และค่าตอบแทน เพื่อการตัดสินใจที่รอบด้าน"}</p>
+            <p className="eyebrow">{view === "overview" ? "ภาพรวมองค์กร" : view === "employees" ? "ทะเบียนและการประเมิน" : view === "skills" ? "COMPETENCY MATRIX" : view === "hr" ? "WORKFORCE MANAGEMENT" : "MISSION & REWARD CENTER"}</p>
+            <h1>{view === "overview" ? "ภาพรวม KPI พนักงาน" : view === "employees" ? "พนักงานและผลประเมิน" : view === "skills" ? "ภาพรวมสกิลของทีม" : view === "hr" ? "บริหารทรัพยากรบุคคล" : "งาน โปรเจกต์ และภารกิจ"}</h1>
+            <p>{view === "overview" ? "ติดตามเป้าหมาย ประเมินผลงาน และวางแผนพัฒนาทีมในที่เดียว" : view === "employees" ? "ค้นหา เพิ่มพนักงาน และบันทึกผล KPI พร้อมระดับสกิลรายบุคคล" : view === "skills" ? "มองเห็นจุดแข็ง ช่องว่าง และความพร้อมของแต่ละสายงาน" : view === "hr" ? "เชื่อมผลงาน สกิล การทดสอบ แผนพัฒนา ตำแหน่งที่เหมาะสม และค่าตอบแทน เพื่อการตัดสินใจที่รอบด้าน" : "จัดการ To-do รีเควสต์ และภารกิจ ติดตามความคืบหน้า รับแต้ม และแลกรางวัลในที่เดียว"}</p>
           </div>
           <div className="heading-actions">
-            <button className="secondary-button" onClick={exportReport}><span aria-hidden="true">↓</span> ส่งออกรายงาน</button>
+            <button className="secondary-button" onClick={() => view === "work" ? setShowProjectForm(true) : exportReport()}><span aria-hidden="true">{view === "work" ? "◇" : "↓"}</span> {view === "work" ? "สร้างโปรเจกต์" : "ส่งออกรายงาน"}</button>
             <button className="primary-button" onClick={() => {
+              if (view === "work") {
+                openWorkItemForm();
+                return;
+              }
               if (view === "hr") {
                 if (workforceInsights[0]) openHrManagement(workforceInsights[0].employee);
                 else showToast("ยังไม่มีพนักงานสำหรับวางแผน");
@@ -503,7 +669,7 @@ export default function Home() {
               }
               if (pendingEmployees[0]) openEvaluation(pendingEmployees[0]);
               else setView("employees");
-            }}><span aria-hidden="true">＋</span> {view === "hr" ? "เพิ่มแผนบุคลากร" : "เริ่มประเมิน"}</button>
+            }}><span aria-hidden="true">＋</span> {view === "work" ? "เพิ่มงานหรือภารกิจ" : view === "hr" ? "เพิ่มแผนบุคลากร" : "เริ่มประเมิน"}</button>
           </div>
         </div>
 
@@ -744,9 +910,161 @@ export default function Home() {
             </section>
           </section>
         )}
+
+        {view === "work" && (
+          <section className="mission-layout">
+            <div className="mission-summary-grid">
+              <MetricCard label="โปรเจกต์ที่กำลังเดิน" value={`${projects.filter((project) => project.status === "active").length} โปรเจกต์`} copy={`${projects.length} โปรเจกต์ทั้งหมด`} icon="◇" />
+              <MetricCard label="งานที่ต้องจัดการ" value={`${openWorkItems.length} รายการ`} copy={`${workItems.filter((item) => item.priority === "urgent" && item.status !== "done").length} งานเร่งด่วน`} tone="warning" icon="✓" />
+              <MetricCard label="ความสำเร็จรวม" value={`${workCompletion.toFixed(0)}%`} copy={`${workItems.filter((item) => item.status === "done").length} จาก ${workItems.length} รายการเสร็จแล้ว`} tone="positive" progress={workCompletion} icon="↗" />
+              <MetricCard label="แต้มพร้อมใช้ในทีม" value={`${formatMoney(totalPoints)} แต้ม`} copy={`${rewardRedemptions.length} คำขอแลกรางวัล`} icon="★" />
+            </div>
+
+            <div className="mission-command-grid">
+              <section className="project-pulse-card">
+                <div className="section-heading"><div><p className="eyebrow">PROJECT PULSE</p><h2>ความคืบหน้าโปรเจกต์</h2></div><span className="matrix-period">อัปเดตล่าสุด</span></div>
+                <div className="project-pulse-grid">
+                  {projectInsights.filter(({ project }) => activeDepartment === "all" || project.departmentId === activeDepartment).map(({ project, items, progress, completed }) => {
+                    const owner = employeesById.get(project.ownerEmployeeId);
+                    return (
+                      <article key={project.id} className={`project-pulse ${project.color}`}>
+                        <div className="project-pulse-top"><b>{projectStatusLabel(project.status)}</b><span>{formatDueDate(project.dueDate)}</span></div>
+                        <h3>{project.name}</h3><p>{project.description}</p>
+                        <div className="project-owner"><i>{owner?.initials ?? "PP"}</i><span><small>เจ้าของโปรเจกต์</small><strong>{owner?.name ?? "People Pulse"}</strong></span></div>
+                        <div className="project-progress"><span><small>ความคืบหน้า</small><strong>{progress.toFixed(0)}%</strong></span><i><b style={{ width: `${progress}%` }} /></i><small>{completed}/{items.length} งานเสร็จแล้ว</small></div>
+                      </article>
+                    );
+                  })}
+                </div>
+              </section>
+
+              <aside className="points-leaderboard-card">
+                <div className="section-heading compact"><div><p className="eyebrow">POINTS LEADERBOARD</p><h2>อันดับสะสมแต้ม</h2></div><span className="points-crown">★</span></div>
+                <div className="points-leaderboard-list">
+                  {leaderboard.slice(0, 6).map(({ employee, points }, index) => <article key={employee.id} className={index === 0 ? "champion" : ""}><span className="leader-rank">{index + 1}</span><i>{employee.initials}</i><p><strong>{employee.name}</strong><small>{getRole(employee.roleId).name}</small></p><b>{formatMoney(points)}<small> แต้ม</small></b></article>)}
+                </div>
+                <p className="points-note">ทำงานหรือภารกิจสำเร็จ ระบบจะเพิ่มแต้มให้ครั้งเดียวโดยอัตโนมัติ</p>
+              </aside>
+            </div>
+
+            <section className="work-board-card">
+              <div className="work-board-heading">
+                <div><p className="eyebrow">SMART TO-DO BOARD</p><h2>งาน รีเควสต์ และภารกิจ</h2><p>ทุกงานเชื่อมกับโปรเจกต์ ผู้รับผิดชอบ ความคืบหน้า และแต้มที่จะได้รับ</p></div>
+                <div className="work-board-tools">
+                  <div className="work-kind-filter" aria-label="กรองประเภทงาน">
+                    {([{ id: "all", label: "ทั้งหมด" }, { id: "task", label: "งาน" }, { id: "request", label: "รีเควสต์" }, { id: "mission", label: "ภารกิจ" }] as const).map((filter) => <button key={filter.id} className={workFilter === filter.id ? "active" : ""} onClick={() => setWorkFilter(filter.id)}>{filter.label}</button>)}
+                  </div>
+                  <label className="search-field"><span aria-hidden="true">⌕</span><input value={workSearch} onChange={(event) => setWorkSearch(event.target.value)} placeholder="ค้นหางาน โปรเจกต์ หรือผู้รับผิดชอบ" /><span className="sr-only">ค้นหางานและภารกิจ</span></label>
+                </div>
+              </div>
+              <div className="work-kanban">
+                {(["todo", "in_progress", "review", "done"] as WorkItemRecord["status"][]).map((status) => {
+                  const items = visibleWorkItems.filter((item) => item.status === status).sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+                  return (
+                    <section className={`kanban-column ${status}`} key={status}>
+                      <div className="kanban-heading"><span><i />{workStatusLabel(status)}</span><b>{items.length}</b></div>
+                      <div className="kanban-list">
+                        {items.map((item) => {
+                          const project = projectsById.get(item.projectId);
+                          const assignee = employeesById.get(item.assigneeEmployeeId);
+                          return (
+                            <button key={item.id} className="work-ticket" onClick={() => openWorkItemForm(item)}>
+                              <span className="work-ticket-meta"><b className={`work-kind ${item.kind}`}>{workKindLabel(item.kind)}</b><i className={`work-priority ${item.priority}`}>{workPriorityLabel(item.priority)}</i></span>
+                              <strong>{item.title}</strong><small>{project?.name ?? "ไม่ระบุโปรเจกต์"}</small>
+                              <span className="ticket-progress"><i><b style={{ width: `${item.progress}%` }} /></i><em>{item.progress}%</em></span>
+                              <span className="work-ticket-foot"><i>{assignee?.initials ?? "PP"}</i><small>{formatDueDate(item.dueDate)}</small><b>★ {item.points}</b></span>
+                            </button>
+                          );
+                        })}
+                        {!items.length && <div className="kanban-empty">ไม่มีรายการ</div>}
+                      </div>
+                    </section>
+                  );
+                })}
+              </div>
+            </section>
+
+            <section className="reward-center-card">
+              <div className="reward-center-heading"><div><p className="eyebrow">REWARD STORE</p><h2>สะสมแต้ม แลกรางวัล</h2><p>เปลี่ยนความสำเร็จจากงานและภารกิจเป็นสิทธิประโยชน์ที่เลือกได้</p></div><span><strong>{formatMoney(totalPoints)}</strong> แต้มในระบบ</span></div>
+              <div className="reward-center-grid">
+                <div className="reward-catalog">
+                  {rewards.filter((reward) => reward.isActive).map((reward) => <article key={reward.id}><span className={`reward-icon ${reward.category}`}>{reward.icon}</span><div><b>{reward.title}</b><p>{reward.description}</p><small>เหลือ {reward.stock} สิทธิ์</small></div><div className="reward-cost"><strong>{formatMoney(reward.costPoints)}</strong><small>แต้ม</small><button disabled={reward.stock <= 0} onClick={() => { setRewardToRedeem(reward); setRewardEmployeeId(leaderboard[0]?.employee.id ?? employees[0]?.id ?? ""); }}>{reward.stock > 0 ? "แลกรางวัล" : "หมดแล้ว"}</button></div></article>)}
+                </div>
+                <aside className="redemption-history">
+                  <div><p className="eyebrow">RECENT REQUESTS</p><h3>คำขอแลกล่าสุด</h3></div>
+                  {rewardRedemptions.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 5).map((redemption) => {
+                    const employee = employeesById.get(redemption.employeeId);
+                    const reward = rewards.find((item) => item.id === redemption.rewardId);
+                    return <article key={redemption.id}><span>{reward?.icon ?? "★"}</span><p><strong>{reward?.title ?? "รางวัล"}</strong><small>{employee?.name ?? "พนักงาน"} · {redemption.status === "requested" ? "รออนุมัติ" : redemption.status === "approved" ? "อนุมัติแล้ว" : redemption.status === "fulfilled" ? "รับรางวัลแล้ว" : "ยกเลิก"}</small></p><b>-{redemption.pointsSpent}</b></article>;
+                  })}
+                  {!rewardRedemptions.length && <div className="reward-empty"><span>★</span><strong>ยังไม่มีคำขอแลก</strong><p>เลือกรางวัล แล้วระบุพนักงานที่ต้องการใช้แต้ม</p></div>}
+                </aside>
+              </div>
+            </section>
+          </section>
+        )}
       </section>
 
-      <footer><span>PEOPLE PULSE</span><p>ระบบ KPI &amp; Skill Management · อัปเดตข้อมูลตามรอบประเมิน</p></footer>
+      <footer><span>PEOPLE PULSE</span><p>KPI · Skill · Work · Mission · Reward Management</p></footer>
+
+      {showWorkForm && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setShowWorkForm(false)}>
+          <form className="work-form-modal" onSubmit={saveWorkItem} role="dialog" aria-modal="true" aria-labelledby="work-form-title">
+            <div className="work-form-hero">
+              <div><p className="eyebrow">MISSION CONTROL</p><h2 id="work-form-title">{editingWorkItem ? "อัปเดตงานและความคืบหน้า" : "เพิ่มงานหรือภารกิจใหม่"}</h2><p>กำหนดผู้รับผิดชอบ เป้าหมาย และแต้มที่จะได้รับเมื่อทำสำเร็จ</p></div>
+              <button type="button" className="modal-close dark" onClick={() => setShowWorkForm(false)} aria-label="ปิดหน้าต่าง">×</button>
+              <div className="work-form-preview"><span className={`work-kind ${workForm.kind}`}>{workKindLabel(workForm.kind)}</span><strong>{workForm.title || "ชื่องานหรือภารกิจ"}</strong><small>{projectsById.get(workForm.projectId)?.name ?? "เลือกโปรเจกต์"}</small><b>★ {workForm.points} แต้ม</b></div>
+            </div>
+            <div className="work-form-body">
+              <div className="form-grid work-form-grid">
+                <label className="wide"><span>ชื่องาน / รีเควสต์ / ภารกิจ</span><input required value={workForm.title} onChange={(event) => setWorkForm((form) => ({ ...form, title: event.target.value }))} placeholder="เช่น สรุปข้อมูลลูกค้าเพื่อส่งทีมขาย" /></label>
+                <label><span>ประเภท</span><select value={workForm.kind} onChange={(event) => setWorkForm((form) => ({ ...form, kind: event.target.value as WorkItemRecord["kind"] }))}><option value="task">งาน</option><option value="request">รีเควสต์</option><option value="mission">ภารกิจ</option></select></label>
+                <label><span>ระดับความสำคัญ</span><select value={workForm.priority} onChange={(event) => setWorkForm((form) => ({ ...form, priority: event.target.value as WorkItemRecord["priority"] }))}><option value="low">ทั่วไป</option><option value="medium">ปานกลาง</option><option value="high">สำคัญ</option><option value="urgent">เร่งด่วน</option></select></label>
+                <label><span>โปรเจกต์</span><select required value={workForm.projectId} onChange={(event) => setWorkForm((form) => ({ ...form, projectId: event.target.value }))}>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
+                <label><span>ผู้รับผิดชอบ</span><select required value={workForm.assigneeEmployeeId} onChange={(event) => setWorkForm((form) => ({ ...form, assigneeEmployeeId: event.target.value }))}>{employees.filter((employee) => employee.status === "active").map((employee) => <option key={employee.id} value={employee.id}>{employee.name} · {getRole(employee.roleId).shortName}</option>)}</select></label>
+                <label><span>สถานะ</span><select value={workForm.status} onChange={(event) => { const status = event.target.value as WorkItemRecord["status"]; setWorkForm((form) => ({ ...form, status, progress: status === "done" ? 100 : status === "todo" ? Math.min(form.progress, 20) : form.progress })); }}><option value="todo">ต้องทำ</option><option value="in_progress">กำลังทำ</option><option value="review">รอตรวจ</option><option value="done">เสร็จแล้ว</option></select></label>
+                <label><span>กำหนดเสร็จ</span><input required type="date" value={workForm.dueDate} onChange={(event) => setWorkForm((form) => ({ ...form, dueDate: event.target.value }))} /></label>
+                <label><span>แต้มเมื่อสำเร็จ</span><input required type="number" min="0" max="5000" step="10" value={workForm.points} onChange={(event) => setWorkForm((form) => ({ ...form, points: Number(event.target.value) }))} /></label>
+                <label className="wide work-progress-field"><span>ความคืบหน้า <b>{workForm.progress}%</b></span><input type="range" min="0" max="100" step="5" value={workForm.progress} onChange={(event) => { const progress = Number(event.target.value); setWorkForm((form) => ({ ...form, progress, status: progress === 100 ? "done" : form.status === "done" ? "in_progress" : form.status })); }} style={{ "--range-value": `${workForm.progress}%` } as React.CSSProperties} /></label>
+                <label className="wide"><span>รายละเอียดและเกณฑ์สำเร็จ</span><textarea value={workForm.description} onChange={(event) => setWorkForm((form) => ({ ...form, description: event.target.value }))} placeholder="อธิบายสิ่งที่ต้องส่งมอบ หรือเงื่อนไขที่ถือว่าภารกิจสำเร็จ" /></label>
+              </div>
+              <div className="mission-point-note"><span>★</span><p><strong>แต้มจะมอบเมื่อสถานะเป็น “เสร็จแล้ว”</strong> งานเดิมจะได้รับแต้มเพียงครั้งเดียว แม้มีการแก้ไขภายหลัง</p></div>
+            </div>
+            <div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setShowWorkForm(false)}>ยกเลิก</button><button className="primary-button" disabled={isSaving}>{isSaving ? "กำลังบันทึก..." : editingWorkItem ? "บันทึกความคืบหน้า" : "สร้างรายการ"}</button></div>
+          </form>
+        </div>
+      )}
+
+      {showProjectForm && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setShowProjectForm(false)}>
+          <form className="employee-modal project-form-modal" onSubmit={saveProject} role="dialog" aria-modal="true" aria-labelledby="project-form-title">
+            <div className="modal-header"><div><p className="eyebrow">NEW PROJECT</p><h2 id="project-form-title">สร้างโปรเจกต์ใหม่</h2><small>รวมงาน รีเควสต์ และภารกิจที่มีเป้าหมายเดียวกัน</small></div><button type="button" className="modal-close" onClick={() => setShowProjectForm(false)} aria-label="ปิดหน้าต่าง">×</button></div>
+            <div className="form-grid project-form-grid">
+              <label className="wide"><span>ชื่อโปรเจกต์</span><input required value={projectForm.name} onChange={(event) => setProjectForm((form) => ({ ...form, name: event.target.value }))} placeholder="เช่น Customer Experience 2027" /></label>
+              <label className="wide"><span>เป้าหมายโปรเจกต์</span><textarea value={projectForm.description} onChange={(event) => setProjectForm((form) => ({ ...form, description: event.target.value }))} placeholder="อธิบายผลลัพธ์ที่ต้องการให้ทีมเข้าใจตรงกัน" /></label>
+              <label><span>เจ้าของโปรเจกต์</span><select value={projectForm.ownerEmployeeId} onChange={(event) => setProjectForm((form) => ({ ...form, ownerEmployeeId: event.target.value }))}>{employees.filter((employee) => employee.status === "active").map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></label>
+              <label><span>สถานะ</span><select value={projectForm.status} onChange={(event) => setProjectForm((form) => ({ ...form, status: event.target.value as ProjectRecord["status"] }))}><option value="planned">เตรียมเริ่ม</option><option value="active">กำลังดำเนินการ</option><option value="on_hold">พักไว้</option><option value="completed">เสร็จแล้ว</option></select></label>
+              <label><span>กำหนดเสร็จ</span><input required type="date" value={projectForm.dueDate} onChange={(event) => setProjectForm((form) => ({ ...form, dueDate: event.target.value }))} /></label>
+              <label><span>สีประจำโปรเจกต์</span><select value={projectForm.color} onChange={(event) => setProjectForm((form) => ({ ...form, color: event.target.value }))}><option value="forest">เขียวเข้ม</option><option value="mustard">ทอง</option><option value="terra">ส้มอิฐ</option><option value="sage">เขียวอ่อน</option></select></label>
+            </div>
+            <div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setShowProjectForm(false)}>ยกเลิก</button><button className="primary-button" disabled={isSaving}>{isSaving ? "กำลังสร้าง..." : "สร้างโปรเจกต์"}</button></div>
+          </form>
+        </div>
+      )}
+
+      {rewardToRedeem && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setRewardToRedeem(null)}>
+          <form className="reward-modal" onSubmit={redeemReward} role="dialog" aria-modal="true" aria-labelledby="reward-modal-title">
+            <div className="reward-modal-hero"><span className={`reward-icon ${rewardToRedeem.category}`}>{rewardToRedeem.icon}</span><div><p className="eyebrow">REDEEM REWARD</p><h2 id="reward-modal-title">{rewardToRedeem.title}</h2><p>{rewardToRedeem.description}</p></div><button type="button" className="modal-close dark" onClick={() => setRewardToRedeem(null)} aria-label="ปิดหน้าต่าง">×</button></div>
+            <div className="reward-modal-body">
+              <label><span>พนักงานที่ใช้แต้ม</span><select value={rewardEmployeeId} onChange={(event) => setRewardEmployeeId(event.target.value)}>{leaderboard.map(({ employee, points }) => <option key={employee.id} value={employee.id}>{employee.name} · {formatMoney(points)} แต้ม</option>)}</select></label>
+              <div className="reward-balance"><span><small>แต้มคงเหลือ</small><strong>{formatMoney(pointBalances.get(rewardEmployeeId) ?? 0)}</strong></span><b>−</b><span><small>ใช้แลกรางวัล</small><strong>{formatMoney(rewardToRedeem.costPoints)}</strong></span><b>=</b><span className={(pointBalances.get(rewardEmployeeId) ?? 0) < rewardToRedeem.costPoints ? "insufficient" : ""}><small>คงเหลือหลังแลก</small><strong>{formatMoney((pointBalances.get(rewardEmployeeId) ?? 0) - rewardToRedeem.costPoints)}</strong></span></div>
+              <p className="reward-approval-note">คำขอจะเข้าสู่สถานะ “รออนุมัติ” และตัดแต้มทันที เพื่อป้องกันการใช้แต้มซ้ำ</p>
+            </div>
+            <div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setRewardToRedeem(null)}>ยกเลิก</button><button className="primary-button" disabled={isSaving || (pointBalances.get(rewardEmployeeId) ?? 0) < rewardToRedeem.costPoints}>{isSaving ? "กำลังส่งคำขอ..." : `ยืนยันแลก ${formatMoney(rewardToRedeem.costPoints)} แต้ม`}</button></div>
+          </form>
+        </div>
+      )}
 
       {skillProfileEmployee && skillProfileRole && (
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setSkillProfileEmployee(null)}>

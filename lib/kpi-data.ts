@@ -59,6 +59,68 @@ export type TalentActionRecord = {
   updatedAt: string;
 };
 
+export type ProjectRecord = {
+  id: string;
+  name: string;
+  description: string;
+  ownerEmployeeId: string;
+  departmentId: string;
+  status: "planned" | "active" | "on_hold" | "completed";
+  dueDate: string;
+  color: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type WorkItemRecord = {
+  id: string;
+  projectId: string;
+  assigneeEmployeeId: string;
+  kind: "task" | "request" | "mission";
+  title: string;
+  description: string;
+  priority: "low" | "medium" | "high" | "urgent";
+  status: "todo" | "in_progress" | "review" | "done";
+  progress: number;
+  points: number;
+  dueDate: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type RewardRecord = {
+  id: string;
+  title: string;
+  description: string;
+  category: "perk" | "learning" | "wellbeing" | "recognition";
+  costPoints: number;
+  stock: number;
+  icon: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type PointLedgerRecord = {
+  id: string;
+  employeeId: string;
+  sourceType: "task" | "mission" | "bonus" | "redemption";
+  sourceId: string;
+  points: number;
+  note: string;
+  createdAt: string;
+};
+
+export type RewardRedemptionRecord = {
+  id: string;
+  employeeId: string;
+  rewardId: string;
+  pointsSpent: number;
+  status: "requested" | "approved" | "fulfilled" | "cancelled";
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type EvaluationRecord = {
   id: string;
   employeeId: string;
@@ -218,6 +280,44 @@ export const seedTalentActions: TalentActionRecord[] = [
   { id: "action-pim-role", employeeId: "emp-pimchanok", type: "role_review", title: "ประเมินความพร้อมสายงาน People Analytics", status: "planned", score: null, dueDate: "2026-09-05", targetRoleId: "hr", createdAt: "2026-08-04T03:20:00.000Z", updatedAt: "2026-08-04T03:20:00.000Z" },
   { id: "action-narin-salary", employeeId: "emp-narin", type: "salary_review", title: "ทบทวนค่าตอบแทนตามผลงาน", status: "planned", score: null, dueDate: "2026-10-01", targetRoleId: "sales-manager", createdAt: "2026-08-04T03:30:00.000Z", updatedAt: "2026-08-04T03:30:00.000Z" },
 ];
+
+export const seedProjects: ProjectRecord[] = [
+  { id: "project-growth-q3", name: "Growth Sprint Q3", description: "ยกระดับยอดขายและแคมเปญเพื่อปิดไตรมาสให้เหนือเป้าหมาย", ownerEmployeeId: "emp-narin", departmentId: "sales", status: "active", dueDate: "2026-09-30", color: "mustard", createdAt: "2026-08-01T02:00:00.000Z", updatedAt: "2026-08-18T06:00:00.000Z" },
+  { id: "project-cx-zero-wait", name: "CX Zero Wait", description: "ลดเวลารอและเพิ่มคุณภาพการแก้ปัญหาของลูกค้า", ownerEmployeeId: "emp-thanawat", departmentId: "service", status: "active", dueDate: "2026-09-18", color: "terra", createdAt: "2026-08-02T02:00:00.000Z", updatedAt: "2026-08-17T04:00:00.000Z" },
+  { id: "project-platform-trust", name: "Platform Trust", description: "เพิ่มความเสถียร ระบบเฝ้าระวัง และคู่มือแก้เหตุขัดข้อง", ownerEmployeeId: "emp-supakorn", departmentId: "technology", status: "active", dueDate: "2026-10-15", color: "forest", createdAt: "2026-08-03T02:00:00.000Z", updatedAt: "2026-08-18T07:00:00.000Z" },
+  { id: "project-people-onboarding", name: "Onboarding 30 Days", description: "สร้างประสบการณ์เริ่มงานและภารกิจเรียนรู้ 30 วันแรก", ownerEmployeeId: "emp-kanyarat", departmentId: "people", status: "planned", dueDate: "2026-10-30", color: "sage", createdAt: "2026-08-10T02:00:00.000Z", updatedAt: "2026-08-10T02:00:00.000Z" },
+];
+
+export const seedWorkItems: WorkItemRecord[] = [
+  { id: "work-growth-story", projectId: "project-growth-q3", assigneeEmployeeId: "emp-pimchanok", kind: "task", title: "สรุป Customer Story สำหรับแคมเปญ", description: "จัดทำเรื่องเล่าลูกค้า 3 เคสพร้อมผลลัพธ์เชิงตัวเลข", priority: "high", status: "in_progress", progress: 65, points: 110, dueDate: "2026-08-26", createdAt: "2026-08-05T03:00:00.000Z", updatedAt: "2026-08-18T04:10:00.000Z" },
+  { id: "work-growth-key-account", projectId: "project-growth-q3", assigneeEmployeeId: "emp-narin", kind: "mission", title: "ปิดดีลลูกค้า Key Account", description: "ปิดดีลใหม่มูลค่าตามเป้าหมายและถ่ายทอดวิธีการให้ทีม", priority: "urgent", status: "done", progress: 100, points: 180, dueDate: "2026-08-15", createdAt: "2026-08-01T03:00:00.000Z", updatedAt: "2026-08-15T09:00:00.000Z" },
+  { id: "work-growth-lead-request", projectId: "project-growth-q3", assigneeEmployeeId: "emp-sirilak", kind: "request", title: "ขอชุดรายชื่อลูกค้าเป้าหมายใหม่", description: "คัดกรองรายชื่อกลุ่มธุรกิจบริการอย่างน้อย 120 ราย", priority: "medium", status: "todo", progress: 0, points: 70, dueDate: "2026-08-29", createdAt: "2026-08-18T05:00:00.000Z", updatedAt: "2026-08-18T05:00:00.000Z" },
+  { id: "work-cx-knowledge", projectId: "project-cx-zero-wait", assigneeEmployeeId: "emp-thanawat", kind: "mission", title: "สร้างคลังคำตอบ 20 ปัญหาหลัก", description: "จัดทำคำตอบมาตรฐานและส่งให้หัวหน้าตรวจคุณภาพ", priority: "high", status: "review", progress: 90, points: 160, dueDate: "2026-08-22", createdAt: "2026-08-04T05:00:00.000Z", updatedAt: "2026-08-18T03:00:00.000Z" },
+  { id: "work-cx-refund", projectId: "project-cx-zero-wait", assigneeEmployeeId: "emp-thanawat", kind: "request", title: "รีเควสต์ปรับขั้นตอนคืนเงิน", description: "รวบรวมจุดติดขัดและเสนอขั้นตอนใหม่ให้เหลือไม่เกิน 3 ขั้น", priority: "urgent", status: "in_progress", progress: 40, points: 120, dueDate: "2026-08-24", createdAt: "2026-08-12T04:00:00.000Z", updatedAt: "2026-08-18T07:00:00.000Z" },
+  { id: "work-tech-runbook", projectId: "project-platform-trust", assigneeEmployeeId: "emp-supakorn", kind: "task", title: "จัดทำ Incident Runbook", description: "คู่มือรับมือ 5 เหตุการณ์สำคัญพร้อมผู้รับผิดชอบ", priority: "high", status: "done", progress: 100, points: 140, dueDate: "2026-08-16", createdAt: "2026-08-03T06:00:00.000Z", updatedAt: "2026-08-16T08:00:00.000Z" },
+  { id: "work-tech-alert", projectId: "project-platform-trust", assigneeEmployeeId: "emp-pattarapon", kind: "task", title: "ปรับระบบแจ้งเตือนให้ลด False Alarm", description: "ทบทวน threshold และลดการแจ้งเตือนซ้ำอย่างน้อย 30%", priority: "medium", status: "in_progress", progress: 55, points: 150, dueDate: "2026-08-31", createdAt: "2026-08-09T06:00:00.000Z", updatedAt: "2026-08-18T08:00:00.000Z" },
+  { id: "work-people-checklist", projectId: "project-people-onboarding", assigneeEmployeeId: "emp-kanyarat", kind: "task", title: "ออกแบบ Onboarding Checklist", description: "กำหนดภารกิจสัปดาห์ 1–4 พร้อมผู้ดูแลและแต้มรางวัล", priority: "medium", status: "todo", progress: 10, points: 130, dueDate: "2026-09-05", createdAt: "2026-08-10T06:00:00.000Z", updatedAt: "2026-08-18T08:00:00.000Z" },
+];
+
+export const seedRewards: RewardRecord[] = [
+  { id: "reward-coffee", title: "คูปองกาแฟ", description: "เครื่องดื่ม 1 แก้วจากร้านพาร์ตเนอร์", category: "perk", costPoints: 120, stock: 20, icon: "☕", isActive: true, createdAt: "2026-08-01T02:00:00.000Z", updatedAt: "2026-08-01T02:00:00.000Z" },
+  { id: "reward-half-day", title: "วันหยุดครึ่งวัน", description: "แลกสิทธิ์วันหยุดเพิ่มเติมครึ่งวัน", category: "wellbeing", costPoints: 500, stock: 6, icon: "☀", isActive: true, createdAt: "2026-08-01T02:00:00.000Z", updatedAt: "2026-08-01T02:00:00.000Z" },
+  { id: "reward-learning", title: "งบเรียนรู้ 1,000 บาท", description: "ใช้กับคอร์ส หนังสือ หรือเวิร์กช็อป", category: "learning", costPoints: 850, stock: 4, icon: "↗", isActive: true, createdAt: "2026-08-01T02:00:00.000Z", updatedAt: "2026-08-01T02:00:00.000Z" },
+  { id: "reward-lunch", title: "มื้อพิเศษกับทีม", description: "เครดิตอาหารกลางวันสำหรับฉลองความสำเร็จ", category: "recognition", costPoints: 350, stock: 10, icon: "★", isActive: true, createdAt: "2026-08-01T02:00:00.000Z", updatedAt: "2026-08-01T02:00:00.000Z" },
+];
+
+export const seedPointLedger: PointLedgerRecord[] = [
+  { id: "points-work-growth-key-account", employeeId: "emp-narin", sourceType: "mission", sourceId: "work-growth-key-account", points: 180, note: "สำเร็จภารกิจปิดดีล Key Account", createdAt: "2026-08-15T09:00:00.000Z" },
+  { id: "points-work-tech-runbook", employeeId: "emp-supakorn", sourceType: "task", sourceId: "work-tech-runbook", points: 140, note: "จัดทำ Incident Runbook สำเร็จ", createdAt: "2026-08-16T08:00:00.000Z" },
+  { id: "points-bonus-pim", employeeId: "emp-pimchanok", sourceType: "bonus", sourceId: "bonus-q3-pim", points: 420, note: "โบนัสผลงานแคมเปญไตรมาส 3", createdAt: "2026-08-12T06:00:00.000Z" },
+  { id: "points-bonus-thanawat", employeeId: "emp-thanawat", sourceType: "bonus", sourceId: "bonus-cx-thanawat", points: 260, note: "คะแนนคำชมจากลูกค้า", createdAt: "2026-08-13T06:00:00.000Z" },
+  { id: "points-bonus-kanyarat", employeeId: "emp-kanyarat", sourceType: "bonus", sourceId: "bonus-people-kanyarat", points: 310, note: "สนับสนุนกิจกรรมพัฒนาทีม", createdAt: "2026-08-14T06:00:00.000Z" },
+  { id: "points-bonus-nattapong", employeeId: "emp-nattapong", sourceType: "bonus", sourceId: "bonus-coaching-nattapong", points: 290, note: "แบ่งปันเทคนิคการขายกับทีม", createdAt: "2026-08-14T07:00:00.000Z" },
+  { id: "points-bonus-sirilak", employeeId: "emp-sirilak", sourceType: "bonus", sourceId: "bonus-content-sirilak", points: 180, note: "ช่วยงานคอนเทนต์เร่งด่วน", createdAt: "2026-08-15T07:00:00.000Z" },
+  { id: "points-bonus-pattarapon", employeeId: "emp-pattarapon", sourceType: "bonus", sourceId: "bonus-platform-pattarapon", points: 230, note: "แก้เหตุระบบนอกเวลาทำการ", createdAt: "2026-08-17T07:00:00.000Z" },
+];
+
+export const seedRewardRedemptions: RewardRedemptionRecord[] = [];
 
 export function getRole(roleId: string) {
   return roles.find((role) => role.id === roleId) ?? roles[0];

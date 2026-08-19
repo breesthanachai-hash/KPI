@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { ensureDatabase } from "../../../db/initialize";
-import { employees, evaluations, hrProfiles, talentActions } from "../../../db/schema";
+import { employees, evaluations, hrProfiles, pointLedger, projects, rewardRedemptions, rewards, talentActions, workItems } from "../../../db/schema";
 import {
   clampScore,
   clampSkillLevel,
@@ -12,7 +12,12 @@ import {
   roles,
   seedEmployees,
   seedHrProfiles,
+  seedPointLedger,
+  seedProjects,
+  seedRewardRedemptions,
+  seedRewards,
   seedTalentActions,
+  seedWorkItems,
 } from "../../../lib/kpi-data";
 
 export const dynamic = "force-dynamic";
@@ -67,6 +72,26 @@ async function ensureSeedData() {
 
   const [existingTalentAction] = await db.select({ id: talentActions.id }).from(talentActions).limit(1);
   if (!existingTalentAction) await db.insert(talentActions).values(seedTalentActions).onConflictDoNothing();
+
+  const [existingProject] = await db.select({ id: projects.id }).from(projects).limit(1);
+  if (!existingProject) await db.insert(projects).values(seedProjects).onConflictDoNothing();
+
+  const [existingWorkItem] = await db.select({ id: workItems.id }).from(workItems).limit(1);
+  if (!existingWorkItem) {
+    // Keep each seed statement below D1's bound-parameter ceiling.
+    for (const workItem of seedWorkItems) {
+      await db.insert(workItems).values(workItem).onConflictDoNothing();
+    }
+  }
+
+  const [existingReward] = await db.select({ id: rewards.id }).from(rewards).limit(1);
+  if (!existingReward) await db.insert(rewards).values(seedRewards).onConflictDoNothing();
+
+  const [existingPointEntry] = await db.select({ id: pointLedger.id }).from(pointLedger).limit(1);
+  if (!existingPointEntry) await db.insert(pointLedger).values(seedPointLedger).onConflictDoNothing();
+
+  const [existingRedemption] = await db.select({ id: rewardRedemptions.id }).from(rewardRedemptions).limit(1);
+  if (!existingRedemption && seedRewardRedemptions.length) await db.insert(rewardRedemptions).values(seedRewardRedemptions).onConflictDoNothing();
 }
 
 function evaluatorName(request: Request) {
@@ -87,14 +112,19 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const period = url.searchParams.get("period") ?? periods[0];
     const db = getDb();
-    const [employeeRows, evaluationRows, hrProfileRows, talentActionRows] = await Promise.all([
+    const [employeeRows, evaluationRows, hrProfileRows, talentActionRows, projectRows, workItemRows, rewardRows, pointRows, redemptionRows] = await Promise.all([
       db.select().from(employees),
       db.select().from(evaluations).where(eq(evaluations.period, period)),
       db.select().from(hrProfiles),
       db.select().from(talentActions),
+      db.select().from(projects),
+      db.select().from(workItems),
+      db.select().from(rewards),
+      db.select().from(pointLedger),
+      db.select().from(rewardRedemptions),
     ]);
 
-    return Response.json({ employees: employeeRows, evaluations: evaluationRows, hrProfiles: hrProfileRows, talentActions: talentActionRows, period });
+    return Response.json({ employees: employeeRows, evaluations: evaluationRows, hrProfiles: hrProfileRows, talentActions: talentActionRows, projects: projectRows, workItems: workItemRows, rewards: rewardRows, pointLedger: pointRows, rewardRedemptions: redemptionRows, period });
   } catch (error) {
     return apiError(error);
   }
@@ -135,10 +165,43 @@ type CompleteTalentActionPayload = {
   score?: number;
 };
 
+type ProjectPayload = {
+  action: "saveProject";
+  projectId?: string;
+  name?: string;
+  description?: string;
+  ownerEmployeeId?: string;
+  departmentId?: string;
+  status?: "planned" | "active" | "on_hold" | "completed";
+  dueDate?: string;
+  color?: string;
+};
+
+type WorkItemPayload = {
+  action: "saveWorkItem";
+  workItemId?: string;
+  projectId?: string;
+  assigneeEmployeeId?: string;
+  kind?: "task" | "request" | "mission";
+  title?: string;
+  description?: string;
+  priority?: "low" | "medium" | "high" | "urgent";
+  status?: "todo" | "in_progress" | "review" | "done";
+  progress?: number;
+  points?: number;
+  dueDate?: string;
+};
+
+type RedeemRewardPayload = {
+  action: "redeemReward";
+  employeeId?: string;
+  rewardId?: string;
+};
+
 export async function POST(request: Request) {
   try {
     await ensureSeedData();
-    const payload = await request.json() as EmployeePayload | EvaluationPayload | HrPlanPayload | CompleteTalentActionPayload;
+    const payload = await request.json() as EmployeePayload | EvaluationPayload | HrPlanPayload | CompleteTalentActionPayload | ProjectPayload | WorkItemPayload | RedeemRewardPayload;
     const db = getDb();
 
     if (payload.action === "createEmployee") {
@@ -282,6 +345,100 @@ export async function POST(request: Request) {
       const [talentAction] = await db.select().from(talentActions).where(eq(talentActions.id, actionId)).limit(1);
       if (!talentAction) return Response.json({ error: "ไม่พบแผนที่เลือก" }, { status: 404 });
       return Response.json({ talentAction });
+    }
+
+    if (payload.action === "saveProject") {
+      const name = payload.name?.trim().slice(0, 120) ?? "";
+      const ownerEmployeeId = payload.ownerEmployeeId ?? "";
+      const [owner] = await db.select().from(employees).where(eq(employees.id, ownerEmployeeId)).limit(1);
+      if (!name || !owner) return Response.json({ error: "กรุณาระบุชื่อโปรเจกต์และเจ้าของโปรเจกต์" }, { status: 400 });
+      const now = new Date().toISOString();
+      const projectId = payload.projectId?.trim() || `project-${crypto.randomUUID()}`;
+      const [existingProject] = payload.projectId ? await db.select().from(projects).where(eq(projects.id, projectId)).limit(1) : [];
+      const project = {
+        id: existingProject?.id ?? projectId,
+        name,
+        description: payload.description?.trim().slice(0, 1000) ?? "",
+        ownerEmployeeId,
+        departmentId: payload.departmentId?.trim().slice(0, 80) || getRole(owner.roleId).departmentId,
+        status: payload.status ?? "active" as const,
+        dueDate: /^\d{4}-\d{2}-\d{2}$/.test(payload.dueDate ?? "") ? payload.dueDate as string : now.slice(0, 10),
+        color: payload.color?.trim().slice(0, 30) || "forest",
+        createdAt: existingProject?.createdAt ?? now,
+        updatedAt: now,
+      };
+      await db.insert(projects).values(project).onConflictDoUpdate({
+        target: projects.id,
+        set: { name: project.name, description: project.description, ownerEmployeeId: project.ownerEmployeeId, departmentId: project.departmentId, status: project.status, dueDate: project.dueDate, color: project.color, updatedAt: now },
+      });
+      return Response.json({ project });
+    }
+
+    if (payload.action === "saveWorkItem") {
+      const projectId = payload.projectId ?? "";
+      const assigneeEmployeeId = payload.assigneeEmployeeId ?? "";
+      const title = payload.title?.trim().slice(0, 180) ?? "";
+      const [[project], [assignee]] = await Promise.all([
+        db.select({ id: projects.id }).from(projects).where(eq(projects.id, projectId)).limit(1),
+        db.select({ id: employees.id }).from(employees).where(eq(employees.id, assigneeEmployeeId)).limit(1),
+      ]);
+      if (!title || !project || !assignee) return Response.json({ error: "กรุณาระบุชื่องาน โปรเจกต์ และผู้รับผิดชอบ" }, { status: 400 });
+      const now = new Date().toISOString();
+      const workItemId = payload.workItemId?.trim() || `work-${crypto.randomUUID()}`;
+      const [existingWorkItem] = payload.workItemId ? await db.select().from(workItems).where(eq(workItems.id, workItemId)).limit(1) : [];
+      const status = payload.status ?? existingWorkItem?.status ?? "todo";
+      const progress = status === "done" ? 100 : Math.min(99, Math.max(0, Math.round(Number(payload.progress) || 0)));
+      const workItem = {
+        id: existingWorkItem?.id ?? workItemId,
+        projectId,
+        assigneeEmployeeId,
+        kind: payload.kind ?? "task" as const,
+        title,
+        description: payload.description?.trim().slice(0, 1200) ?? "",
+        priority: payload.priority ?? "medium" as const,
+        status,
+        progress,
+        points: Math.min(5000, Math.max(0, Math.round(Number(payload.points) || 0))),
+        dueDate: /^\d{4}-\d{2}-\d{2}$/.test(payload.dueDate ?? "") ? payload.dueDate as string : now.slice(0, 10),
+        createdAt: existingWorkItem?.createdAt ?? now,
+        updatedAt: now,
+      };
+      await db.insert(workItems).values(workItem).onConflictDoUpdate({
+        target: workItems.id,
+        set: { projectId: workItem.projectId, assigneeEmployeeId: workItem.assigneeEmployeeId, kind: workItem.kind, title: workItem.title, description: workItem.description, priority: workItem.priority, status: workItem.status, progress: workItem.progress, points: workItem.points, dueDate: workItem.dueDate, updatedAt: now },
+      });
+
+      let pointEntry = null;
+      if (status === "done" && workItem.points > 0) {
+        const sourceType = workItem.kind === "mission" ? "mission" as const : "task" as const;
+        const pointId = `points-${workItem.id}`;
+        await db.insert(pointLedger).values({ id: pointId, employeeId: assigneeEmployeeId, sourceType, sourceId: workItem.id, points: workItem.points, note: `สำเร็จ${workItem.kind === "mission" ? "ภารกิจ" : "งาน"}: ${workItem.title}`, createdAt: now }).onConflictDoNothing();
+        [pointEntry] = await db.select().from(pointLedger).where(eq(pointLedger.id, pointId)).limit(1);
+      }
+      return Response.json({ workItem, pointEntry });
+    }
+
+    if (payload.action === "redeemReward") {
+      const employeeId = payload.employeeId ?? "";
+      const rewardId = payload.rewardId ?? "";
+      const [[employee], [reward], ledgerRows] = await Promise.all([
+        db.select({ id: employees.id }).from(employees).where(eq(employees.id, employeeId)).limit(1),
+        db.select().from(rewards).where(eq(rewards.id, rewardId)).limit(1),
+        db.select({ points: pointLedger.points }).from(pointLedger).where(eq(pointLedger.employeeId, employeeId)),
+      ]);
+      if (!employee || !reward || !reward.isActive) return Response.json({ error: "ไม่พบพนักงานหรือรางวัลที่เลือก" }, { status: 404 });
+      if (reward.stock <= 0) return Response.json({ error: "รางวัลนี้หมดแล้ว" }, { status: 409 });
+      const balance = ledgerRows.reduce((sum, row) => sum + row.points, 0);
+      if (balance < reward.costPoints) return Response.json({ error: `แต้มไม่เพียงพอ ต้องการอีก ${reward.costPoints - balance} แต้ม` }, { status: 409 });
+
+      const now = new Date().toISOString();
+      const redemptionId = `redemption-${crypto.randomUUID()}`;
+      const redemption = { id: redemptionId, employeeId, rewardId, pointsSpent: reward.costPoints, status: "requested" as const, createdAt: now, updatedAt: now };
+      const pointEntry = { id: `points-${redemptionId}`, employeeId, sourceType: "redemption" as const, sourceId: redemptionId, points: -reward.costPoints, note: `แลกรางวัล: ${reward.title}`, createdAt: now };
+      await db.insert(rewardRedemptions).values(redemption);
+      await db.insert(pointLedger).values(pointEntry);
+      await db.update(rewards).set({ stock: reward.stock - 1, updatedAt: now }).where(eq(rewards.id, rewardId));
+      return Response.json({ redemption, pointEntry, reward: { ...reward, stock: reward.stock - 1, updatedAt: now } });
     }
 
     return Response.json({ error: "คำขอไม่ถูกต้อง" }, { status: 400 });

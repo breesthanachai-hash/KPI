@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { index, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const employees = sqliteTable("employees", {
   id: text("id").primaryKey(),
@@ -57,4 +57,81 @@ export const talentActions = sqliteTable("talent_actions", {
 }, (table) => [
   index("talent_actions_employee_idx").on(table.employeeId),
   index("talent_actions_status_due_idx").on(table.status, table.dueDate),
+]);
+
+export const projects = sqliteTable("projects", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description").notNull().default(""),
+  ownerEmployeeId: text("owner_employee_id").notNull().references(() => employees.id, { onDelete: "cascade" }),
+  departmentId: text("department_id").notNull().default(""),
+  status: text("status", { enum: ["planned", "active", "on_hold", "completed"] }).notNull().default("planned"),
+  dueDate: text("due_date").notNull(),
+  color: text("color").notNull().default("forest"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  index("projects_status_due_idx").on(table.status, table.dueDate),
+  index("projects_owner_idx").on(table.ownerEmployeeId),
+]);
+
+export const workItems = sqliteTable("work_items", {
+  id: text("id").primaryKey(),
+  projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  assigneeEmployeeId: text("assignee_employee_id").notNull().references(() => employees.id, { onDelete: "cascade" }),
+  kind: text("kind", { enum: ["task", "request", "mission"] }).notNull().default("task"),
+  title: text("title").notNull(),
+  description: text("description").notNull().default(""),
+  priority: text("priority", { enum: ["low", "medium", "high", "urgent"] }).notNull().default("medium"),
+  status: text("status", { enum: ["todo", "in_progress", "review", "done"] }).notNull().default("todo"),
+  progress: integer("progress").notNull().default(0),
+  points: integer("points").notNull().default(0),
+  dueDate: text("due_date").notNull(),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  index("work_items_project_status_idx").on(table.projectId, table.status),
+  index("work_items_assignee_status_idx").on(table.assigneeEmployeeId, table.status),
+  index("work_items_due_idx").on(table.dueDate),
+]);
+
+export const rewards = sqliteTable("rewards", {
+  id: text("id").primaryKey(),
+  title: text("title").notNull(),
+  description: text("description").notNull().default(""),
+  category: text("category", { enum: ["perk", "learning", "wellbeing", "recognition"] }).notNull().default("perk"),
+  costPoints: integer("cost_points").notNull(),
+  stock: integer("stock").notNull().default(0),
+  icon: text("icon").notNull().default("★"),
+  isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  index("rewards_active_cost_idx").on(table.isActive, table.costPoints),
+]);
+
+export const pointLedger = sqliteTable("point_ledger", {
+  id: text("id").primaryKey(),
+  employeeId: text("employee_id").notNull().references(() => employees.id, { onDelete: "cascade" }),
+  sourceType: text("source_type", { enum: ["task", "mission", "bonus", "redemption"] }).notNull(),
+  sourceId: text("source_id").notNull(),
+  points: integer("points").notNull(),
+  note: text("note").notNull().default(""),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("point_ledger_source_unique").on(table.sourceType, table.sourceId),
+  index("point_ledger_employee_created_idx").on(table.employeeId, table.createdAt),
+]);
+
+export const rewardRedemptions = sqliteTable("reward_redemptions", {
+  id: text("id").primaryKey(),
+  employeeId: text("employee_id").notNull().references(() => employees.id, { onDelete: "cascade" }),
+  rewardId: text("reward_id").notNull().references(() => rewards.id, { onDelete: "cascade" }),
+  pointsSpent: integer("points_spent").notNull(),
+  status: text("status", { enum: ["requested", "approved", "fulfilled", "cancelled"] }).notNull().default("requested"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  index("reward_redemptions_employee_created_idx").on(table.employeeId, table.createdAt),
+  index("reward_redemptions_status_idx").on(table.status),
 ]);
