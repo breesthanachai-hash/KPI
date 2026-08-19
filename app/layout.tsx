@@ -8,7 +8,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const protocol = requestHeaders.get("x-forwarded-proto") ?? (host.includes("localhost") ? "http" : "https");
   const origin = `${protocol}://${host}`;
   const title = "People Pulse — ค่าพลังพนักงานและระบบบริหารบุคลากร";
-  const description = "บริหารรูปโปรไฟล์ ค่าพลัง สกิล KPI และหลักฐานส่งงาน พร้อมตรวจอนุมัติไฟล์หรือลิงก์ผลงาน จัดการแฟ้ม สัญญา เงินเดือน และรางวัลในระบบเดียว";
+  const description = "บริหารรูปโปรไฟล์ ค่าพลัง สกิล KPI และแฟ้มผลงานพนักงาน ค้นหาไฟล์หรือลิงก์งาน ตรวจสอบผู้อนุมัติ และใช้หลักฐานประกอบการประเมินได้ในระบบเดียว";
 
   return {
     metadataBase: new URL(origin),
@@ -19,7 +19,7 @@ export async function generateMetadata(): Promise<Metadata> {
       description,
       type: "website",
       locale: "th_TH",
-      images: [{ url: new URL("/og.png", origin).toString(), width: 1536, height: 1024, alt: "People Pulse Profile and Work Proof" }],
+      images: [{ url: new URL("/og.png", origin).toString(), width: 1536, height: 1024, alt: "People Pulse Employee Work Portfolio" }],
     },
     twitter: {
       card: "summary_large_image",

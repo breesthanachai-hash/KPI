@@ -45,6 +45,11 @@ test("builds the People Pulse KPI product bundle", async () => {
   assert.match(pageAsset, /หลักฐานแนะนำตามตำแหน่ง/);
   assert.match(pageAsset, /ลิงก์วิดีโอฉบับ Final/);
   assert.match(pageAsset, /นักตัดต่อวิดีโอ/);
+  assert.match(pageAsset, /แฟ้มผลงานพนักงาน/);
+  assert.match(pageAsset, /EMPLOYEE WORK PORTFOLIO/);
+  assert.match(pageAsset, /PORTFOLIO FINDER/);
+  assert.match(pageAsset, /ค้นหาแฟ้มและไฟล์ผลงาน/);
+  assert.match(pageAsset, /ข้อมูลพร้อมใช้ประกอบการประเมิน/);
   assert.match(pageAsset, /\/api\/profile-image/);
   assert.match(pageAsset, /reviewWorkSubmission/);
   assert.match(pageAsset, /saveWorkItem/);
@@ -132,6 +137,8 @@ test("ships durable people, document, contract, proof, work and reward storage",
   assert.match(page, /submitWorkProof/);
   assert.match(page, /reviewWorkProof/);
   assert.match(page, /uploadProfileImage/);
+  assert.match(page, /exportPortfolioReport/);
+  assert.match(page, /portfolioSearch/);
   assert.match(documentRoute, /getFilesBucket/);
   assert.match(documentRoute, /10 \* 1024 \* 1024/);
   assert.match(profileImageRoute, /employee-profile-images/);
