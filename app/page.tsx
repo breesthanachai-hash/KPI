@@ -33,9 +33,67 @@ import {
   seedWorkItems,
 } from "../lib/kpi-data";
 
-type View = "overview" | "employees" | "profiles" | "skills" | "hr" | "work";
+type View = "overview" | "employees" | "profiles" | "skills" | "power" | "hr" | "work";
 
 type TalentDimensionId = "analysis" | "communication" | "problemSolving" | "leadership" | "execution";
+
+type PowerStatId = "speed" | "technique" | "vision" | "teamwork" | "problemSolving" | "leadership";
+
+type PowerTierId = "legend" | "elite" | "gold" | "silver" | "bronze";
+
+type EmployeePowerProfile = {
+  employee: EmployeeRecord;
+  role: ReturnType<typeof getRole>;
+  overall: number | null;
+  potential: number | null;
+  stats: Record<PowerStatId, number>;
+  workRate: number;
+  tier: { id: PowerTierId; label: string };
+};
+
+const powerStats: { id: PowerStatId; code: string; label: string; description: string }[] = [
+  { id: "speed", code: "SPD", label: "ความเร็วงาน", description: "การลงมือทำและความคืบหน้างาน" },
+  { id: "technique", code: "TEC", label: "ความเชี่ยวชาญ", description: "คะแนนสกิลรวมตามบทบาท" },
+  { id: "vision", code: "VIS", label: "วิสัยทัศน์", description: "การวิเคราะห์และมองภาพรวม" },
+  { id: "teamwork", code: "TWK", label: "ทีมเวิร์ก", description: "การสื่อสารและทำงานร่วมกัน" },
+  { id: "problemSolving", code: "PRB", label: "แก้ปัญหา", description: "การตัดสินใจและแก้โจทย์" },
+  { id: "leadership", code: "LDR", label: "ภาวะผู้นำ", description: "การนำทีมและพัฒนาผู้อื่น" },
+];
+
+function clampPower(value: number) {
+  return Math.max(1, Math.min(99, Math.round(value)));
+}
+
+function getPowerTier(overall: number | null): EmployeePowerProfile["tier"] {
+  if (overall === null || overall < 70) return { id: "bronze", label: "BRONZE" };
+  if (overall < 80) return { id: "silver", label: "SILVER" };
+  if (overall < 85) return { id: "gold", label: "GOLD" };
+  if (overall < 90) return { id: "elite", label: "ELITE" };
+  return { id: "legend", label: "LEGEND" };
+}
+
+function buildEmployeePower(employee: EmployeeRecord, evaluation: EvaluationRecord | null, assignedWork: WorkItemRecord[]): EmployeePowerProfile {
+  const role = getRole(employee.roleId);
+  const emptyStats = Object.fromEntries(powerStats.map(({ id }) => [id, 0])) as Record<PowerStatId, number>;
+  if (!evaluation) return { employee, role, overall: null, potential: null, stats: emptyStats, workRate: 0, tier: getPowerTier(null) };
+
+  const talent = buildTalentProfile(employee.roleId, evaluation);
+  const workRate = assignedWork.length
+    ? assignedWork.reduce((sum, item) => sum + item.progress, 0) / assignedWork.length
+    : evaluation.totalScore;
+  const stats: Record<PowerStatId, number> = {
+    speed: clampPower(talent.execution * 14 + workRate * .3),
+    technique: clampPower(evaluation.skillScore),
+    vision: clampPower(talent.analysis * 20),
+    teamwork: clampPower(talent.communication * 20),
+    problemSolving: clampPower(talent.problemSolving * 20),
+    leadership: clampPower(talent.leadership * 20),
+  };
+  const statAverage = Object.values(stats).reduce((sum, value) => sum + value, 0) / powerStats.length;
+  const overall = clampPower(statAverage * .7 + evaluation.kpiScore * .3);
+  const potential = clampPower(overall + Math.max(2, (100 - evaluation.skillScore) * .08));
+  return { employee, role, overall, potential, stats, workRate, tier: getPowerTier(overall) };
+}
 
 const talentDimensions: { id: TalentDimensionId; label: string; shortLabel: string }[] = [
   { id: "analysis", label: "การวิเคราะห์", shortLabel: "วิเคราะห์" },
@@ -223,6 +281,7 @@ const viewMeta: Record<View, { eyebrow: string; title: string; description: stri
   employees: { eyebrow: "ทะเบียนและการประเมิน", title: "พนักงานและผลประเมิน", description: "ค้นหา เพิ่มพนักงาน และบันทึกผล KPI พร้อมระดับสกิลรายบุคคล" },
   profiles: { eyebrow: "EMPLOYEE DIGITAL DOSSIER", title: "แฟ้มประวัติพนักงาน", description: "รวมข้อมูลส่วนตัว เอกสารสมัครงาน การตรวจเอกสาร และสัญญาจ้างพร้อมลายเซ็นอิเล็กทรอนิกส์" },
   skills: { eyebrow: "COMPETENCY MATRIX", title: "ภาพรวมสกิลของทีม", description: "มองเห็นจุดแข็ง ช่องว่าง และความพร้อมของแต่ละสายงาน" },
+  power: { eyebrow: "TEAM POWER RATINGS", title: "ค่าพลังพนักงาน", description: "ดูค่าพลังรวมและ 6 สกิลหลักในรูปแบบการ์ด พร้อมเปรียบเทียบจุดเด่นของพนักงานแบบตัวต่อตัว" },
   hr: { eyebrow: "WORKFORCE MANAGEMENT", title: "บริหารทรัพยากรบุคคล", description: "เชื่อมผลงาน สกิล การทดสอบ แผนพัฒนา ตำแหน่งที่เหมาะสม และค่าตอบแทน เพื่อการตัดสินใจที่รอบด้าน" },
   work: { eyebrow: "MISSION & REWARD CENTER", title: "งาน โปรเจกต์ และภารกิจ", description: "จัดการ To-do รีเควสต์ และภารกิจ ติดตามความคืบหน้า รับแต้ม และแลกรางวัลในที่เดียว" },
 };
@@ -266,6 +325,8 @@ export default function Home() {
   const [showContractForm, setShowContractForm] = useState(false);
   const [contractToSign, setContractToSign] = useState<EmploymentContractRecord | null>(null);
   const [uploadingDocumentType, setUploadingDocumentType] = useState<ApplicationDocumentRecord["documentType"] | null>(null);
+  const [powerLeftId, setPowerLeftId] = useState(seedEmployees[0]?.id ?? "");
+  const [powerRightId, setPowerRightId] = useState(seedEmployees[1]?.id ?? seedEmployees[0]?.id ?? "");
   const [workFilter, setWorkFilter] = useState<"all" | WorkItemRecord["kind"]>("all");
   const [workSearch, setWorkSearch] = useState("");
   const [employeeForm, setEmployeeForm] = useState({ name: "", email: "", roleId: roles[0].id, manager: "" });
@@ -416,6 +477,28 @@ export default function Home() {
   const openWorkItems = workItems.filter((item) => item.status !== "done");
   const workCompletion = workItems.length ? workItems.filter((item) => item.status === "done").length / workItems.length * 100 : 0;
   const totalPoints = [...pointBalances.values()].reduce((sum, points) => sum + points, 0);
+  const allPowerProfiles = useMemo(
+    () => employees
+      .filter((employee) => employee.status === "active")
+      .map((employee) => buildEmployeePower(
+        employee,
+        evaluationsByEmployee.get(employee.id) ?? null,
+        workItems.filter((item) => item.assigneeEmployeeId === employee.id),
+      ))
+      .sort((a, b) => (b.overall ?? -1) - (a.overall ?? -1)),
+    [employees, evaluationsByEmployee, workItems],
+  );
+  const visiblePowerProfiles = allPowerProfiles.filter(({ employee }) => filteredEmployees.some((item) => item.id === employee.id));
+  const ratedPowerProfiles = allPowerProfiles.filter((profile) => profile.overall !== null);
+  const averagePower = ratedPowerProfiles.length
+    ? ratedPowerProfiles.reduce((sum, profile) => sum + (profile.overall ?? 0), 0) / ratedPowerProfiles.length
+    : 0;
+  const topPowerProfile = ratedPowerProfiles[0] ?? null;
+  const powerLeft = allPowerProfiles.find((profile) => profile.employee.id === powerLeftId) ?? allPowerProfiles[0] ?? null;
+  const powerRight = allPowerProfiles.find((profile) => profile.employee.id === powerRightId) ?? allPowerProfiles[1] ?? allPowerProfiles[0] ?? null;
+  const powerDifference = powerLeft?.overall !== null && powerLeft?.overall !== undefined && powerRight?.overall !== null && powerRight?.overall !== undefined
+    ? powerLeft.overall - powerRight.overall
+    : null;
 
   const selectedRole = selectedEmployee ? getRole(selectedEmployee.roleId) : null;
   const skillProfileRole = skillProfileEmployee ? getRole(skillProfileEmployee.roleId) : null;
@@ -441,6 +524,18 @@ export default function Home() {
   const showToast = (message: string) => {
     setToast(message);
     window.setTimeout(() => setToast(""), 2800);
+  };
+
+  const comparePowerProfile = (employeeId: string) => {
+    if (!powerLeft) {
+      setPowerLeftId(employeeId);
+    } else if (powerLeft.employee.id === employeeId) {
+      showToast("พนักงานคนนี้อยู่ในการ์ดฝั่ง A แล้ว");
+      return;
+    } else {
+      setPowerRightId(employeeId);
+    }
+    window.setTimeout(() => document.getElementById("power-arena")?.scrollIntoView({ behavior: "smooth", block: "start" }), 40);
   };
 
   const openEvaluation = (employee: EmployeeRecord) => {
@@ -838,6 +933,7 @@ export default function Home() {
           <button className={view === "employees" ? "active" : ""} onClick={() => setView("employees")}>พนักงาน</button>
           <button className={view === "profiles" ? "active" : ""} onClick={() => setView("profiles")}>แฟ้มพนักงาน</button>
           <button className={view === "skills" ? "active" : ""} onClick={() => setView("skills")}>สกิลทีม</button>
+          <button className={view === "power" ? "active" : ""} onClick={() => setView("power")}>ค่าพลัง</button>
           <button className={view === "hr" ? "active" : ""} onClick={() => setView("hr")}>บริหารบุคลากร</button>
           <button className={view === "work" ? "active" : ""} onClick={() => setView("work")}>งานและรางวัล</button>
         </nav>
@@ -862,7 +958,7 @@ export default function Home() {
             <p>{viewMeta[view].description}</p>
           </div>
           <div className="heading-actions">
-            <button className="secondary-button" onClick={() => view === "work" ? setShowProjectForm(true) : view === "profiles" ? showToast(`${requiredDocumentTypes.length - verifiedRequiredDocuments} เอกสารจำเป็นยังตรวจไม่ครบ`) : exportReport()}><span aria-hidden="true">{view === "work" ? "◇" : view === "profiles" ? "▣" : "↓"}</span> {view === "work" ? "สร้างโปรเจกต์" : view === "profiles" ? "เช็กเอกสารที่ขาด" : "ส่งออกรายงาน"}</button>
+            <button className="secondary-button" onClick={() => view === "work" ? setShowProjectForm(true) : view === "profiles" ? showToast(`${requiredDocumentTypes.length - verifiedRequiredDocuments} เอกสารจำเป็นยังตรวจไม่ครบ`) : view === "power" ? showToast("ค่าพลังรวมมาจากค่าสกิล 70% และ KPI 30%") : exportReport()}><span aria-hidden="true">{view === "work" ? "◇" : view === "profiles" ? "▣" : view === "power" ? "i" : "↓"}</span> {view === "work" ? "สร้างโปรเจกต์" : view === "profiles" ? "เช็กเอกสารที่ขาด" : view === "power" ? "วิธีคำนวณ" : "ส่งออกรายงาน"}</button>
             <button className="primary-button" onClick={() => {
               if (view === "work") {
                 openWorkItemForm();
@@ -877,9 +973,13 @@ export default function Home() {
                 else showToast("ยังไม่มีพนักงานสำหรับวางแผน");
                 return;
               }
+              if (view === "power") {
+                document.getElementById("power-arena")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                return;
+              }
               if (pendingEmployees[0]) openEvaluation(pendingEmployees[0]);
               else setView("employees");
-            }}><span aria-hidden="true">＋</span> {view === "work" ? "เพิ่มงานหรือภารกิจ" : view === "hr" ? "เพิ่มแผนบุคลากร" : view === "profiles" ? "แก้ไขโปรไฟล์" : "เริ่มประเมิน"}</button>
+            }}><span aria-hidden="true">{view === "power" ? "VS" : "＋"}</span> {view === "work" ? "เพิ่มงานหรือภารกิจ" : view === "hr" ? "เพิ่มแผนบุคลากร" : view === "profiles" ? "แก้ไขโปรไฟล์" : view === "power" ? "เปรียบเทียบค่าพลัง" : "เริ่มประเมิน"}</button>
           </div>
         </div>
 
@@ -1143,6 +1243,85 @@ export default function Home() {
           </section>
         )}
 
+        {view === "power" && (
+          <section className="power-layout">
+            <div className="power-summary-grid">
+              <article className="power-hero-card">
+                <div className="power-hero-copy">
+                  <p className="eyebrow">POWER INDEX · {period}</p>
+                  <h2>เห็นจุดเด่นของคน<br />เหมือนดูโปรไฟล์นักกีฬา</h2>
+                  <p>ค่าพลัง 6 ด้านถูกแปลงจาก KPI สกิล และความคืบหน้างานจริง เพื่อให้โค้ชทีมและวางแผนพัฒนาได้ง่ายขึ้น</p>
+                  <div className="power-formula"><span><b>70%</b> ค่าพลังสกิล</span><i>+</i><span><b>30%</b> ผลงาน KPI</span></div>
+                </div>
+                <div className="power-hero-score"><small>TEAM OVR</small><strong>{averagePower ? averagePower.toFixed(0) : "—"}</strong><span>ค่าพลังเฉลี่ยของทีม</span></div>
+              </article>
+              <MetricCard label="มีค่าพลังแล้ว" value={`${ratedPowerProfiles.length} คน`} copy={`${allPowerProfiles.length - ratedPowerProfiles.length} คนรอประเมิน`} tone="positive" progress={allPowerProfiles.length ? ratedPowerProfiles.length / allPowerProfiles.length * 100 : 0} icon="◎" />
+              <MetricCard label="ค่าพลังสูงสุด" value={topPowerProfile?.overall?.toString() ?? "—"} copy={topPowerProfile?.employee.name ?? "ยังไม่มีข้อมูล"} tone="positive" icon="★" />
+            </div>
+
+            <section className="power-roster-card">
+              <div className="power-section-heading">
+                <div><p className="eyebrow">EMPLOYEE POWER CARDS</p><h2>การ์ดค่าพลังรายบุคคล</h2><p>เลือก “เทียบการ์ดนี้” เพื่อส่งพนักงานไปยังสนามเปรียบเทียบด้านล่าง</p></div>
+                <label className="search-field"><span aria-hidden="true">⌕</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="ค้นหาชื่อ ตำแหน่ง หรือแผนก" /><span className="sr-only">ค้นหาการ์ดค่าพลัง</span></label>
+              </div>
+              <div className="power-card-grid">
+                {visiblePowerProfiles.map((profile, index) => (
+                  <EmployeePowerCard key={profile.employee.id} profile={profile} rank={index + 1} onCompare={() => comparePowerProfile(profile.employee.id)} />
+                ))}
+                {!visiblePowerProfiles.length && <div className="empty-state">ไม่พบการ์ดค่าพลังตามเงื่อนไขที่เลือก</div>}
+              </div>
+            </section>
+
+            <section className="power-arena" id="power-arena">
+              <div className="power-arena-heading">
+                <div><p className="eyebrow">POWER ARENA</p><h2>เปรียบเทียบค่าพลัง</h2><p>เลือกพนักงานสองคนเพื่อดูความต่างรายด้าน และหาจุดแข็งที่เสริมกันในทีม</p></div>
+                <span>HEAD TO HEAD</span>
+              </div>
+              {powerLeft && powerRight ? (
+                <>
+                  <div className="power-selectors">
+                    <label><span>การ์ด A</span><select value={powerLeft.employee.id} onChange={(event) => setPowerLeftId(event.target.value)}>{allPowerProfiles.filter((profile) => profile.employee.id !== powerRight.employee.id).map((profile) => <option key={profile.employee.id} value={profile.employee.id}>{profile.employee.name} · {profile.role.shortName}</option>)}</select></label>
+                    <i aria-hidden="true">VS</i>
+                    <label><span>การ์ด B</span><select value={powerRight.employee.id} onChange={(event) => setPowerRightId(event.target.value)}>{allPowerProfiles.filter((profile) => profile.employee.id !== powerLeft.employee.id).map((profile) => <option key={profile.employee.id} value={profile.employee.id}>{profile.employee.name} · {profile.role.shortName}</option>)}</select></label>
+                  </div>
+                  <div className="power-matchup">
+                    <div className={`matchup-person ${powerDifference !== null && powerDifference > 0 ? "winner" : ""}`}>
+                      <span>{powerLeft.employee.initials || makeInitials(powerLeft.employee.name)}</span>
+                      <div><small>{powerLeft.role.department}</small><strong>{powerLeft.employee.name}</strong><p>{powerLeft.role.name}</p></div>
+                      <b>{powerLeft.overall ?? "—"}<small>OVR</small></b>
+                    </div>
+                    <div className="matchup-verdict">
+                      <span>{powerDifference === null ? "รอข้อมูล" : powerDifference === 0 ? "สูสี" : `ต่าง ${Math.abs(powerDifference)} แต้ม`}</span>
+                      <strong>{powerDifference === null ? "ประเมินทั้งสองคนก่อนเริ่มเปรียบเทียบ" : powerDifference === 0 ? "ค่าพลังรวมใกล้เคียงกัน" : powerDifference > 0 ? `${powerLeft.employee.name} มี OVR สูงกว่า` : `${powerRight.employee.name} มี OVR สูงกว่า`}</strong>
+                    </div>
+                    <div className={`matchup-person right ${powerDifference !== null && powerDifference < 0 ? "winner" : ""}`}>
+                      <b>{powerRight.overall ?? "—"}<small>OVR</small></b>
+                      <div><small>{powerRight.role.department}</small><strong>{powerRight.employee.name}</strong><p>{powerRight.role.name}</p></div>
+                      <span>{powerRight.employee.initials || makeInitials(powerRight.employee.name)}</span>
+                    </div>
+                  </div>
+                  <div className="power-comparison-list">
+                    {powerStats.map((stat) => {
+                      const leftValue = powerLeft.stats[stat.id];
+                      const rightValue = powerRight.stats[stat.id];
+                      return (
+                        <article key={stat.id}>
+                          <strong className={leftValue > rightValue ? "higher" : ""}>{powerLeft.overall === null ? "—" : leftValue}</strong>
+                          <i className="left"><b style={{ width: `${leftValue}%` }} /></i>
+                          <span><em>{stat.code}</em><b>{stat.label}</b><small>{stat.description}</small></span>
+                          <i className="right"><b style={{ width: `${rightValue}%` }} /></i>
+                          <strong className={rightValue > leftValue ? "higher" : ""}>{powerRight.overall === null ? "—" : rightValue}</strong>
+                        </article>
+                      );
+                    })}
+                  </div>
+                  <div className="power-coach-note"><span>i</span><p><strong>ใช้เพื่อโค้ชทีม ไม่ใช่ตัดสินคนด้วยตัวเลขเดียว</strong> ควรดูประสบการณ์ ความสนใจ ศักยภาพเฉพาะทาง และบริบทงานจริงร่วมกับค่าพลังเสมอ</p></div>
+                </>
+              ) : <div className="empty-state">ต้องมีพนักงานอย่างน้อย 2 คนเพื่อเปรียบเทียบค่าพลัง</div>}
+            </section>
+          </section>
+        )}
+
         {view === "hr" && (
           <section className="hr-layout">
             <div className="hr-summary-grid">
@@ -1309,7 +1488,7 @@ export default function Home() {
         )}
       </section>
 
-      <footer><span>PEOPLE PULSE</span><p>Profile · Document · Contract · KPI · Skill · Work · Reward</p></footer>
+      <footer><span>PEOPLE PULSE</span><p>Profile · Document · Contract · KPI · Skill · Power · Work · Reward</p></footer>
 
       {showProfileEditor && profileEmployee && (
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setShowProfileEditor(false)}>
@@ -1609,6 +1788,34 @@ export default function Home() {
 
       <div className={`toast ${toast ? "show" : ""}`} role="status"><span>✓</span>{toast}</div>
     </main>
+  );
+}
+
+function EmployeePowerCard({ profile, rank, onCompare }: { profile: EmployeePowerProfile; rank: number; onCompare: () => void }) {
+  const { employee, role, overall, potential, stats, tier } = profile;
+  return (
+    <article className={`employee-power-card ${tier.id}`}>
+      <div className="power-card-field" aria-hidden="true"><i /><i /></div>
+      <header>
+        <div className="power-card-rating"><strong>{overall ?? "—"}</strong><span>OVR</span><small>{tier.label}</small></div>
+        <div className="power-card-rank"><span>#{String(rank).padStart(2, "0")}</span><small>LIVE CARD</small></div>
+      </header>
+      <div className="power-card-person">
+        <span>{employee.initials || makeInitials(employee.name)}</span>
+        <div><small>{role.department}</small><h3>{employee.name}</h3><p>{role.name}</p></div>
+      </div>
+      {overall === null ? (
+        <div className="power-card-empty"><strong>รอประเมินค่าพลัง</strong><p>บันทึก KPI และสกิลเพื่อสร้างการ์ดใบแรก</p></div>
+      ) : (
+        <div className="power-stat-grid">
+          {powerStats.map((stat) => <span key={stat.id}><b>{stats[stat.id]}</b><small>{stat.code}</small></span>)}
+        </div>
+      )}
+      <footer>
+        <span><small>ศักยภาพ</small><strong>{potential ?? "—"} POT</strong></span>
+        <button onClick={onCompare}>เทียบการ์ดนี้ <i>→</i></button>
+      </footer>
+    </article>
   );
 }
 

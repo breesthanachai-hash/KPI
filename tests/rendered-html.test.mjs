@@ -23,6 +23,13 @@ test("builds the People Pulse KPI product bundle", async () => {
   assert.match(pageAsset, /TALENT FIT ANALYSIS/);
   assert.match(pageAsset, /กราฟสกิลที่ถนัด/);
   assert.match(pageAsset, /ตำแหน่งที่เหมาะสม/);
+  assert.match(pageAsset, /ค่าพลังพนักงาน/);
+  assert.match(pageAsset, /TEAM POWER RATINGS/);
+  assert.match(pageAsset, /EMPLOYEE POWER CARDS/);
+  assert.match(pageAsset, /POWER ARENA/);
+  assert.match(pageAsset, /เปรียบเทียบค่าพลัง/);
+  assert.match(pageAsset, /SPD/);
+  assert.match(pageAsset, /LDR/);
   assert.match(pageAsset, /บริหารทรัพยากรบุคคล/);
   assert.match(pageAsset, /PEOPLE DECISION BOARD/);
   assert.match(pageAsset, /ทดสอบสกิล/);
@@ -44,7 +51,7 @@ test("builds the People Pulse KPI product bundle", async () => {
   assert.match(pageAsset, /createContract/);
   assert.match(pageAsset, /signContract/);
   assert.match(pageAsset, /รายละเอียดสกิล \(ปัจจุบัน\/เป้าหมาย\)/);
-  assert.match(layout, /People Pulse — แฟ้มพนักงาน เอกสาร และสัญญา/);
+  assert.match(layout, /People Pulse — ค่าพลังพนักงานและระบบบริหารบุคลากร/);
   assert.match(layout, /\/og\.png/);
   assert.doesNotMatch(pageAsset, /Your site is taking shape|Building your site|codex-preview/i);
 });
