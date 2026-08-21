@@ -19,7 +19,7 @@ export async function generateMetadata(): Promise<Metadata> {
       description,
       type: "website",
       locale: "th_TH",
-      images: [{ url: new URL("/og.png", origin).toString(), width: 1536, height: 1024, alt: "People Pulse Smart To-do Workspace" }],
+      images: [{ url: new URL("/og.png", origin).toString(), width: 1536, height: 1024, alt: "People Pulse Modern Smart To-do Workspace" }],
     },
     twitter: {
       card: "summary_large_image",

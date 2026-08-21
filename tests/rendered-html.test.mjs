@@ -10,9 +10,10 @@ test("builds the People Pulse KPI product bundle", async () => {
   const pageAssetName = assetNames.find((name) => /^page-.*\.js$/.test(name));
   assert.ok(pageAssetName, "expected a built page asset");
 
-  const [pageAsset, layout] = await Promise.all([
+  const [pageAsset, layout, styles] = await Promise.all([
     readFile(new URL(pageAssetName, assetRoot), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
   ]);
   assert.match(pageAsset, /PEOPLE PULSE/);
   assert.match(pageAsset, /ภาพรวม KPI พนักงาน/);
@@ -39,6 +40,8 @@ test("builds the People Pulse KPI product bundle", async () => {
   assert.match(pageAsset, /completeTalentAction/);
   assert.match(pageAsset, /ทูดูลิส/);
   assert.match(pageAsset, /SMART TO-DO WORKSPACE/);
+  assert.match(pageAsset, /พื้นที่ทำงาน/);
+  assert.match(pageAsset, /บุคลากร/);
   assert.match(pageAsset, /TODAY/);
   assert.match(pageAsset, /MASTER TO-DO LIST/);
   assert.match(pageAsset, /รายการงานทั้งหมดของทีม/);
@@ -75,6 +78,9 @@ test("builds the People Pulse KPI product bundle", async () => {
   assert.match(pageAsset, /รายละเอียดสกิล \(ปัจจุบัน\/เป้าหมาย\)/);
   assert.match(layout, /People Pulse — ทูดูลิสงานและโปรเจกต์สำหรับทีม/);
   assert.match(layout, /\/og\.png/);
+  assert.match(styles, /Modern workspace refresh/);
+  assert.match(styles, /app-shell \{ padding-left: 248px/);
+  assert.match(styles, /nav-section-label/);
   assert.doesNotMatch(pageAsset, /Your site is taking shape|Building your site|codex-preview/i);
 });
 

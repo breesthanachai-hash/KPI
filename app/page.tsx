@@ -1275,18 +1275,20 @@ export default function Home() {
           <span><strong>PEOPLE PULSE</strong><small>TO-DO &amp; PEOPLE SYSTEM</small></span>
         </button>
         <nav aria-label="เมนูหลัก">
-          <button className={view === "work" ? "active" : ""} onClick={() => setView("work")}>ทูดูลิส</button>
-          <button className={view === "overview" ? "active" : ""} onClick={() => setView("overview")}>ภาพรวม</button>
-          <button className={view === "employees" ? "active" : ""} onClick={() => setView("employees")}>พนักงาน</button>
-          <button className={view === "profiles" ? "active" : ""} onClick={() => setView("profiles")}>แฟ้มพนักงาน</button>
-          <button className={view === "skills" ? "active" : ""} onClick={() => setView("skills")}>สกิลทีม</button>
-          <button className={view === "power" ? "active" : ""} onClick={() => setView("power")}>ค่าพลัง</button>
-          <button className={view === "hr" ? "active" : ""} onClick={() => setView("hr")}>บริหารบุคลากร</button>
-          <button className={view === "portfolio" ? "active" : ""} onClick={() => setView("portfolio")}>แฟ้มผลงาน</button>
+          <span className="nav-section-label">พื้นที่ทำงาน</span>
+          <button className={view === "work" ? "active" : ""} onClick={() => setView("work")}><span aria-hidden="true">✓</span><b>ทูดูลิส</b><em>{workItems.filter((item) => item.status !== "done").length}</em></button>
+          <button className={view === "overview" ? "active" : ""} onClick={() => setView("overview")}><span aria-hidden="true">◫</span><b>ภาพรวม</b></button>
+          <span className="nav-section-label">บุคลากร</span>
+          <button className={view === "employees" ? "active" : ""} onClick={() => setView("employees")}><span aria-hidden="true">♙</span><b>พนักงาน</b></button>
+          <button className={view === "profiles" ? "active" : ""} onClick={() => setView("profiles")}><span aria-hidden="true">▣</span><b>แฟ้มพนักงาน</b></button>
+          <button className={view === "skills" ? "active" : ""} onClick={() => setView("skills")}><span aria-hidden="true">✦</span><b>สกิลทีม</b></button>
+          <button className={view === "power" ? "active" : ""} onClick={() => setView("power")}><span aria-hidden="true">◆</span><b>ค่าพลัง</b></button>
+          <button className={view === "hr" ? "active" : ""} onClick={() => setView("hr")}><span aria-hidden="true">⬡</span><b>บริหารบุคลากร</b></button>
+          <button className={view === "portfolio" ? "active" : ""} onClick={() => setView("portfolio")}><span aria-hidden="true">◇</span><b>แฟ้มผลงาน</b></button>
         </nav>
         <div className="header-actions">
           <label className="period-select">
-            <span className="sr-only">เลือกรอบประเมิน</span>
+            <span className="period-label">รอบประเมิน</span>
             <select value={period} onChange={(event) => { setIsLoading(true); setPeriod(event.target.value); }}>{periods.map((item) => <option key={item}>{item}</option>)}</select>
           </label>
           <button className="icon-button" onClick={() => pendingEmployees.length ? setView("employees") : showToast("ไม่มีรายการรอประเมิน")} aria-label={`${pendingEmployees.length} รายการรอประเมิน`}>
