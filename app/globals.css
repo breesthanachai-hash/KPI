@@ -1111,3 +1111,25 @@ button, input, select, textarea { letter-spacing: -.01em; }
 @media (prefers-reduced-motion: reduce) {
   .shared-office-room *, .shared-office-worker * { animation: none !important; }
 }
+
+/* Interactive 3D office world */
+.office-3d-shell { overflow: hidden; border: 1px solid var(--line); border-radius: 25px; background: #102b24; box-shadow: 0 20px 55px rgba(16,43,36,.15); }
+.office-3d-toolbar { min-height: 72px; padding: 13px 16px; border-bottom: 1px solid rgba(255,255,255,.1); background: linear-gradient(135deg,#102b24,#183f35); color: white; display: flex; align-items: center; justify-content: space-between; gap: 16px; }.office-3d-toolbar > div:first-child { display: flex; align-items: center; gap: 12px; }.office-3d-live { flex: 0 0 auto; border: 1px solid rgba(185,231,105,.25); border-radius: 99px; padding: 7px 9px; background: rgba(185,231,105,.08); color: var(--mustard); display: flex; align-items: center; gap: 6px; font-size: 7px; font-weight: 900; letter-spacing: .1em; }.office-3d-live i { width: 7px; height: 7px; border-radius: 50%; background: var(--mustard); box-shadow: 0 0 0 5px rgba(185,231,105,.1); animation: office-live-pulse 1.8s ease-out infinite; }.office-3d-toolbar p { margin: 0; display: grid; gap: 3px; }.office-3d-toolbar p strong { font-size: 11px; letter-spacing: .02em; }.office-3d-toolbar p small { color: #9fb7ae; font-size: 7px; }.office-3d-toolbar > div:last-child { display: flex; align-items: center; gap: 6px; }.office-3d-toolbar button { min-height: 36px; border: 1px solid rgba(255,255,255,.13); border-radius: 9px; padding: 0 10px; background: rgba(255,255,255,.07); color: white; cursor: pointer; font-size: 7px; font-weight: 850; }.office-3d-toolbar button:hover { border-color: var(--mustard); background: rgba(185,231,105,.12); color: var(--mustard); }
+.office-3d-canvas { position: relative; width: 100%; height: clamp(570px,68vh,780px); overflow: hidden; background: #e9f1ec; touch-action: none; }.office-3d-canvas canvas { width: 100%!important; height: 100%!important; display: block; cursor: grab; }.office-3d-canvas canvas:active { cursor: grabbing; }
+.office-3d-loading { min-height: 650px; border: 1px solid var(--line); border-radius: 25px; background: radial-gradient(circle at 50% 42%,rgba(185,231,105,.2),transparent 20%),linear-gradient(145deg,#102b24,#183f35); color: white; display: grid; place-items: center; align-content: center; gap: 9px; text-align: center; }.office-3d-loading > span { width: 46px; height: 46px; border: 5px solid rgba(255,255,255,.14); border-top-color: var(--mustard); border-radius: 50%; animation: office-3d-spin .8s linear infinite; }.office-3d-loading strong { font-size: 14px; }.office-3d-loading small { color: #9fb7ae; font-size: 8px; }
+.office-3d-error { position: absolute; z-index: 3; inset: 0; background: #edf4ef; display: grid; place-items: center; align-content: center; gap: 7px; text-align: center; }.office-3d-error span { width: 42px; height: 42px; border-radius: 13px; background: #fff0ea; color: var(--terra); display: grid; place-items: center; font-size: 17px; font-weight: 900; }.office-3d-error strong { color: var(--forest); font-size: 15px; }.office-3d-error p { max-width: 430px; margin: 0; color: var(--muted); font-size: 9px; line-height: 1.55; }
+.office-3d-footer { min-height: 55px; padding: 11px 16px; border-top: 1px solid rgba(255,255,255,.08); background: #0d251f; color: #a8bcb4; display: flex; align-items: center; flex-wrap: wrap; gap: 9px 16px; }.office-3d-footer span { display: flex; align-items: center; gap: 6px; font-size: 7px; }.office-3d-footer span i { width: 7px; height: 7px; border-radius: 50%; background: #e3a43f; }.office-3d-footer span i.overloaded { background: var(--terra); }.office-3d-footer span i.steady { background: #719ddb; }.office-3d-footer span i.available { background: #66bd8c; }.office-3d-footer small { margin-left: auto; color: #6f8f83; font-size: 6px; }
+.office-3d-shell:fullscreen { width: 100vw; height: 100vh; border: 0; border-radius: 0; display: grid; grid-template-rows: auto 1fr auto; }.office-3d-shell:fullscreen .office-3d-canvas { height: auto; }
+@keyframes office-3d-spin { to { transform: rotate(360deg); } }
+
+@media (max-width: 860px) {
+  .office-3d-toolbar { align-items: flex-start; flex-direction: column; }.office-3d-toolbar > div:last-child { width: 100%; overflow-x: auto; }.office-3d-toolbar button { flex: 0 0 auto; min-height: 38px; }.office-3d-canvas { height: 590px; }.office-3d-footer small { width: 100%; margin-left: 0; }
+}
+
+@media (max-width: 640px) {
+  .office-3d-shell { border-radius: 20px; }.office-3d-toolbar { min-height: 0; padding: 12px; gap: 10px; }.office-3d-toolbar > div:first-child { align-items: flex-start; }.office-3d-toolbar p small { max-width: 240px; line-height: 1.45; }.office-3d-canvas { height: 520px; }.office-3d-footer { align-items: flex-start; flex-direction: column; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .office-3d-live i { animation: none; }
+}

@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import type { Office3DPerson } from "./office-3d";
 import {
   type ApplicationDocumentRecord,
   type EmployeeRecord,
@@ -36,6 +37,8 @@ import {
   seedTalentActions,
   seedWorkItems,
 } from "../lib/kpi-data";
+
+const Office3D = lazy(() => import("./office-3d"));
 
 type View = "overview" | "employees" | "profiles" | "skills" | "power" | "hr" | "portfolio" | "work" | "office";
 
@@ -374,15 +377,6 @@ const officeLevelMeta: Record<OfficeLoadLevel, { label: string; copy: string }> 
   overloaded: { label: "งานล้น", copy: "ควรช่วยแบ่งหรือเลื่อนงาน" },
 };
 
-const officeSceneMeta: Record<OfficeScene, { label: string; activity: string; glyph: string }> = {
-  sales: { label: "โต๊ะปิดการขาย", activity: "คุยลูกค้าและติดตามดีล", glyph: "↗" },
-  campaign: { label: "โต๊ะแคมเปญ", activity: "วางคอนเทนต์และวิเคราะห์ผล", glyph: "●" },
-  service: { label: "โต๊ะบริการลูกค้า", activity: "ตอบคำถามและแก้เคส", glyph: "⌕" },
-  code: { label: "โต๊ะพัฒนาระบบ", activity: "เขียนโค้ดและทดสอบระบบ", glyph: "</>" },
-  edit: { label: "ห้องตัดต่อ", activity: "ตัดต่อภาพ เสียง และ Timeline", glyph: "▶" },
-  people: { label: "โต๊ะดูแลบุคลากร", activity: "จัดการคน เอกสาร และแผนพัฒนา", glyph: "+" },
-};
-
 function officeSceneForRole(roleId: string): OfficeScene {
   if (roleId === "sales-manager") return "sales";
   if (roleId === "customer-service") return "service";
@@ -403,51 +397,7 @@ function officeBehaviorFor(level: OfficeLoadLevel, index: number): OfficeBehavio
   if (level === "overloaded") return "rush";
   if (level === "busy") return "work";
   if (level === "steady") return "chill";
-  return (["walk", "nap", "chat"] as OfficeBehavior[])[index % 3];
-}
-
-const officeBehaviorCopy: Record<OfficeBehavior, { label: string; detail: string }> = {
-  rush: { label: "กำลังเร่งงานหนัก", detail: "งานเข้าต่อเนื่อง ควรช่วยแบ่งเบา" },
-  work: { label: "กำลังทำงานยุ่ง", detail: "ตั้งใจทำหลายรายการพร้อมกัน" },
-  chill: { label: "ทำงานชิล ๆ", detail: "งานอยู่ในระดับสมดุล" },
-  walk: { label: "เดินพักในออฟฟิศ", detail: "รอรับงานใหม่" },
-  nap: { label: "พักบนโซฟา", detail: "ไม่มีงานเปิดอยู่ในขณะนี้" },
-  chat: { label: "คุยกับเพื่อนร่วมทีม", detail: "พร้อมช่วยงานคนอื่น" },
-};
-
-function SharedOfficeWorker({ person, index, onOpenTasks }: { person: OfficePersonModel; index: number; onOpenTasks: () => void }) {
-  const behavior = officeBehaviorFor(person.level, index);
-  const behaviorCopy = officeBehaviorCopy[behavior];
-  const scene = officeSceneMeta[person.scene];
-  const loadPercent = Math.round(person.loadRatio * 100);
-  const taskBubbleCount = Math.min(3, person.openItems.length);
-  return (
-    <article className={`shared-office-worker load-${person.level} behavior-${behavior} scene-${person.scene}`} style={{ "--worker-delay": `${index * -.22}s` } as React.CSSProperties}>
-      <button className="shared-worker-stage" onClick={onOpenTasks} aria-label={`ดูทูดูลิสของ ${person.employee.name}`}>
-        <span className="shared-worker-speech"><b>{behaviorCopy.label}</b><small>{person.currentTask?.title ?? behaviorCopy.detail}</small></span>
-        {taskBubbleCount > 0 && <span className="shared-task-pile">{Array.from({ length: taskBubbleCount }, (_, taskIndex) => <i key={taskIndex} />)}</span>}
-        {(behavior === "rush" || behavior === "work" || behavior === "chill") && <>
-          <span className="shared-monitor"><i>{scene.glyph}</i><b /><b /><em>{person.scene === "edit" ? "▶ ━━━" : person.scene === "code" ? "{···}" : "● ● ●"}</em></span>
-          <span className="shared-desk"><i /><b /><em /></span>
-        </>}
-        {behavior === "nap" && <span className="shared-sofa"><i /><b /><em>z</em><em>z</em></span>}
-        {behavior === "chat" && <span className="shared-chat-bubble"><i /><i /><i /></span>}
-        {behavior === "walk" && <span className="shared-walk-path"><i /><i /><i /><i /></span>}
-        <span className="shared-character">
-          <span className="shared-character-head"><i /><b /></span>
-          <span className="shared-character-body"><b>{person.employee.initials}</b></span>
-          <i className="shared-character-arm left" /><i className="shared-character-arm right" />
-          <i className="shared-character-leg left" /><i className="shared-character-leg right" />
-        </span>
-        <span className="shared-worker-shadow" />
-      </button>
-      <div className="shared-worker-info">
-        <span><i /><p><strong>{person.employee.name}</strong><small>{person.role.name}</small></p></span>
-        <b>{person.openItems.length} งาน · {loadPercent}%</b>
-      </div>
-      <div className="shared-worker-load"><i style={{ width: `${Math.min(100, loadPercent)}%` }} /></div>
-    </article>
-  );
+  return (["walk", "nap", "walk", "chat"] as OfficeBehavior[])[index % 4];
 }
 
 const viewMeta: Record<View, { eyebrow: string; title: string; description: string }> = {
@@ -459,7 +409,7 @@ const viewMeta: Record<View, { eyebrow: string; title: string; description: stri
   hr: { eyebrow: "WORKFORCE MANAGEMENT", title: "บริหารทรัพยากรบุคคล", description: "เชื่อมผลงาน สกิล การทดสอบ แผนพัฒนา ตำแหน่งที่เหมาะสม และค่าตอบแทน เพื่อการตัดสินใจที่รอบด้าน" },
   portfolio: { eyebrow: "EMPLOYEE WORK PORTFOLIO", title: "แฟ้มผลงานพนักงาน", description: "ค้นหางานที่ส่งมอบแล้ว ไฟล์ ลิงก์ ผู้ตรวจ และผลประเมินของแต่ละคนได้จากที่เดียว" },
   work: { eyebrow: "SMART TO-DO WORKSPACE", title: "ทูดูลิสงานและโปรเจกต์", description: "เห็นงานที่ต้องทำวันนี้ งานค้าง ผู้รับผิดชอบ กำหนดส่ง และความคืบหน้าของทีมเป็นอันดับแรก" },
-  office: { eyebrow: "LIVE OFFICE SIMULATION", title: "ออฟฟิศการ์ตูนของทีม", description: "รวมทุกคนไว้ในออฟฟิศเดียว ตัวละครจะเร่งงาน ทำงานชิล เดินพัก คุย หรืองีบตามภาระงานจากทูดูลิส" },
+  office: { eyebrow: "INTERACTIVE 3D OFFICE WORLD", title: "ออฟฟิศ 3D แบบเกม", description: "หมุนและซูมฉากได้ ตัวละครทำงานหรือเลือกเส้นทางเดินเองตามภาระงานจากทูดูลิส" },
 };
 
 export default function Home() {
@@ -716,6 +666,18 @@ export default function Home() {
     const loadMatches = officeLoadFilter === "all" || person.level === officeLoadFilter;
     return departmentMatches && loadMatches;
   });
+  const office3DPeople: Office3DPerson[] = visibleOfficePeople.map((person, index) => ({
+    id: person.employee.id,
+    name: person.employee.name,
+    role: person.role.name,
+    initials: person.employee.initials,
+    level: person.level,
+    behavior: officeBehaviorFor(person.level, index),
+    openCount: person.openItems.length,
+    loadPercent: Math.round(person.loadRatio * 100),
+    currentTask: person.currentTask?.title ?? "พร้อมรับงานใหม่",
+    scene: person.scene,
+  }));
   const officeAvailableCount = officePeople.filter((person) => person.level === "available").length;
   const officePressureCount = officePeople.filter((person) => person.level === "busy" || person.level === "overloaded").length;
   const officeOverdueCount = officePeople.reduce((sum, person) => sum + person.overdueCount, 0);
@@ -1516,9 +1478,9 @@ export default function Home() {
           <section className="office-simulation-layout">
             <section className="office-command-center">
               <div className="office-command-copy">
-                <span className="office-live-label"><i /> LIVE TEAM FLOOR</span>
-                <h2>สำนักงานที่มองเห็น<br />จังหวะการทำงานของทุกคน</h2>
-                <p>อนิเมชันเปลี่ยนตามตำแหน่ง จำนวนงาน ความสำคัญ สถานะ และกำหนดส่ง โดยเทียบกับความจุงานของแต่ละบทบาท</p>
+                <span className="office-live-label"><i /> 3D OFFICE WORLD</span>
+                <h2>ออฟฟิศจำลอง 3D<br />ที่ขยับได้เหมือนในเกม</h2>
+                <p>ตัวละครเลือกเส้นทางเดินในออฟฟิศได้อย่างอิสระ ส่วนคนที่มีงานจะทำงานประจำโต๊ะด้วยความเร็วตามภาระ พร้อมกล้องที่หมุน ซูม และเลื่อนได้</p>
                 <div className="office-legend" aria-label="คำอธิบายสีภาระงาน">
                   {(Object.entries(officeLevelMeta) as [OfficeLoadLevel, (typeof officeLevelMeta)[OfficeLoadLevel]][]).map(([level, meta]) => <span key={level} className={level}><i />{meta.label}</span>)}
                 </div>
@@ -1536,7 +1498,7 @@ export default function Home() {
             </section>
 
             <div className="office-floor-toolbar" id="office-team-floor">
-              <div><p className="eyebrow">ONE SHARED OFFICE</p><h2>ทุกคนอยู่ในออฟฟิศเดียวกัน</h2><small>พฤติกรรมของตัวละครเปลี่ยนตามภาระงาน และกดแต่ละคนเพื่อเปิดทูดูลิสได้</small></div>
+              <div><p className="eyebrow">INTERACTIVE 3D WORLD</p><h2>ทุกคนอยู่ในออฟฟิศ 3D เดียวกัน</h2><small>ลากเพื่อหมุนกล้อง ซูมเข้าออก และกดตัวละครเพื่อเปิดทูดูลิสของคนนั้น</small></div>
               <div className="office-load-filters" aria-label="กรองตามภาระงาน">
                 {([
                   ["all", "ทั้งหมด"],
@@ -1548,37 +1510,12 @@ export default function Home() {
               </div>
             </div>
 
-            <section className="shared-office-shell">
-              <div className="shared-office-topline">
-                <div><span className="office-live-dot" /><p><strong>PEOPLE PULSE OFFICE</strong><small>ข้อมูลจากทูดูลิสล่าสุด · {visibleOfficePeople.length} คนในฉาก</small></p></div>
-                <span>คลิกตัวละครเพื่อดูงาน</span>
-              </div>
-              <div className="shared-office-viewport">
-                <div className="shared-office-room">
-                  <div className="shared-office-wall">
-                    <span className="shared-office-window"><i /><i /><b /></span>
-                    <span className="shared-office-clock"><i /><b /></span>
-                    <span className="shared-office-board"><b>TEAM FLOW</b><i /><i /><i /></span>
-                    <span className="shared-office-edit-bay"><b>CREATIVE BAY</b><i>▶</i><em /></span>
-                  </div>
-                  <span className="shared-office-plant"><i /><i /><i /><b /></span>
-                  <span className="shared-office-rug" />
-                  <span className="shared-office-water"><i /><b /></span>
-                  <div className="shared-office-people">
-                    {visibleOfficePeople.map((person, index) => (
-                      <SharedOfficeWorker key={person.employee.id} person={person} index={index} onOpenTasks={() => {
-                        setWorkAssigneeFilter(person.employee.id);
-                        setWorkDueFilter("all");
-                        setWorkSearch("");
-                        setView("work");
-                      }} />
-                    ))}
-                    {!visibleOfficePeople.length && <div className="shared-office-empty"><span>⌂</span><strong>ไม่มีพนักงานในกลุ่มนี้</strong><p>ลองเลือกสถานะหรือแผนกอื่นเพื่อเรียกทุกคนกลับเข้าฉาก</p><button onClick={() => { setOfficeLoadFilter("all"); setActiveDepartment("all"); }}>แสดงทุกคน</button></div>}
-                  </div>
-                </div>
-              </div>
-              <div className="shared-office-caption"><span><i className="busy" />งานมาก: พิมพ์เร็วและมีงานลอย</span><span><i className="steady" />งานสมดุล: ทำงานพร้อมกาแฟ</span><span><i className="available" />ว่าง: เดินพัก คุยกับทีม หรืองีบบนโซฟา</span><small>ใช้เพื่อช่วยจัดสรรงาน ไม่ใช่คะแนนประเมินผลงาน</small></div>
-            </section>
+            {office3DPeople.length ? <Suspense fallback={<div className="office-3d-loading"><span /><strong>กำลังสร้างโลกออฟฟิศ 3D...</strong><small>จัดโต๊ะ เฟอร์นิเจอร์ และตัวละครตามภาระงาน</small></div>}><Office3D people={office3DPeople} onSelect={(employeeId) => {
+              setWorkAssigneeFilter(employeeId);
+              setWorkDueFilter("all");
+              setWorkSearch("");
+              setView("work");
+            }} /></Suspense> : <div className="office-empty"><span>⌂</span><strong>ไม่มีพนักงานในกลุ่มนี้</strong><p>ลองเลือกสถานะหรือแผนกอื่นเพื่อเรียกทุกคนกลับเข้าฉาก 3D</p><button onClick={() => { setOfficeLoadFilter("all"); setActiveDepartment("all"); }}>แสดงทุกคน</button></div>}
           </section>
         )}
 
@@ -2247,7 +2184,7 @@ export default function Home() {
         )}
       </section>
 
-      <footer><span>PEOPLE PULSE</span><p>Smart To-do · Live Office · Profile · KPI · Skill · Work Portfolio · Reward</p></footer>
+      <footer><span>PEOPLE PULSE</span><p>Smart To-do · 3D Office World · Profile · KPI · Skill · Work Portfolio · Reward</p></footer>
 
       {showProfileEditor && profileEmployee && (
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setShowProfileEditor(false)}>

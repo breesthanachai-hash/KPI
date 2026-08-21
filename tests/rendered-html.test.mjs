@@ -10,10 +10,12 @@ test("builds the People Pulse KPI product bundle", async () => {
   const pageAssetName = assetNames.find((name) => /^page-.*\.js$/.test(name));
   assert.ok(pageAssetName, "expected a built page asset");
 
-  const [pageAsset, layout, styles] = await Promise.all([
+  const [pageAsset, layout, styles, office3D, packageJson] = await Promise.all([
     readFile(new URL(pageAssetName, assetRoot), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+    readFile(new URL("../app/office-3d.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../package.json", import.meta.url), "utf8"),
   ]);
   assert.match(pageAsset, /PEOPLE PULSE/);
   assert.match(pageAsset, /ภาพรวม KPI พนักงาน/);
@@ -43,13 +45,18 @@ test("builds the People Pulse KPI product bundle", async () => {
   assert.match(pageAsset, /พื้นที่ทำงาน/);
   assert.match(pageAsset, /บุคลากร/);
   assert.match(pageAsset, /สำนักงานจำลอง/);
-  assert.match(pageAsset, /LIVE OFFICE SIMULATION/);
-  assert.match(pageAsset, /LIVE TEAM FLOOR/);
-  assert.match(pageAsset, /ความจุงานของแต่ละบทบาท/);
-  assert.match(pageAsset, /ทุกคนอยู่ในออฟฟิศเดียวกัน/);
-  assert.match(pageAsset, /เดินพักในออฟฟิศ/);
-  assert.match(pageAsset, /พักบนโซฟา/);
-  assert.match(pageAsset, /คุยกับเพื่อนร่วมทีม/);
+  assert.match(pageAsset, /INTERACTIVE 3D OFFICE WORLD/);
+  assert.match(pageAsset, /3D OFFICE WORLD/);
+  assert.match(pageAsset, /ภาระงานสูงสุดตอนนี้/);
+  assert.match(pageAsset, /ทุกคนอยู่ในออฟฟิศ 3D เดียวกัน/);
+  assert.match(office3D, /WebGLRenderer/);
+  assert.match(office3D, /OrbitControls/);
+  assert.match(office3D, /เดินสำรวจออฟฟิศ/);
+  assert.match(office3D, /พักบนโซฟา/);
+  assert.match(office3D, /คุยกับทีม/);
+  assert.match(office3D, /requestFullscreen/);
+  assert.match(office3D, /Raycaster/);
+  assert.match(packageJson, /"three"/);
   assert.match(pageAsset, /TODAY/);
   assert.match(pageAsset, /MASTER TO-DO LIST/);
   assert.match(pageAsset, /รายการงานทั้งหมดของทีม/);
@@ -91,10 +98,8 @@ test("builds the People Pulse KPI product bundle", async () => {
   assert.match(styles, /nav-section-label/);
   assert.match(styles, /Live office simulation/);
   assert.match(styles, /office-timeline-play/);
-  assert.match(styles, /One shared cartoon office/);
-  assert.match(styles, /shared-office-room/);
-  assert.match(styles, /shared-walk/);
-  assert.match(styles, /shared-nap/);
+  assert.match(styles, /Interactive 3D office world/);
+  assert.match(styles, /office-3d-canvas/);
   assert.match(styles, /prefers-reduced-motion/);
   assert.doesNotMatch(pageAsset, /Your site is taking shape|Building your site|codex-preview/i);
 });
