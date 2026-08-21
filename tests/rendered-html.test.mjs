@@ -16,7 +16,7 @@ test("builds the People Pulse KPI product bundle", async () => {
   ]);
   assert.match(pageAsset, /PEOPLE PULSE/);
   assert.match(pageAsset, /ภาพรวม KPI พนักงาน/);
-  assert.match(pageAsset, /KPI &amp; SKILL SYSTEM|KPI & SKILL SYSTEM/);
+  assert.match(pageAsset, /TO-DO &amp; PEOPLE SYSTEM|TO-DO & PEOPLE SYSTEM/);
   assert.match(pageAsset, /saveEvaluation/);
   assert.match(pageAsset, /สกิลรายบุคคล/);
   assert.match(pageAsset, /INDIVIDUAL SKILL PROFILE/);
@@ -37,8 +37,13 @@ test("builds the People Pulse KPI product bundle", async () => {
   assert.match(pageAsset, /กรอบเงินเดือนตามตำแหน่ง/);
   assert.match(pageAsset, /saveHrPlan/);
   assert.match(pageAsset, /completeTalentAction/);
-  assert.match(pageAsset, /งานและรางวัล/);
-  assert.match(pageAsset, /SMART TO-DO BOARD/);
+  assert.match(pageAsset, /ทูดูลิส/);
+  assert.match(pageAsset, /SMART TO-DO WORKSPACE/);
+  assert.match(pageAsset, /TODAY/);
+  assert.match(pageAsset, /MASTER TO-DO LIST/);
+  assert.match(pageAsset, /รายการงานทั้งหมดของทีม/);
+  assert.match(pageAsset, /งานเกินกำหนด/);
+  assert.match(pageAsset, /7 วันข้างหน้า/);
   assert.match(pageAsset, /สะสมแต้ม แลกกิฟต์วอเชอร์และรางวัล/);
   assert.match(pageAsset, /POINTS OPERATIONS/);
   assert.match(pageAsset, /แต้มประเมินประจำเดือน/);
@@ -68,7 +73,7 @@ test("builds the People Pulse KPI product bundle", async () => {
   assert.match(pageAsset, /createContract/);
   assert.match(pageAsset, /signContract/);
   assert.match(pageAsset, /รายละเอียดสกิล \(ปัจจุบัน\/เป้าหมาย\)/);
-  assert.match(layout, /People Pulse — ค่าพลังพนักงานและระบบบริหารบุคลากร/);
+  assert.match(layout, /People Pulse — ทูดูลิสงานและโปรเจกต์สำหรับทีม/);
   assert.match(layout, /\/og\.png/);
   assert.doesNotMatch(pageAsset, /Your site is taking shape|Building your site|codex-preview/i);
 });
@@ -144,6 +149,11 @@ test("ships durable people, document, contract, proof, points, work and reward s
   assert.match(page, /saveEvaluation/);
   assert.match(page, /saveHrPlan/);
   assert.match(page, /saveWorkItem/);
+  assert.match(page, /startWorkItem/);
+  assert.match(page, /useState<View>\("work"\)/);
+  assert.match(page, /workDueFilter/);
+  assert.match(page, /workAssigneeFilter/);
+  assert.match(page, /workViewMode/);
   assert.match(page, /redeemReward/);
   assert.match(page, /recordPointEvent/);
   assert.match(page, /runMonthlyPointCycle/);

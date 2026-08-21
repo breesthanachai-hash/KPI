@@ -41,6 +41,10 @@ type View = "overview" | "employees" | "profiles" | "skills" | "power" | "hr" | 
 
 type PortfolioStatusFilter = "all" | "approved" | "submitted" | "revision" | "missing";
 
+type WorkDueFilter = "all" | "today" | "overdue" | "week";
+
+type WorkViewMode = "list" | "board";
+
 type TalentDimensionId = "analysis" | "communication" | "problemSolving" | "leadership" | "execution";
 
 type PowerStatId = "speed" | "technique" | "vision" | "teamwork" | "problemSolving" | "leadership";
@@ -248,6 +252,16 @@ function formatDueDate(value: string) {
   return new Intl.DateTimeFormat("th-TH", { day: "numeric", month: "short", year: "2-digit" }).format(new Date(`${value}T00:00:00`));
 }
 
+function bangkokIsoDate(date = new Date()) {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
+}
+
+function addIsoDays(value: string, days: number) {
+  const date = new Date(`${value}T12:00:00+07:00`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return bangkokIsoDate(date);
+}
+
 function skillLevelLabel(level: number | null) {
   if (level === null) return "รอประเมิน";
   return ["", "พื้นฐาน", "กำลังพัฒนา", "ใช้งานได้", "ชำนาญ", "ผู้เชี่ยวชาญ"][level] ?? "รอประเมิน";
@@ -329,11 +343,11 @@ const viewMeta: Record<View, { eyebrow: string; title: string; description: stri
   power: { eyebrow: "TEAM POWER RATINGS", title: "ค่าพลังพนักงาน", description: "ดูค่าพลังรวมและ 6 สกิลหลักในรูปแบบการ์ด พร้อมเปรียบเทียบจุดเด่นของพนักงานแบบตัวต่อตัว" },
   hr: { eyebrow: "WORKFORCE MANAGEMENT", title: "บริหารทรัพยากรบุคคล", description: "เชื่อมผลงาน สกิล การทดสอบ แผนพัฒนา ตำแหน่งที่เหมาะสม และค่าตอบแทน เพื่อการตัดสินใจที่รอบด้าน" },
   portfolio: { eyebrow: "EMPLOYEE WORK PORTFOLIO", title: "แฟ้มผลงานพนักงาน", description: "ค้นหางานที่ส่งมอบแล้ว ไฟล์ ลิงก์ ผู้ตรวจ และผลประเมินของแต่ละคนได้จากที่เดียว" },
-  work: { eyebrow: "MISSION & REWARD CENTER", title: "งาน โปรเจกต์ และภารกิจ", description: "จัดการ To-do รีเควสต์ และภารกิจ ติดตามความคืบหน้า รับแต้ม และแลกรางวัลในที่เดียว" },
+  work: { eyebrow: "SMART TO-DO WORKSPACE", title: "ทูดูลิสงานและโปรเจกต์", description: "เห็นงานที่ต้องทำวันนี้ งานค้าง ผู้รับผิดชอบ กำหนดส่ง และความคืบหน้าของทีมเป็นอันดับแรก" },
 };
 
 export default function Home() {
-  const [view, setView] = useState<View>("overview");
+  const [view, setView] = useState<View>("work");
   const [activeDepartment, setActiveDepartment] = useState("all");
   const [period, setPeriod] = useState(periods[0]);
   const [employees, setEmployees] = useState<EmployeeRecord[]>(seedEmployees);
@@ -381,6 +395,10 @@ export default function Home() {
   const [powerRightId, setPowerRightId] = useState(seedEmployees[1]?.id ?? seedEmployees[0]?.id ?? "");
   const [workFilter, setWorkFilter] = useState<"all" | WorkItemRecord["kind"]>("all");
   const [workSearch, setWorkSearch] = useState("");
+  const [workDueFilter, setWorkDueFilter] = useState<WorkDueFilter>("all");
+  const [workAssigneeFilter, setWorkAssigneeFilter] = useState("all");
+  const [workViewMode, setWorkViewMode] = useState<WorkViewMode>("list");
+  const [quickUpdatingWorkId, setQuickUpdatingWorkId] = useState("");
   const [portfolioSearch, setPortfolioSearch] = useState("");
   const [portfolioEmployeeId, setPortfolioEmployeeId] = useState("all");
   const [portfolioProjectId, setPortfolioProjectId] = useState("all");
@@ -534,18 +552,34 @@ export default function Home() {
     const completed = items.filter((item) => item.status === "done").length;
     return { project, items, progress, completed };
   }), [projects, workItems]);
+  const todayDate = bangkokIsoDate();
+  const weekEndDate = addIsoDays(todayDate, 7);
+  const todayWorkItems = workItems.filter((item) => item.status !== "done" && item.dueDate === todayDate);
+  const overdueWorkItems = workItems.filter((item) => item.status !== "done" && item.dueDate < todayDate);
+  const dueThisWeekWorkItems = workItems.filter((item) => item.status !== "done" && item.dueDate >= todayDate && item.dueDate <= weekEndDate);
+  const reviewQueueWorkItems = workItems.filter((item) => item.status === "review");
   const visibleWorkItems = useMemo(() => {
     const query = workSearch.trim().toLocaleLowerCase("th");
+    const priorityRank: Record<WorkItemRecord["priority"], number> = { urgent: 0, high: 1, medium: 2, low: 3 };
     return workItems.filter((item) => {
       const project = projectsById.get(item.projectId);
       const assignee = employeesById.get(item.assigneeEmployeeId);
       const departmentMatches = activeDepartment === "all" || project?.departmentId === activeDepartment;
       const kindMatches = workFilter === "all" || item.kind === workFilter;
+      const assigneeMatches = workAssigneeFilter === "all" || item.assigneeEmployeeId === workAssigneeFilter;
+      const dueMatches = workDueFilter === "all"
+        || (workDueFilter === "today" && item.dueDate === todayDate)
+        || (workDueFilter === "overdue" && item.status !== "done" && item.dueDate < todayDate)
+        || (workDueFilter === "week" && item.status !== "done" && item.dueDate >= todayDate && item.dueDate <= weekEndDate);
       const queryMatches = !query || `${item.title} ${item.description} ${project?.name ?? ""} ${assignee?.name ?? ""}`.toLocaleLowerCase("th").includes(query);
-      return departmentMatches && kindMatches && queryMatches;
+      return departmentMatches && kindMatches && assigneeMatches && dueMatches && queryMatches;
+    }).sort((a, b) => {
+      if (a.status === "done" && b.status !== "done") return 1;
+      if (a.status !== "done" && b.status === "done") return -1;
+      const dueOrder = a.dueDate.localeCompare(b.dueDate);
+      return dueOrder || priorityRank[a.priority] - priorityRank[b.priority];
     });
-  }, [activeDepartment, employeesById, projectsById, workFilter, workItems, workSearch]);
-  const openWorkItems = workItems.filter((item) => item.status !== "done");
+  }, [activeDepartment, employeesById, projectsById, todayDate, weekEndDate, workAssigneeFilter, workDueFilter, workFilter, workItems, workSearch]);
   const workCompletion = workItems.length ? workItems.filter((item) => item.status === "done").length / workItems.length * 100 : 0;
   const workSubmissionsByItem = useMemo(() => {
     const grouped = new Map<string, WorkSubmissionRecord[]>();
@@ -778,6 +812,38 @@ export default function Home() {
       showToast(error instanceof Error ? error.message : "บันทึกงานไม่สำเร็จ");
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const startWorkItem = async (item: WorkItemRecord) => {
+    setQuickUpdatingWorkId(item.id);
+    try {
+      const response = await fetch("/api/dashboard", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "saveWorkItem",
+          workItemId: item.id,
+          projectId: item.projectId,
+          assigneeEmployeeId: item.assigneeEmployeeId,
+          kind: item.kind,
+          title: item.title,
+          description: item.description,
+          priority: item.priority,
+          status: "in_progress",
+          progress: Math.max(10, item.progress),
+          points: item.points,
+          dueDate: item.dueDate,
+        }),
+      });
+      const body = await response.json() as { workItem?: WorkItemRecord; error?: string };
+      if (!response.ok || !body.workItem) throw new Error(body.error ?? "เริ่มงานไม่สำเร็จ");
+      setWorkItems((items) => items.map((workItem) => workItem.id === body.workItem?.id ? body.workItem as WorkItemRecord : workItem));
+      showToast(`เริ่มงาน “${item.title}” แล้ว`);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "เริ่มงานไม่สำเร็จ");
+    } finally {
+      setQuickUpdatingWorkId("");
     }
   };
 
@@ -1204,11 +1270,12 @@ export default function Home() {
   return (
     <main className="app-shell">
       <header className="topbar">
-        <button className="brand" onClick={() => setView("overview")} aria-label="ไปที่ภาพรวม">
+        <button className="brand" onClick={() => setView("work")} aria-label="ไปที่ทูดูลิส">
           <span className="brand-mark" aria-hidden="true"><i /><i /><i /></span>
-          <span><strong>PEOPLE PULSE</strong><small>KPI &amp; SKILL SYSTEM</small></span>
+          <span><strong>PEOPLE PULSE</strong><small>TO-DO &amp; PEOPLE SYSTEM</small></span>
         </button>
         <nav aria-label="เมนูหลัก">
+          <button className={view === "work" ? "active" : ""} onClick={() => setView("work")}>ทูดูลิส</button>
           <button className={view === "overview" ? "active" : ""} onClick={() => setView("overview")}>ภาพรวม</button>
           <button className={view === "employees" ? "active" : ""} onClick={() => setView("employees")}>พนักงาน</button>
           <button className={view === "profiles" ? "active" : ""} onClick={() => setView("profiles")}>แฟ้มพนักงาน</button>
@@ -1216,7 +1283,6 @@ export default function Home() {
           <button className={view === "power" ? "active" : ""} onClick={() => setView("power")}>ค่าพลัง</button>
           <button className={view === "hr" ? "active" : ""} onClick={() => setView("hr")}>บริหารบุคลากร</button>
           <button className={view === "portfolio" ? "active" : ""} onClick={() => setView("portfolio")}>แฟ้มผลงาน</button>
-          <button className={view === "work" ? "active" : ""} onClick={() => setView("work")}>งานและรางวัล</button>
         </nav>
         <div className="header-actions">
           <label className="period-select">
@@ -1739,11 +1805,45 @@ export default function Home() {
         {view === "work" && (
           <section className="mission-layout">
             <div className="mission-summary-grid">
-              <MetricCard label="โปรเจกต์ที่กำลังเดิน" value={`${projects.filter((project) => project.status === "active").length} โปรเจกต์`} copy={`${projects.length} โปรเจกต์ทั้งหมด`} icon="◇" />
-              <MetricCard label="งานที่ต้องจัดการ" value={`${openWorkItems.length} รายการ`} copy={`${pendingSubmissionCount} หลักฐานรอตรวจ · ${workItems.filter((item) => item.priority === "urgent" && item.status !== "done").length} งานเร่งด่วน`} tone="warning" icon="✓" />
-              <MetricCard label="ความสำเร็จรวม" value={`${workCompletion.toFixed(0)}%`} copy={`${workItems.filter((item) => item.status === "done").length} จาก ${workItems.length} รายการเสร็จแล้ว`} tone="positive" progress={workCompletion} icon="↗" />
-              <MetricCard label="แต้มพร้อมใช้ในทีม" value={`${formatMoney(totalPoints)} แต้ม`} copy={`${rewardRedemptions.length} คำขอแลกรางวัล`} icon="★" />
+              <MetricCard label="ต้องทำวันนี้" value={`${todayWorkItems.length} งาน`} copy={`${dueThisWeekWorkItems.length} งานครบกำหนดภายใน 7 วัน`} tone="warning" icon="●" />
+              <MetricCard label="เกินกำหนด" value={`${overdueWorkItems.length} งาน`} copy={overdueWorkItems.length ? "ต้องจัดลำดับและติดตามทันที" : "ไม่มีงานค้างเกินกำหนด"} tone={overdueWorkItems.length ? "warning" : "positive"} icon="!" />
+              <MetricCard label="รอตรวจผลงาน" value={`${reviewQueueWorkItems.length} งาน`} copy={`${pendingSubmissionCount} หลักฐานรอการอนุมัติ`} icon="⌕" />
+              <MetricCard label="งานเสร็จทั้งหมด" value={`${workCompletion.toFixed(0)}%`} copy={`${workItems.filter((item) => item.status === "done").length} จาก ${workItems.length} รายการ`} tone="positive" progress={workCompletion} icon="✓" />
             </div>
+
+            <section className="todo-focus-card">
+              <div className="todo-focus-heading">
+                <div><p className="eyebrow">TODAY&apos;S FOCUS</p><h2>งานที่ทีมควรลงมือทำต่อ</h2><p>เรียงจากกำหนดส่งและความสำคัญ เพื่อให้เห็นสิ่งที่ต้องทำก่อนโดยไม่ต้องไล่เปิดทุกโปรเจกต์</p></div>
+                <button onClick={() => openWorkItemForm()}><span>＋</span> เพิ่มงานด่วน</button>
+              </div>
+              <div className="todo-focus-layout">
+                <div className="todo-agenda">
+                  {visibleWorkItems.filter((item) => item.status !== "done").slice(0, 6).map((item) => {
+                    const project = projectsById.get(item.projectId);
+                    const assignee = employeesById.get(item.assigneeEmployeeId);
+                    const dueState = item.dueDate < todayDate ? "overdue" : item.dueDate === todayDate ? "today" : "upcoming";
+                    const actionLabel = item.status === "todo" ? "เริ่มงาน" : item.status === "in_progress" ? "ส่งงาน" : "ตรวจงาน";
+                    return (
+                      <article key={item.id} className={`todo-agenda-row ${dueState}`}>
+                        <button className={`todo-state-mark ${item.status}`} onClick={() => item.status === "todo" ? void startWorkItem(item) : openWorkItemForm(item)} aria-label={item.status === "todo" ? `เริ่มงาน ${item.title}` : `เปิดงาน ${item.title}`}><span>{item.status === "todo" ? "" : item.status === "review" ? "⌕" : "→"}</span></button>
+                        <div className="todo-agenda-copy"><span><b className={`work-priority ${item.priority}`}>{workPriorityLabel(item.priority)}</b><small>{project?.name ?? "ไม่ระบุโปรเจกต์"}</small></span><strong>{item.title}</strong><p>{item.description || "ยังไม่มีรายละเอียดเพิ่มเติม"}</p></div>
+                        <div className="todo-agenda-owner">{assignee ? <EmployeeAvatar employee={assignee} profile={employeeProfilesById.get(assignee.id)} className="avatar-todo-focus" /> : <i className="avatar-media avatar-todo-focus">PP</i>}<span><strong>{assignee?.name ?? "ยังไม่ระบุ"}</strong><small>{item.progress}% · {workStatusLabel(item.status)}</small></span></div>
+                        <div className={`todo-agenda-due ${dueState}`}><small>{dueState === "overdue" ? "เกินกำหนด" : dueState === "today" ? "วันนี้" : "กำหนดส่ง"}</small><strong>{formatDueDate(item.dueDate)}</strong></div>
+                        <button className="todo-row-action" disabled={quickUpdatingWorkId === item.id} onClick={() => item.status === "todo" ? void startWorkItem(item) : openSubmissionCenter(item)}>{quickUpdatingWorkId === item.id ? "กำลังเริ่ม..." : actionLabel}</button>
+                      </article>
+                    );
+                  })}
+                  {!visibleWorkItems.some((item) => item.status !== "done") && <div className="todo-agenda-empty"><span>✓</span><strong>เคลียร์งานครบแล้ว</strong><p>เพิ่มงานใหม่ หรือเปลี่ยนตัวกรองเพื่อดูงานของทีมอื่น</p></div>}
+                </div>
+                <aside className="todo-priority-panel">
+                  <p className="eyebrow">QUICK FILTER</p><h3>เลือกงานที่ต้องโฟกัส</h3>
+                  <button className={workDueFilter === "today" ? "active" : ""} onClick={() => setWorkDueFilter(workDueFilter === "today" ? "all" : "today")}><span className="today">●</span><p><strong>ครบกำหนดวันนี้</strong><small>ลงมือทำก่อนจบวัน</small></p><b>{todayWorkItems.length}</b></button>
+                  <button className={workDueFilter === "overdue" ? "active" : ""} onClick={() => setWorkDueFilter(workDueFilter === "overdue" ? "all" : "overdue")}><span className="overdue">!</span><p><strong>งานเกินกำหนด</strong><small>ติดตามผู้รับผิดชอบ</small></p><b>{overdueWorkItems.length}</b></button>
+                  <button className={workDueFilter === "week" ? "active" : ""} onClick={() => setWorkDueFilter(workDueFilter === "week" ? "all" : "week")}><span>7</span><p><strong>7 วันข้างหน้า</strong><small>วางแผนล่วงหน้าของทีม</small></p><b>{dueThisWeekWorkItems.length}</b></button>
+                  <button className="clear" onClick={() => { setWorkDueFilter("all"); setWorkAssigneeFilter("all"); setWorkFilter("all"); setWorkSearch(""); }}>ล้างตัวกรองทั้งหมด</button>
+                </aside>
+              </div>
+            </section>
 
             <div className="mission-command-grid">
               <section className="project-pulse-card">
@@ -1772,47 +1872,65 @@ export default function Home() {
               </aside>
             </div>
 
-            <section className="work-board-card">
+            <section className="work-board-card" id="todo-board">
               <div className="work-board-heading">
-                <div><p className="eyebrow">SMART TO-DO BOARD</p><h2>งาน รีเควสต์ และภารกิจ</h2><p>ทุกงานเชื่อมกับผู้รับผิดชอบ หลักฐานการส่งมอบ ขั้นตอนตรวจงาน และแต้มที่จะได้รับ</p></div>
-                <div className="work-board-tools">
-                  <div className="work-kind-filter" aria-label="กรองประเภทงาน">
-                    {([{ id: "all", label: "ทั้งหมด" }, { id: "task", label: "งาน" }, { id: "request", label: "รีเควสต์" }, { id: "mission", label: "ภารกิจ / เควสต์" }] as const).map((filter) => <button key={filter.id} className={workFilter === filter.id ? "active" : ""} onClick={() => setWorkFilter(filter.id)}>{filter.label}</button>)}
-                  </div>
-                  <label className="search-field"><span aria-hidden="true">⌕</span><input value={workSearch} onChange={(event) => setWorkSearch(event.target.value)} placeholder="ค้นหางาน โปรเจกต์ หรือผู้รับผิดชอบ" /><span className="sr-only">ค้นหางานและภารกิจ</span></label>
+                <div><p className="eyebrow">MASTER TO-DO LIST</p><h2>รายการงานทั้งหมดของทีม</h2><p>กรองตามกำหนดส่ง ผู้รับผิดชอบ และประเภทงาน แล้วเริ่มงานหรือส่งหลักฐานได้จากรายการเดียว</p></div>
+                <div className="work-view-switch" aria-label="เลือกรูปแบบการแสดงงาน"><button className={workViewMode === "list" ? "active" : ""} onClick={() => setWorkViewMode("list")}><span>☷</span> รายการ</button><button className={workViewMode === "board" ? "active" : ""} onClick={() => setWorkViewMode("board")}><span>▦</span> บอร์ด</button></div>
+              </div>
+              <div className="todo-control-bar">
+                <label className="search-field todo-search"><span aria-hidden="true">⌕</span><input value={workSearch} onChange={(event) => setWorkSearch(event.target.value)} placeholder="ค้นหาชื่องาน โปรเจกต์ หรือผู้รับผิดชอบ..." /><span className="sr-only">ค้นหางานและภารกิจ</span></label>
+                <label className="todo-select"><span>ผู้รับผิดชอบ</span><select value={workAssigneeFilter} onChange={(event) => setWorkAssigneeFilter(event.target.value)}><option value="all">ทุกคนในทีม</option>{employees.filter((employee) => employee.status === "active").map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></label>
+                <div className="work-due-filter" aria-label="กรองตามกำหนดส่ง">{([{ id: "all", label: "ทุกกำหนด" }, { id: "today", label: "วันนี้" }, { id: "overdue", label: "เกินกำหนด" }, { id: "week", label: "7 วัน" }] as const).map((filter) => <button key={filter.id} className={workDueFilter === filter.id ? "active" : ""} onClick={() => setWorkDueFilter(filter.id)}>{filter.label}</button>)}</div>
+                <div className="work-kind-filter" aria-label="กรองประเภทงาน">{([{ id: "all", label: "ทุกประเภท" }, { id: "task", label: "งาน" }, { id: "request", label: "รีเควสต์" }, { id: "mission", label: "เควสต์" }] as const).map((filter) => <button key={filter.id} className={workFilter === filter.id ? "active" : ""} onClick={() => setWorkFilter(filter.id)}>{filter.label}</button>)}</div>
+              </div>
+              <div className="todo-result-line"><span>แสดง <strong>{visibleWorkItems.length}</strong> จาก {workItems.length} งาน</span>{(workSearch || workFilter !== "all" || workDueFilter !== "all" || workAssigneeFilter !== "all") && <button onClick={() => { setWorkSearch(""); setWorkFilter("all"); setWorkDueFilter("all"); setWorkAssigneeFilter("all"); }}>ล้างตัวกรอง</button>}</div>
+              {workViewMode === "list" ? (
+                <div className="todo-table" role="table" aria-label="รายการทูดูลิสของทีม">
+                  <div className="todo-table-head" role="row"><span>สถานะและงาน</span><span>ผู้รับผิดชอบ</span><span>กำหนดส่ง</span><span>ความคืบหน้า</span><span>จัดการ</span></div>
+                  {visibleWorkItems.map((item) => {
+                    const project = projectsById.get(item.projectId);
+                    const assignee = employeesById.get(item.assigneeEmployeeId);
+                    const submissions = workSubmissionsByItem.get(item.id) ?? [];
+                    const dueState = item.status === "done" ? "done" : item.dueDate < todayDate ? "overdue" : item.dueDate === todayDate ? "today" : "upcoming";
+                    return (
+                      <article className={`todo-table-row ${dueState}`} role="row" key={item.id}>
+                        <span className="todo-table-task"><button className={`todo-table-check ${item.status}`} disabled={item.status === "done" || quickUpdatingWorkId === item.id} onClick={() => item.status === "todo" ? void startWorkItem(item) : openWorkItemForm(item)} aria-label={`${workStatusLabel(item.status)}: ${item.title}`}>{item.status === "done" ? "✓" : item.status === "review" ? "⌕" : item.status === "in_progress" ? "→" : ""}</button><span><small><b className={`work-kind ${item.kind}`}>{workKindLabel(item.kind)}</b><i className={`work-priority ${item.priority}`}>{workPriorityLabel(item.priority)}</i>{project?.name ?? "ไม่ระบุโปรเจกต์"}</small><strong>{item.title}</strong><p>{item.description || "ยังไม่มีรายละเอียดเพิ่มเติม"}</p></span></span>
+                        <span className="todo-table-owner">{assignee ? <EmployeeAvatar employee={assignee} profile={employeeProfilesById.get(assignee.id)} className="avatar-todo-row" /> : <i className="avatar-media avatar-todo-row">PP</i>}<span><strong>{assignee?.name ?? "ยังไม่ระบุ"}</strong><small>{assignee ? getRole(assignee.roleId).shortName : "—"}</small></span></span>
+                        <span className={`todo-table-due ${dueState}`}><strong>{dueState === "overdue" ? "เกินกำหนด" : dueState === "today" ? "วันนี้" : dueState === "done" ? "ปิดงานแล้ว" : formatDueDate(item.dueDate)}</strong><small>{dueState === "overdue" || dueState === "today" ? formatDueDate(item.dueDate) : workStatusLabel(item.status)}</small></span>
+                        <span className="todo-table-progress"><span><i><b style={{ width: `${item.progress}%` }} /></i><strong>{item.progress}%</strong></span><small>★ {formatMoney(item.points)} แต้ม · {submissions.length} หลักฐาน</small></span>
+                        <span className="todo-table-actions"><button onClick={() => openWorkItemForm(item)}>รายละเอียด</button>{item.status === "todo" ? <button className="primary" disabled={quickUpdatingWorkId === item.id} onClick={() => void startWorkItem(item)}>{quickUpdatingWorkId === item.id ? "กำลังเริ่ม" : "เริ่มงาน"}</button> : <button className="primary" onClick={() => openSubmissionCenter(item)}>{item.status === "review" ? "ตรวจงาน" : item.status === "done" ? "ดูผลงาน" : "ส่งงาน"}</button>}</span>
+                      </article>
+                    );
+                  })}
+                  {!visibleWorkItems.length && <div className="todo-table-empty"><span>⌕</span><strong>ไม่พบงานตามตัวกรอง</strong><p>ลองเปลี่ยนกำหนดส่ง ผู้รับผิดชอบ ประเภทงาน หรือคำค้นหา</p><button onClick={() => { setWorkSearch(""); setWorkFilter("all"); setWorkDueFilter("all"); setWorkAssigneeFilter("all"); }}>แสดงงานทั้งหมด</button></div>}
                 </div>
-              </div>
-              <div className="work-kanban">
-                {(["todo", "in_progress", "review", "done"] as WorkItemRecord["status"][]).map((status) => {
-                  const items = visibleWorkItems.filter((item) => item.status === status).sort((a, b) => a.dueDate.localeCompare(b.dueDate));
-                  return (
-                    <section className={`kanban-column ${status}`} key={status}>
-                      <div className="kanban-heading"><span><i />{workStatusLabel(status)}</span><b>{items.length}</b></div>
-                      <div className="kanban-list">
-                        {items.map((item) => {
-                          const project = projectsById.get(item.projectId);
-                          const assignee = employeesById.get(item.assigneeEmployeeId);
-                          const submissions = workSubmissionsByItem.get(item.id) ?? [];
-                          const latestSubmission = submissions[0];
-                          return (
-                            <article key={item.id} className="work-ticket">
-                              <button className="work-ticket-main" onClick={() => openWorkItemForm(item)}>
-                                <span className="work-ticket-meta"><b className={`work-kind ${item.kind}`}>{workKindLabel(item.kind)}</b><i className={`work-priority ${item.priority}`}>{workPriorityLabel(item.priority)}</i></span>
-                                <strong>{item.title}</strong><small>{project?.name ?? "ไม่ระบุโปรเจกต์"}</small>
-                                {latestSubmission && <span className={`proof-status ${latestSubmission.status}`}>{workSubmissionStatusLabel(latestSubmission.status)} · {submissions.length} รายการ</span>}
-                                <span className="ticket-progress"><i><b style={{ width: `${item.progress}%` }} /></i><em>{item.progress}%</em></span>
-                                <span className="work-ticket-foot">{assignee ? <EmployeeAvatar employee={assignee} profile={employeeProfilesById.get(assignee.id)} className="avatar-ticket" /> : <i className="avatar-media avatar-ticket">PP</i>}<small>{formatDueDate(item.dueDate)}</small><b>★ {item.points}</b></span>
-                              </button>
-                              <div className="work-ticket-actions"><button onClick={() => openWorkItemForm(item)}>รายละเอียด</button><button className="proof" onClick={() => openSubmissionCenter(item)}>{submissions.length ? `หลักฐาน (${submissions.length})` : "ส่งหลักฐาน"}</button></div>
-                            </article>
-                          );
-                        })}
-                        {!items.length && <div className="kanban-empty">ไม่มีรายการ</div>}
-                      </div>
-                    </section>
-                  );
-                })}
-              </div>
+              ) : (
+                <div className="work-kanban">
+                  {(["todo", "in_progress", "review", "done"] as WorkItemRecord["status"][]).map((status) => {
+                    const items = visibleWorkItems.filter((item) => item.status === status).sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+                    return (
+                      <section className={`kanban-column ${status}`} key={status}>
+                        <div className="kanban-heading"><span><i />{workStatusLabel(status)}</span><b>{items.length}</b></div>
+                        <div className="kanban-list">
+                          {items.map((item) => {
+                            const project = projectsById.get(item.projectId);
+                            const assignee = employeesById.get(item.assigneeEmployeeId);
+                            const submissions = workSubmissionsByItem.get(item.id) ?? [];
+                            const latestSubmission = submissions[0];
+                            return (
+                              <article key={item.id} className="work-ticket">
+                                <button className="work-ticket-main" onClick={() => openWorkItemForm(item)}><span className="work-ticket-meta"><b className={`work-kind ${item.kind}`}>{workKindLabel(item.kind)}</b><i className={`work-priority ${item.priority}`}>{workPriorityLabel(item.priority)}</i></span><strong>{item.title}</strong><small>{project?.name ?? "ไม่ระบุโปรเจกต์"}</small>{latestSubmission && <span className={`proof-status ${latestSubmission.status}`}>{workSubmissionStatusLabel(latestSubmission.status)} · {submissions.length} รายการ</span>}<span className="ticket-progress"><i><b style={{ width: `${item.progress}%` }} /></i><em>{item.progress}%</em></span><span className="work-ticket-foot">{assignee ? <EmployeeAvatar employee={assignee} profile={employeeProfilesById.get(assignee.id)} className="avatar-ticket" /> : <i className="avatar-media avatar-ticket">PP</i>}<small>{formatDueDate(item.dueDate)}</small><b>★ {item.points}</b></span></button>
+                                <div className="work-ticket-actions"><button onClick={() => openWorkItemForm(item)}>รายละเอียด</button><button className="proof" onClick={() => item.status === "todo" ? void startWorkItem(item) : openSubmissionCenter(item)}>{item.status === "todo" ? "เริ่มงาน" : submissions.length ? `หลักฐาน (${submissions.length})` : "ส่งหลักฐาน"}</button></div>
+                              </article>
+                            );
+                          })}
+                          {!items.length && <div className="kanban-empty">ไม่มีรายการ</div>}
+                        </div>
+                      </section>
+                    );
+                  })}
+                </div>
+              )}
             </section>
 
             <section className="points-operations-card">
