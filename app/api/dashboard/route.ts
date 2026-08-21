@@ -1,13 +1,14 @@
 import { and, eq } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { ensureDatabase } from "../../../db/initialize";
-import { applicationDocuments, employeeProfiles, employees, employmentContracts, evaluations, hrProfiles, pointLedger, projects, rewardRedemptions, rewards, talentActions, workItems, workSubmissions } from "../../../db/schema";
+import { applicationDocuments, employeeProfiles, employees, employmentContracts, evaluations, hrProfiles, pointEvents, pointLedger, projects, rewardRedemptions, rewards, talentActions, workItems, workSubmissions } from "../../../db/schema";
 import {
   clampScore,
   clampSkillLevel,
   getRole,
   makeInitials,
   periods,
+  pointEventRules,
   roleSalaryBands,
   roles,
   seedEmployees,
@@ -21,6 +22,9 @@ import {
   seedRewards,
   seedTalentActions,
   seedWorkItems,
+  type PointEventRecord,
+  type PointEventType,
+  type PointLedgerRecord,
 } from "../../../lib/kpi-data";
 
 export const dynamic = "force-dynamic";
@@ -87,8 +91,7 @@ async function ensureSeedData() {
     }
   }
 
-  const [existingReward] = await db.select({ id: rewards.id }).from(rewards).limit(1);
-  if (!existingReward) await db.insert(rewards).values(seedRewards).onConflictDoNothing();
+  for (const reward of seedRewards) await db.insert(rewards).values(reward).onConflictDoNothing();
 
   const [existingPointEntry] = await db.select({ id: pointLedger.id }).from(pointLedger).limit(1);
   if (!existingPointEntry) await db.insert(pointLedger).values(seedPointLedger).onConflictDoNothing();
@@ -131,13 +134,23 @@ function evaluatorName(request: Request) {
   return authenticatedActor(request).name;
 }
 
+function isSafeOptionalUrl(value: string) {
+  if (!value) return true;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+
 export async function GET(request: Request) {
   try {
     await ensureSeedData();
     const url = new URL(request.url);
     const period = url.searchParams.get("period") ?? periods[0];
     const db = getDb();
-    const [employeeRows, evaluationRows, hrProfileRows, talentActionRows, projectRows, workItemRows, workSubmissionRows, rewardRows, pointRows, redemptionRows, employeeProfileRows, applicationDocumentRows, employmentContractRows] = await Promise.all([
+    const [employeeRows, evaluationRows, hrProfileRows, talentActionRows, projectRows, workItemRows, workSubmissionRows, rewardRows, pointRows, pointEventRows, redemptionRows, employeeProfileRows, applicationDocumentRows, employmentContractRows] = await Promise.all([
       db.select().from(employees),
       db.select().from(evaluations).where(eq(evaluations.period, period)),
       db.select().from(hrProfiles),
@@ -147,13 +160,14 @@ export async function GET(request: Request) {
       db.select().from(workSubmissions),
       db.select().from(rewards),
       db.select().from(pointLedger),
+      db.select().from(pointEvents),
       db.select().from(rewardRedemptions),
       db.select().from(employeeProfiles),
       db.select().from(applicationDocuments),
       db.select().from(employmentContracts),
     ]);
 
-    return Response.json({ employees: employeeRows, evaluations: evaluationRows, hrProfiles: hrProfileRows, talentActions: talentActionRows, projects: projectRows, workItems: workItemRows, workSubmissions: workSubmissionRows, rewards: rewardRows, pointLedger: pointRows, rewardRedemptions: redemptionRows, employeeProfiles: employeeProfileRows, applicationDocuments: applicationDocumentRows, employmentContracts: employmentContractRows, period });
+    return Response.json({ employees: employeeRows, evaluations: evaluationRows, hrProfiles: hrProfileRows, talentActions: talentActionRows, projects: projectRows, workItems: workItemRows, workSubmissions: workSubmissionRows, rewards: rewardRows, pointLedger: pointRows, pointEvents: pointEventRows, rewardRedemptions: redemptionRows, employeeProfiles: employeeProfileRows, applicationDocuments: applicationDocumentRows, employmentContracts: employmentContractRows, period });
   } catch (error) {
     return apiError(error);
   }
@@ -228,6 +242,21 @@ type ReviewWorkSubmissionPayload = {
   reviewerNote?: string;
 };
 
+type RecordPointEventPayload = {
+  action: "recordPointEvent";
+  employeeId?: string;
+  eventType?: PointEventType;
+  eventDate?: string;
+  note?: string;
+  evidenceUrl?: string;
+};
+
+type RunMonthlyPointCyclePayload = {
+  action: "runMonthlyPointCycle";
+  month?: string;
+  period?: string;
+};
+
 type RedeemRewardPayload = {
   action: "redeemReward";
   employeeId?: string;
@@ -284,7 +313,7 @@ type SendContractPayload = {
 export async function POST(request: Request) {
   try {
     await ensureSeedData();
-    const payload = await request.json() as EmployeePayload | EvaluationPayload | HrPlanPayload | CompleteTalentActionPayload | ProjectPayload | WorkItemPayload | ReviewWorkSubmissionPayload | RedeemRewardPayload | EmployeeProfilePayload | DocumentStatusPayload | ContractPayload | SignContractPayload | SendContractPayload;
+    const payload = await request.json() as EmployeePayload | EvaluationPayload | HrPlanPayload | CompleteTalentActionPayload | ProjectPayload | WorkItemPayload | ReviewWorkSubmissionPayload | RecordPointEventPayload | RunMonthlyPointCyclePayload | RedeemRewardPayload | EmployeeProfilePayload | DocumentStatusPayload | ContractPayload | SignContractPayload | SendContractPayload;
     const db = getDb();
 
     if (payload.action === "createEmployee") {
@@ -391,7 +420,39 @@ export async function POST(request: Request) {
         }).where(and(eq(employees.id, employeeId), eq(employees.status, "active")));
       }
 
-      return Response.json({ evaluation });
+      const month = now.slice(0, 7);
+      const monthlyPoints = Math.min(1000, Math.max(0, Math.round(evaluation.totalScore * 10)));
+      const monthlySourceId = `monthly-evaluation-${month}:${employeeId}`;
+      const pointEvent = {
+        id: `point-event-${monthlySourceId}`,
+        employeeId,
+        eventType: "monthly_evaluation" as const,
+        points: monthlyPoints,
+        eventDate: now.slice(0, 10),
+        note: `แต้มประเมินประจำเดือน ${month} จาก ${period} · คะแนนรวม ${evaluation.totalScore}`,
+        evidenceUrl: "",
+        recordedBy: evaluation.evaluator,
+        createdAt: now,
+      };
+      const pointEntry = {
+        id: `points-${monthlySourceId}`,
+        employeeId,
+        sourceType: "evaluation" as const,
+        sourceId: monthlySourceId,
+        points: monthlyPoints,
+        note: pointEvent.note,
+        createdAt: now,
+      };
+      await db.insert(pointEvents).values(pointEvent).onConflictDoUpdate({
+        target: pointEvents.id,
+        set: { points: monthlyPoints, eventDate: pointEvent.eventDate, note: pointEvent.note, recordedBy: pointEvent.recordedBy, createdAt: now },
+      });
+      await db.insert(pointLedger).values(pointEntry).onConflictDoUpdate({
+        target: pointLedger.id,
+        set: { points: monthlyPoints, note: pointEntry.note, createdAt: now },
+      });
+
+      return Response.json({ evaluation, pointEntry, pointEvent });
     }
 
     if (payload.action === "saveHrPlan") {
@@ -538,13 +599,95 @@ export async function POST(request: Request) {
       await db.update(workItems).set({ status: updatedWorkItem.status, progress: updatedWorkItem.progress, updatedAt: now }).where(eq(workItems.id, workItem.id));
 
       let pointEntry = null;
+      let deadlinePointEntry = null;
+      let deadlinePointEvent = null;
       if (status === "approved" && workItem.points > 0) {
         const sourceType = workItem.kind === "mission" ? "mission" as const : "task" as const;
         const pointId = `points-${workItem.id}`;
         await db.insert(pointLedger).values({ id: pointId, employeeId: workItem.assigneeEmployeeId, sourceType, sourceId: workItem.id, points: workItem.points, note: `อนุมัติหลักฐานและปิด${workItem.kind === "mission" ? "ภารกิจ" : "งาน"}: ${workItem.title}`, createdAt: now }).onConflictDoNothing();
         [pointEntry] = await db.select().from(pointLedger).where(eq(pointLedger.id, pointId)).limit(1);
       }
-      return Response.json({ workSubmission: reviewedSubmission, workItem: updatedWorkItem, pointEntry });
+      const completionDate = now.slice(0, 10);
+      if (status === "approved" && completionDate <= workItem.dueDate) {
+        const eventType = completionDate < workItem.dueDate ? "early_finish" as const : "on_time_finish" as const;
+        const rule = pointEventRules[eventType];
+        const eventId = `point-event-deadline-${workItem.id}`;
+        const event = { id: eventId, employeeId: workItem.assigneeEmployeeId, eventType, points: rule.points ?? 0, eventDate: completionDate, note: `${rule.label}: ${workItem.title}`, evidenceUrl: submission.linkUrl, recordedBy: actor.name, createdAt: now };
+        const entry = { id: `points-deadline-${workItem.id}`, employeeId: workItem.assigneeEmployeeId, sourceType: "deadline" as const, sourceId: `deadline-${workItem.id}`, points: rule.points ?? 0, note: event.note, createdAt: now };
+        await db.insert(pointEvents).values(event).onConflictDoNothing();
+        await db.insert(pointLedger).values(entry).onConflictDoNothing();
+        [deadlinePointEvent] = await db.select().from(pointEvents).where(eq(pointEvents.id, eventId)).limit(1);
+        [deadlinePointEntry] = await db.select().from(pointLedger).where(eq(pointLedger.id, entry.id)).limit(1);
+      }
+      return Response.json({ workSubmission: reviewedSubmission, workItem: updatedWorkItem, pointEntry, deadlinePointEntry, deadlinePointEvent });
+    }
+
+    if (payload.action === "recordPointEvent") {
+      const employeeId = payload.employeeId ?? "";
+      const eventType = payload.eventType;
+      const eventDate = /^\d{4}-\d{2}-\d{2}$/.test(payload.eventDate ?? "") ? payload.eventDate as string : "";
+      const note = payload.note?.trim().slice(0, 1000) ?? "";
+      const evidenceUrl = payload.evidenceUrl?.trim().slice(0, 1200) ?? "";
+      if (!eventType || !(eventType in pointEventRules) || eventType === "monthly_evaluation") return Response.json({ error: "ประเภทเหตุการณ์แต้มไม่ถูกต้อง" }, { status: 400 });
+      if (!eventDate || !note) return Response.json({ error: "กรุณาระบุวันที่และเหตุผลของรายการแต้ม" }, { status: 400 });
+      if (!isSafeOptionalUrl(evidenceUrl)) return Response.json({ error: "ลิงก์หลักฐานต้องขึ้นต้นด้วย http:// หรือ https://" }, { status: 400 });
+      const [employee] = await db.select({ id: employees.id }).from(employees).where(and(eq(employees.id, employeeId), eq(employees.status, "active"))).limit(1);
+      if (!employee) return Response.json({ error: "ไม่พบพนักงานที่เลือก" }, { status: 404 });
+      const rule = pointEventRules[eventType];
+      if (rule.points === null) return Response.json({ error: "รายการนี้ต้องประมวลผลจากรอบประเมิน" }, { status: 400 });
+      const actor = authenticatedActor(request);
+      const now = new Date().toISOString();
+      const eventId = `point-event-${crypto.randomUUID()}`;
+      const pointEvent = { id: eventId, employeeId, eventType, points: rule.points, eventDate, note, evidenceUrl, recordedBy: actor.name, createdAt: now };
+      const pointEntry = { id: `points-${eventId}`, employeeId, sourceType: rule.sourceType, sourceId: eventId, points: rule.points, note: `${rule.label}: ${note}`, createdAt: now };
+      await db.insert(pointEvents).values(pointEvent);
+      await db.insert(pointLedger).values(pointEntry);
+      return Response.json({ pointEvent, pointEntry }, { status: 201 });
+    }
+
+    if (payload.action === "runMonthlyPointCycle") {
+      const month = /^\d{4}-\d{2}$/.test(payload.month ?? "") ? payload.month as string : new Date().toISOString().slice(0, 7);
+      const selectedPeriod = payload.period ?? periods[0];
+      const [evaluationRows, activeEmployeeRows] = await Promise.all([
+        db.select().from(evaluations).where(eq(evaluations.period, selectedPeriod)),
+        db.select({ id: employees.id }).from(employees).where(eq(employees.status, "active")),
+      ]);
+      const activeIds = new Set(activeEmployeeRows.map((employee) => employee.id));
+      const eligible = evaluationRows.filter((evaluation) => activeIds.has(evaluation.employeeId));
+      if (!eligible.length) return Response.json({ error: "ยังไม่มีผลประเมินสำหรับรอบที่เลือก" }, { status: 409 });
+      const actor = authenticatedActor(request);
+      const now = new Date().toISOString();
+      const pointEntryRows: PointLedgerRecord[] = [];
+      const pointEventRows: PointEventRecord[] = [];
+      for (const evaluation of eligible) {
+        const monthlyPoints = Math.min(1000, Math.max(0, Math.round(evaluation.totalScore * 10)));
+        const monthlySourceId = `monthly-evaluation-${month}:${evaluation.employeeId}`;
+        const event = {
+          id: `point-event-${monthlySourceId}`,
+          employeeId: evaluation.employeeId,
+          eventType: "monthly_evaluation" as const,
+          points: monthlyPoints,
+          eventDate: `${month}-01`,
+          note: `แต้มประเมินประจำเดือน ${month} จาก ${selectedPeriod} · คะแนนรวม ${evaluation.totalScore}`,
+          evidenceUrl: "",
+          recordedBy: actor.name,
+          createdAt: now,
+        };
+        const entry = {
+          id: `points-${monthlySourceId}`,
+          employeeId: evaluation.employeeId,
+          sourceType: "evaluation" as const,
+          sourceId: monthlySourceId,
+          points: monthlyPoints,
+          note: event.note,
+          createdAt: now,
+        };
+        await db.insert(pointEvents).values(event).onConflictDoUpdate({ target: pointEvents.id, set: { points: monthlyPoints, note: event.note, recordedBy: actor.name, createdAt: now } });
+        await db.insert(pointLedger).values(entry).onConflictDoUpdate({ target: pointLedger.id, set: { points: monthlyPoints, note: entry.note, createdAt: now } });
+        pointEventRows.push(event);
+        pointEntryRows.push(entry);
+      }
+      return Response.json({ pointEvents: pointEventRows, pointEntries: pointEntryRows, month, count: pointEntryRows.length });
     }
 
     if (payload.action === "redeemReward") {

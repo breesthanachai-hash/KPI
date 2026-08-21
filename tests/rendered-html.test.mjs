@@ -39,7 +39,12 @@ test("builds the People Pulse KPI product bundle", async () => {
   assert.match(pageAsset, /completeTalentAction/);
   assert.match(pageAsset, /งานและรางวัล/);
   assert.match(pageAsset, /SMART TO-DO BOARD/);
-  assert.match(pageAsset, /สะสมแต้ม แลกรางวัล/);
+  assert.match(pageAsset, /สะสมแต้ม แลกกิฟต์วอเชอร์และรางวัล/);
+  assert.match(pageAsset, /POINTS OPERATIONS/);
+  assert.match(pageAsset, /แต้มประเมินประจำเดือน/);
+  assert.match(pageAsset, /กติกาการได้และเสียแต้ม/);
+  assert.match(pageAsset, /คูปองเงินสด 100 บาท/);
+  assert.match(pageAsset, /iPhone 18/);
   assert.match(pageAsset, /WORK PROOF CENTER/);
   assert.match(pageAsset, /ส่งหลักฐานงาน/);
   assert.match(pageAsset, /หลักฐานแนะนำตามตำแหน่ง/);
@@ -68,8 +73,8 @@ test("builds the People Pulse KPI product bundle", async () => {
   assert.doesNotMatch(pageAsset, /Your site is taking shape|Building your site|codex-preview/i);
 });
 
-test("ships durable people, document, contract, proof, work and reward storage", async () => {
-  const [hosting, migration, workforceMigration, workMigration, dossierMigration, dossierIndexMigration, proofMigration, packagedMigration, packagedWorkforceMigration, packagedWorkMigration, packagedDossierMigration, packagedDossierIndexMigration, packagedProofMigration, page, schema, documentRoute, profileImageRoute, workSubmissionRoute, nextConfig] = await Promise.all([
+test("ships durable people, document, contract, proof, points, work and reward storage", async () => {
+  const [hosting, migration, workforceMigration, workMigration, dossierMigration, dossierIndexMigration, proofMigration, pointsMigration, packagedMigration, packagedWorkforceMigration, packagedWorkMigration, packagedDossierMigration, packagedDossierIndexMigration, packagedProofMigration, packagedPointsMigration, page, dashboardRoute, data, schema, documentRoute, profileImageRoute, workSubmissionRoute, nextConfig] = await Promise.all([
     readFile(new URL("../.openai/hosting.json", import.meta.url), "utf8"),
     readFile(new URL("../drizzle/0000_marvelous_pandemic.sql", import.meta.url), "utf8"),
     readFile(new URL("../drizzle/0001_outstanding_leper_queen.sql", import.meta.url), "utf8"),
@@ -77,13 +82,17 @@ test("ships durable people, document, contract, proof, work and reward storage",
     readFile(new URL("../drizzle/0003_light_runaways.sql", import.meta.url), "utf8"),
     readFile(new URL("../drizzle/0004_tricky_domino.sql", import.meta.url), "utf8"),
     readFile(new URL("../drizzle/0005_neat_kingpin.sql", import.meta.url), "utf8"),
+    readFile(new URL("../drizzle/0006_typical_zuras.sql", import.meta.url), "utf8"),
     readFile(new URL("../dist/.openai/drizzle/0000_marvelous_pandemic.sql", import.meta.url), "utf8"),
     readFile(new URL("../dist/.openai/drizzle/0001_outstanding_leper_queen.sql", import.meta.url), "utf8"),
     readFile(new URL("../dist/.openai/drizzle/0002_legal_vector.sql", import.meta.url), "utf8"),
     readFile(new URL("../dist/.openai/drizzle/0003_light_runaways.sql", import.meta.url), "utf8"),
     readFile(new URL("../dist/.openai/drizzle/0004_tricky_domino.sql", import.meta.url), "utf8"),
     readFile(new URL("../dist/.openai/drizzle/0005_neat_kingpin.sql", import.meta.url), "utf8"),
+    readFile(new URL("../dist/.openai/drizzle/0006_typical_zuras.sql", import.meta.url), "utf8"),
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/dashboard/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/kpi-data.ts", import.meta.url), "utf8"),
     readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/documents/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/profile-image/route.ts", import.meta.url), "utf8"),
@@ -114,6 +123,9 @@ test("ships durable people, document, contract, proof, work and reward storage",
   assert.match(proofMigration, /CREATE TABLE `work_submissions`/);
   assert.match(proofMigration, /profile_image_key/);
   assert.equal(packagedProofMigration, proofMigration);
+  assert.match(pointsMigration, /CREATE TABLE `point_events`/);
+  assert.match(pointsMigration, /point_events_employee_date_idx/);
+  assert.equal(packagedPointsMigration, pointsMigration);
   assert.match(schema, /kpiScores/);
   assert.match(schema, /skillScores/);
   assert.match(schema, /currentSalary/);
@@ -122,6 +134,7 @@ test("ships durable people, document, contract, proof, work and reward storage",
   assert.match(schema, /projects/);
   assert.match(schema, /workItems/);
   assert.match(schema, /pointLedger/);
+  assert.match(schema, /pointEvents/);
   assert.match(schema, /rewardRedemptions/);
   assert.match(schema, /employeeProfiles/);
   assert.match(schema, /applicationDocuments/);
@@ -132,6 +145,13 @@ test("ships durable people, document, contract, proof, work and reward storage",
   assert.match(page, /saveHrPlan/);
   assert.match(page, /saveWorkItem/);
   assert.match(page, /redeemReward/);
+  assert.match(page, /recordPointEvent/);
+  assert.match(page, /runMonthlyPointCycle/);
+  assert.match(dashboardRoute, /recordPointEvent/);
+  assert.match(dashboardRoute, /runMonthlyPointCycle/);
+  assert.match(data, /pointEventRules/);
+  assert.match(data, /reward-cash-100/);
+  assert.match(data, /reward-iphone-18/);
   assert.match(page, /saveEmployeeProfile/);
   assert.match(page, /signEmploymentContract/);
   assert.match(page, /submitWorkProof/);

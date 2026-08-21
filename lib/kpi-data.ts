@@ -104,11 +104,40 @@ export type RewardRecord = {
 export type PointLedgerRecord = {
   id: string;
   employeeId: string;
-  sourceType: "task" | "mission" | "bonus" | "redemption";
+  sourceType: "task" | "mission" | "quest" | "evaluation" | "attendance" | "deadline" | "quality" | "discipline" | "bonus" | "redemption";
   sourceId: string;
   points: number;
   note: string;
   createdAt: string;
+};
+
+export type PointEventType = "monthly_evaluation" | "attendance_on_time" | "attendance_late" | "absence" | "approved_leave" | "early_finish" | "on_time_finish" | "work_error" | "warning" | "rule_violation" | "bonus" | "quest";
+
+export type PointEventRecord = {
+  id: string;
+  employeeId: string;
+  eventType: PointEventType;
+  points: number;
+  eventDate: string;
+  note: string;
+  evidenceUrl: string;
+  recordedBy: string;
+  createdAt: string;
+};
+
+export const pointEventRules: Record<PointEventType, { label: string; points: number | null; description: string; sourceType: PointLedgerRecord["sourceType"] }> = {
+  monthly_evaluation: { label: "แต้มประเมินประจำเดือน", points: null, description: "คะแนนรวม × 10 สูงสุด 1,000 แต้มต่อเดือน", sourceType: "evaluation" },
+  attendance_on_time: { label: "เข้างานตรงเวลา", points: 20, description: "บันทึกตามรอบเวลาทำงานที่บริษัทกำหนด", sourceType: "attendance" },
+  attendance_late: { label: "มาสาย", points: -50, description: "หักแต้มเมื่อมาสายตามข้อมูลลงเวลา", sourceType: "attendance" },
+  absence: { label: "ขาดงานโดยไม่ได้รับอนุมัติ", points: -200, description: "ใช้เฉพาะกรณีขาดงานที่ตรวจสอบแล้ว", sourceType: "attendance" },
+  approved_leave: { label: "ลาที่ได้รับอนุมัติ", points: 0, description: "บันทึกไว้ตรวจสอบโดยไม่หักแต้ม", sourceType: "attendance" },
+  early_finish: { label: "ส่งงานก่อนกำหนด", points: 100, description: "โบนัสเมื่อผลงานผ่านการตรวจและเสร็จก่อนวันกำหนด", sourceType: "deadline" },
+  on_time_finish: { label: "ส่งงานตรงกำหนด", points: 50, description: "โบนัสเมื่อผลงานผ่านการตรวจภายในวันกำหนด", sourceType: "deadline" },
+  work_error: { label: "งานผิดพลาด", points: -100, description: "หักแต้มพร้อมระบุข้อผิดพลาดและแนวทางแก้ไข", sourceType: "quality" },
+  warning: { label: "ได้รับใบเตือน", points: -500, description: "ต้องมีเหตุผล ผู้บันทึก และหลักฐานอ้างอิง", sourceType: "discipline" },
+  rule_violation: { label: "ผิดกฎระเบียบการทำงาน", points: -300, description: "บันทึกหลังตรวจสอบข้อเท็จจริงตามระเบียบบริษัท", sourceType: "discipline" },
+  bonus: { label: "โบนัสพิเศษ", points: 100, description: "แต้มยกย่องผลงานหรือพฤติกรรมที่สร้างคุณค่า", sourceType: "bonus" },
+  quest: { label: "ทำเควสต์สำเร็จ", points: 150, description: "แต้มจากเควสต์หรือภารกิจพิเศษที่ผ่านการตรวจ", sourceType: "quest" },
 };
 
 export type RewardRedemptionRecord = {
@@ -399,9 +428,12 @@ export const seedWorkItems: WorkItemRecord[] = [
 
 export const seedRewards: RewardRecord[] = [
   { id: "reward-coffee", title: "คูปองกาแฟ", description: "เครื่องดื่ม 1 แก้วจากร้านพาร์ตเนอร์", category: "perk", costPoints: 120, stock: 20, icon: "☕", isActive: true, createdAt: "2026-08-01T02:00:00.000Z", updatedAt: "2026-08-01T02:00:00.000Z" },
+  { id: "reward-cash-100", title: "คูปองเงินสด 100 บาท", description: "กิฟต์วอเชอร์มูลค่า 100 บาท ส่งให้หลังคำขอได้รับอนุมัติ", category: "perk", costPoints: 1000, stock: 100, icon: "฿", isActive: true, createdAt: "2026-08-21T02:00:00.000Z", updatedAt: "2026-08-21T02:00:00.000Z" },
+  { id: "reward-shopping-500", title: "กิฟต์วอเชอร์ 500 บาท", description: "เลือกใช้กับร้านค้าที่บริษัทกำหนดหลังตรวจสอบสิทธิ์", category: "perk", costPoints: 5000, stock: 30, icon: "▣", isActive: true, createdAt: "2026-08-21T02:05:00.000Z", updatedAt: "2026-08-21T02:05:00.000Z" },
   { id: "reward-half-day", title: "วันหยุดครึ่งวัน", description: "แลกสิทธิ์วันหยุดเพิ่มเติมครึ่งวัน", category: "wellbeing", costPoints: 500, stock: 6, icon: "☀", isActive: true, createdAt: "2026-08-01T02:00:00.000Z", updatedAt: "2026-08-01T02:00:00.000Z" },
   { id: "reward-learning", title: "งบเรียนรู้ 1,000 บาท", description: "ใช้กับคอร์ส หนังสือ หรือเวิร์กช็อป", category: "learning", costPoints: 850, stock: 4, icon: "↗", isActive: true, createdAt: "2026-08-01T02:00:00.000Z", updatedAt: "2026-08-01T02:00:00.000Z" },
   { id: "reward-lunch", title: "มื้อพิเศษกับทีม", description: "เครดิตอาหารกลางวันสำหรับฉลองความสำเร็จ", category: "recognition", costPoints: 350, stock: 10, icon: "★", isActive: true, createdAt: "2026-08-01T02:00:00.000Z", updatedAt: "2026-08-01T02:00:00.000Z" },
+  { id: "reward-iphone-18", title: "iPhone 18", description: "รางวัลพิเศษมูลค่าสูง จำกัดจำนวนและต้องผ่านการอนุมัติตามนโยบายบริษัท", category: "recognition", costPoints: 500000, stock: 1, icon: "◎", isActive: true, createdAt: "2026-08-21T02:10:00.000Z", updatedAt: "2026-08-21T02:10:00.000Z" },
 ];
 
 export const seedPointLedger: PointLedgerRecord[] = [

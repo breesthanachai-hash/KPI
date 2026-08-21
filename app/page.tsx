@@ -8,6 +8,8 @@ import {
   type EmploymentContractRecord,
   type EvaluationRecord,
   type HrProfileRecord,
+  type PointEventRecord,
+  type PointEventType,
   type PointLedgerRecord,
   type ProjectRecord,
   type RewardRecord,
@@ -18,6 +20,7 @@ import {
   getRole,
   makeInitials,
   periods,
+  pointEventRules,
   roleSalaryBands,
   roles,
   scoreStatus,
@@ -166,6 +169,8 @@ const roleProofGuides: Record<string, { defaultType: WorkSubmissionRecord["submi
 
 const defaultProofGuide = { defaultType: "document" as const, headline: "หลักฐานการส่งมอบงาน", examples: ["ลิงก์ผลงานหรือระบบที่ใช้งานจริง", "ไฟล์รายงาน รูปภาพ หรือเอกสารยืนยัน", "ข้อความสรุปผลลัพธ์และเกณฑ์ที่ทำสำเร็จ"] };
 
+const manualPointEventTypes: PointEventType[] = ["attendance_on_time", "attendance_late", "absence", "approved_leave", "early_finish", "on_time_finish", "work_error", "warning", "rule_violation", "bonus", "quest"];
+
 const emptyTalentProfile = (): Record<TalentDimensionId, number> => ({ analysis: 0, communication: 0, problemSolving: 0, leadership: 0, execution: 0 });
 
 function buildTalentProfile(roleId: string, evaluation: EvaluationRecord | null) {
@@ -261,7 +266,7 @@ function actionStatusLabel(status: TalentActionRecord["status"]) {
 }
 
 function workKindLabel(kind: WorkItemRecord["kind"]) {
-  return { task: "งาน", request: "รีเควสต์", mission: "ภารกิจ" }[kind];
+  return { task: "งาน", request: "รีเควสต์", mission: "ภารกิจ / เควสต์" }[kind];
 }
 
 function workStatusLabel(status: WorkItemRecord["status"]) {
@@ -342,6 +347,7 @@ export default function Home() {
   const [workSubmissions, setWorkSubmissions] = useState<WorkSubmissionRecord[]>([]);
   const [rewards, setRewards] = useState<RewardRecord[]>(seedRewards);
   const [pointLedger, setPointLedger] = useState<PointLedgerRecord[]>(seedPointLedger);
+  const [pointEvents, setPointEvents] = useState<PointEventRecord[]>([]);
   const [rewardRedemptions, setRewardRedemptions] = useState<RewardRedemptionRecord[]>(seedRewardRedemptions);
   const [employeeProfiles, setEmployeeProfiles] = useState<EmployeeProfileRecord[]>(seedEmployeeProfiles);
   const [applicationDocuments, setApplicationDocuments] = useState<ApplicationDocumentRecord[]>(seedApplicationDocuments);
@@ -379,6 +385,8 @@ export default function Home() {
   const [portfolioEmployeeId, setPortfolioEmployeeId] = useState("all");
   const [portfolioProjectId, setPortfolioProjectId] = useState("all");
   const [portfolioStatus, setPortfolioStatus] = useState<PortfolioStatusFilter>("all");
+  const [monthlyPointMonth, setMonthlyPointMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [pointHistoryEmployeeId, setPointHistoryEmployeeId] = useState("all");
   const [employeeForm, setEmployeeForm] = useState({ name: "", email: "", roleId: roles[0].id, manager: "" });
   const [hrForm, setHrForm] = useState({ actionId: "", currentSalary: 0, salaryReviewMonth: "มกราคม 2570", planType: "upskill" as TalentActionRecord["type"], title: "", dueDate: "2026-09-30", targetRoleId: roles[0].id });
   const [workForm, setWorkForm] = useState({ projectId: seedProjects[0].id, assigneeEmployeeId: seedEmployees[0].id, kind: "task" as WorkItemRecord["kind"], title: "", description: "", priority: "medium" as WorkItemRecord["priority"], status: "todo" as WorkItemRecord["status"], progress: 0, points: 100, dueDate: "2026-09-05" });
@@ -388,12 +396,13 @@ export default function Home() {
   const [profileForm, setProfileForm] = useState<Omit<EmployeeProfileRecord, "employeeId" | "updatedAt">>({ personalEmail: "", phone: "", birthDate: "", nationalIdLast4: "", address: "", emergencyName: "", emergencyPhone: "", startDate: "", employmentType: "permanent", education: "", experienceYears: 0, applicationSource: "" });
   const [contractForm, setContractForm] = useState({ title: "สัญญาจ้างพนักงาน", version: "1.0", status: "sent" as "draft" | "sent", effectiveDate: "2026-09-01", expiryDate: "", documentId: "" });
   const [signatureForm, setSignatureForm] = useState({ signedName: "", consent: false });
+  const [pointEventForm, setPointEventForm] = useState({ employeeId: seedEmployees[0]?.id ?? "", eventType: "attendance_on_time" as PointEventType, eventDate: new Date().toISOString().slice(0, 10), note: "", evidenceUrl: "" });
 
   useEffect(() => {
     const controller = new AbortController();
     fetch(`/api/dashboard?period=${encodeURIComponent(period)}`, { signal: controller.signal })
       .then(async (response) => {
-        const body = await response.json() as { employees?: EmployeeRecord[]; evaluations?: EvaluationRecord[]; hrProfiles?: HrProfileRecord[]; talentActions?: TalentActionRecord[]; projects?: ProjectRecord[]; workItems?: WorkItemRecord[]; workSubmissions?: WorkSubmissionRecord[]; rewards?: RewardRecord[]; pointLedger?: PointLedgerRecord[]; rewardRedemptions?: RewardRedemptionRecord[]; employeeProfiles?: EmployeeProfileRecord[]; applicationDocuments?: ApplicationDocumentRecord[]; employmentContracts?: EmploymentContractRecord[]; error?: string };
+        const body = await response.json() as { employees?: EmployeeRecord[]; evaluations?: EvaluationRecord[]; hrProfiles?: HrProfileRecord[]; talentActions?: TalentActionRecord[]; projects?: ProjectRecord[]; workItems?: WorkItemRecord[]; workSubmissions?: WorkSubmissionRecord[]; rewards?: RewardRecord[]; pointLedger?: PointLedgerRecord[]; pointEvents?: PointEventRecord[]; rewardRedemptions?: RewardRedemptionRecord[]; employeeProfiles?: EmployeeProfileRecord[]; applicationDocuments?: ApplicationDocumentRecord[]; employmentContracts?: EmploymentContractRecord[]; error?: string };
         if (!response.ok) throw new Error(body.error ?? "โหลดข้อมูลไม่สำเร็จ");
         setEmployees(body.employees ?? []);
         setEvaluations(body.evaluations ?? []);
@@ -404,6 +413,7 @@ export default function Home() {
         setWorkSubmissions(body.workSubmissions ?? []);
         setRewards(body.rewards ?? []);
         setPointLedger(body.pointLedger ?? []);
+        setPointEvents(body.pointEvents ?? []);
         setRewardRedemptions(body.rewardRedemptions ?? []);
         setEmployeeProfiles(body.employeeProfiles ?? []);
         setApplicationDocuments(body.applicationDocuments ?? []);
@@ -509,6 +519,14 @@ export default function Home() {
     pointLedger.forEach((entry) => balances.set(entry.employeeId, (balances.get(entry.employeeId) ?? 0) + entry.points));
     return balances;
   }, [pointLedger]);
+  const pointsEarned = pointLedger.filter((entry) => entry.points > 0).reduce((sum, entry) => sum + entry.points, 0);
+  const pointsDeducted = Math.abs(pointLedger.filter((entry) => entry.points < 0).reduce((sum, entry) => sum + entry.points, 0));
+  const monthlyPointRecipients = new Set(pointEvents.filter((event) => event.eventType === "monthly_evaluation" && event.eventDate.startsWith(monthlyPointMonth)).map((event) => event.employeeId)).size;
+  const visiblePointLedger = pointLedger
+    .filter((entry) => pointHistoryEmployeeId === "all" || entry.employeeId === pointHistoryEmployeeId)
+    .slice()
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const selectedPointEventRule = pointEventRules[pointEventForm.eventType];
   const leaderboard = useMemo(() => employees.filter((employee) => employee.status === "active").map((employee) => ({ employee, points: pointBalances.get(employee.id) ?? 0 })).sort((a, b) => b.points - a.points), [employees, pointBalances]);
   const projectInsights = useMemo(() => projects.map((project) => {
     const items = workItems.filter((item) => item.projectId === project.id);
@@ -804,14 +822,16 @@ export default function Home() {
     setIsSaving(true);
     try {
       const response = await fetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "reviewWorkSubmission", submissionId: submission.id, status, reviewerNote }) });
-      const body = await response.json() as { workSubmission?: WorkSubmissionRecord; workItem?: WorkItemRecord; pointEntry?: PointLedgerRecord | null; error?: string };
+      const body = await response.json() as { workSubmission?: WorkSubmissionRecord; workItem?: WorkItemRecord; pointEntry?: PointLedgerRecord | null; deadlinePointEntry?: PointLedgerRecord | null; deadlinePointEvent?: PointEventRecord | null; error?: string };
       if (!response.ok || !body.workSubmission || !body.workItem) throw new Error(body.error ?? "ตรวจหลักฐานไม่สำเร็จ");
       setWorkSubmissions((items) => items.map((item) => item.id === body.workSubmission?.id ? body.workSubmission as WorkSubmissionRecord : item));
       setWorkItems((items) => items.map((item) => item.id === body.workItem?.id ? body.workItem as WorkItemRecord : item));
       if (body.pointEntry) setPointLedger((items) => [...items.filter((item) => item.id !== body.pointEntry?.id), body.pointEntry as PointLedgerRecord]);
+      if (body.deadlinePointEntry) setPointLedger((items) => [...items.filter((item) => item.id !== body.deadlinePointEntry?.id), body.deadlinePointEntry as PointLedgerRecord]);
+      if (body.deadlinePointEvent) setPointEvents((items) => [...items.filter((item) => item.id !== body.deadlinePointEvent?.id), body.deadlinePointEvent as PointEventRecord]);
       setSubmissionWorkItem(body.workItem);
       setReviewerNote("");
-      showToast(status === "approved" ? `อนุมัติหลักฐานและมอบ ${body.workItem.points} แต้มแล้ว` : "ส่งงานกลับให้แก้ไขแล้ว");
+      showToast(status === "approved" ? `อนุมัติหลักฐานและมอบ ${body.workItem.points + (body.deadlinePointEntry?.points ?? 0)} แต้มแล้ว` : "ส่งงานกลับให้แก้ไขแล้ว");
     } catch (error) {
       showToast(error instanceof Error ? error.message : "ตรวจหลักฐานไม่สำเร็จ");
     } finally {
@@ -833,6 +853,42 @@ export default function Home() {
       showToast(`สร้างโปรเจกต์ “${body.project.name}” แล้ว`);
     } catch (error) {
       showToast(error instanceof Error ? error.message : "สร้างโปรเจกต์ไม่สำเร็จ");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const recordPointEvent = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setIsSaving(true);
+    try {
+      const response = await fetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "recordPointEvent", ...pointEventForm }) });
+      const body = await response.json() as { pointEvent?: PointEventRecord; pointEntry?: PointLedgerRecord; error?: string };
+      if (!response.ok || !body.pointEvent || !body.pointEntry) throw new Error(body.error ?? "บันทึกรายการแต้มไม่สำเร็จ");
+      setPointEvents((items) => [body.pointEvent as PointEventRecord, ...items]);
+      setPointLedger((items) => [body.pointEntry as PointLedgerRecord, ...items]);
+      setPointEventForm((form) => ({ ...form, note: "", evidenceUrl: "" }));
+      showToast(`${body.pointEvent.points >= 0 ? "เพิ่ม" : "หัก"} ${Math.abs(body.pointEvent.points)} แต้มเรียบร้อยแล้ว`);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "บันทึกรายการแต้มไม่สำเร็จ");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const runMonthlyPointCycle = async () => {
+    setIsSaving(true);
+    try {
+      const response = await fetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "runMonthlyPointCycle", month: monthlyPointMonth, period }) });
+      const body = await response.json() as { pointEvents?: PointEventRecord[]; pointEntries?: PointLedgerRecord[]; count?: number; error?: string };
+      if (!response.ok || !body.pointEvents || !body.pointEntries) throw new Error(body.error ?? "ประมวลผลแต้มรายเดือนไม่สำเร็จ");
+      const eventIds = new Set(body.pointEvents.map((item) => item.id));
+      const entryIds = new Set(body.pointEntries.map((item) => item.id));
+      setPointEvents((items) => [...body.pointEvents as PointEventRecord[], ...items.filter((item) => !eventIds.has(item.id))]);
+      setPointLedger((items) => [...body.pointEntries as PointLedgerRecord[], ...items.filter((item) => !entryIds.has(item.id))]);
+      showToast(`ประมวลผลแต้มรายเดือนให้ ${body.count ?? body.pointEntries.length} คนแล้ว`);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "ประมวลผลแต้มรายเดือนไม่สำเร็จ");
     } finally {
       setIsSaving(false);
     }
@@ -1017,10 +1073,12 @@ export default function Home() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ action: "saveEvaluation", employeeId: selectedEmployee.id, period, kpiScores, skillScores, note }),
       });
-      const body = await response.json() as { evaluation?: EvaluationRecord; error?: string };
+      const body = await response.json() as { evaluation?: EvaluationRecord; pointEntry?: PointLedgerRecord; pointEvent?: PointEventRecord; error?: string };
       if (!response.ok || !body.evaluation) throw new Error(body.error ?? "บันทึกผลประเมินไม่สำเร็จ");
       const saved = body.evaluation;
       setEvaluations((items) => [...items.filter((item) => !(item.employeeId === saved.employeeId && item.period === saved.period)), saved]);
+      if (body.pointEntry) setPointLedger((items) => [...items.filter((item) => item.id !== body.pointEntry?.id), body.pointEntry as PointLedgerRecord]);
+      if (body.pointEvent) setPointEvents((items) => [...items.filter((item) => item.id !== body.pointEvent?.id), body.pointEvent as PointEventRecord]);
       if (period === periods[0]) {
         setEmployees((items) => items.map((employee) => employee.id === saved.employeeId ? {
           ...employee,
@@ -1031,7 +1089,7 @@ export default function Home() {
         } : employee));
       }
       setSelectedEmployee(null);
-      showToast(`บันทึกผลประเมิน ${selectedEmployee.name} แล้ว`);
+      showToast(`บันทึกผลประเมิน ${selectedEmployee.name} และมอบ ${body.pointEntry?.points ?? 0} แต้มประจำเดือนแล้ว`);
     } catch (error) {
       showToast(error instanceof Error ? error.message : "บันทึกผลประเมินไม่สำเร็จ");
     } finally {
@@ -1710,7 +1768,7 @@ export default function Home() {
                 <div className="points-leaderboard-list">
                   {leaderboard.slice(0, 6).map(({ employee, points }, index) => <article key={employee.id} className={index === 0 ? "champion" : ""}><span className="leader-rank">{index + 1}</span><EmployeeAvatar employee={employee} profile={employeeProfilesById.get(employee.id)} className="avatar-leader" /><p><strong>{employee.name}</strong><small>{getRole(employee.roleId).name}</small></p><b>{formatMoney(points)}<small> แต้ม</small></b></article>)}
                 </div>
-                <p className="points-note">ทำงานหรือภารกิจสำเร็จ ระบบจะเพิ่มแต้มให้ครั้งเดียวโดยอัตโนมัติ</p>
+                <p className="points-note">ยอดคงเหลือรวมแต้มประเมิน งาน เควสต์ เวลาเข้างาน โบนัส รายการหัก และแต้มที่ใช้แลกรางวัล</p>
               </aside>
             </div>
 
@@ -1719,7 +1777,7 @@ export default function Home() {
                 <div><p className="eyebrow">SMART TO-DO BOARD</p><h2>งาน รีเควสต์ และภารกิจ</h2><p>ทุกงานเชื่อมกับผู้รับผิดชอบ หลักฐานการส่งมอบ ขั้นตอนตรวจงาน และแต้มที่จะได้รับ</p></div>
                 <div className="work-board-tools">
                   <div className="work-kind-filter" aria-label="กรองประเภทงาน">
-                    {([{ id: "all", label: "ทั้งหมด" }, { id: "task", label: "งาน" }, { id: "request", label: "รีเควสต์" }, { id: "mission", label: "ภารกิจ" }] as const).map((filter) => <button key={filter.id} className={workFilter === filter.id ? "active" : ""} onClick={() => setWorkFilter(filter.id)}>{filter.label}</button>)}
+                    {([{ id: "all", label: "ทั้งหมด" }, { id: "task", label: "งาน" }, { id: "request", label: "รีเควสต์" }, { id: "mission", label: "ภารกิจ / เควสต์" }] as const).map((filter) => <button key={filter.id} className={workFilter === filter.id ? "active" : ""} onClick={() => setWorkFilter(filter.id)}>{filter.label}</button>)}
                   </div>
                   <label className="search-field"><span aria-hidden="true">⌕</span><input value={workSearch} onChange={(event) => setWorkSearch(event.target.value)} placeholder="ค้นหางาน โปรเจกต์ หรือผู้รับผิดชอบ" /><span className="sr-only">ค้นหางานและภารกิจ</span></label>
                 </div>
@@ -1757,8 +1815,61 @@ export default function Home() {
               </div>
             </section>
 
+            <section className="points-operations-card">
+              <div className="points-operations-heading">
+                <div><p className="eyebrow">POINTS OPERATIONS</p><h2>ศูนย์จัดการแต้มพนักงาน</h2><p>ประมวลผลแต้มจากการประเมิน งาน การเข้า–ออกงาน และเหตุการณ์ด้านวินัย พร้อมประวัติผู้บันทึก</p></div>
+                <div className="points-flow-summary"><span><small>แต้มที่ได้รับ</small><strong>+{formatMoney(pointsEarned)}</strong></span><span className="negative"><small>แต้มที่หัก/ใช้</small><strong>-{formatMoney(pointsDeducted)}</strong></span></div>
+              </div>
+
+              <div className="monthly-points-panel">
+                <div><span>◎</span><p><strong>แต้มประเมินประจำเดือน</strong><small>ใช้คะแนนรวม × 10 สูงสุด 1,000 แต้มต่อคน และบันทึกซ้ำเดือนเดิมไม่ได้</small></p></div>
+                <label><span>เดือนที่ประมวลผล</span><input type="month" value={monthlyPointMonth} onChange={(event) => setMonthlyPointMonth(event.target.value)} /></label>
+                <span className="monthly-run-status"><strong>{monthlyPointRecipients}</strong><small>คนได้รับแต้มแล้ว</small></span>
+                <button disabled={isSaving} onClick={() => void runMonthlyPointCycle()}>{isSaving ? "กำลังประมวลผล..." : "ประมวลผลจากผลประเมิน"}</button>
+              </div>
+
+              <div className="point-rules-section">
+                <div className="point-rules-heading"><div><p className="eyebrow">POINT RULES</p><h3>กติกาการได้และเสียแต้ม</h3></div><small>ค่าตั้งต้นขององค์กร</small></div>
+                <div className="point-rule-grid">
+                  {(Object.entries(pointEventRules) as [PointEventType, (typeof pointEventRules)[PointEventType]][]).map(([eventType, rule]) => (
+                    <article key={eventType} className={rule.points === null || rule.points >= 0 ? "positive" : "negative"}>
+                      <span>{rule.points === null ? "×10" : `${rule.points > 0 ? "+" : ""}${formatMoney(rule.points)}`}</span>
+                      <div><strong>{rule.label}</strong><p>{rule.description}</p></div>
+                    </article>
+                  ))}
+                </div>
+              </div>
+
+              <div className="point-admin-grid">
+                <form className="point-event-form" onSubmit={recordPointEvent}>
+                  <div><p className="eyebrow">NEW POINT EVENT</p><h3>บันทึกแต้ม หรือบทลงโทษ</h3><small>รายการหักแต้มต้องมีเหตุผลเพื่อให้ตรวจสอบย้อนหลังได้</small></div>
+                  <div className={`point-event-preview ${selectedPointEventRule.points !== null && selectedPointEventRule.points < 0 ? "negative" : "positive"}`}><span>{selectedPointEventRule.points === null ? "—" : `${selectedPointEventRule.points >= 0 ? "+" : ""}${selectedPointEventRule.points}`}</span><p><strong>{selectedPointEventRule.label}</strong><small>{selectedPointEventRule.description}</small></p></div>
+                  <div className="point-event-form-grid">
+                    <label><span>พนักงาน</span><select required value={pointEventForm.employeeId} onChange={(event) => setPointEventForm((form) => ({ ...form, employeeId: event.target.value }))}>{employees.filter((employee) => employee.status === "active").map((employee) => <option key={employee.id} value={employee.id}>{employee.name} · {getRole(employee.roleId).shortName}</option>)}</select></label>
+                    <label><span>ประเภทเหตุการณ์</span><select value={pointEventForm.eventType} onChange={(event) => setPointEventForm((form) => ({ ...form, eventType: event.target.value as PointEventType }))}>{manualPointEventTypes.map((eventType) => <option key={eventType} value={eventType}>{pointEventRules[eventType].label} ({(pointEventRules[eventType].points ?? 0) > 0 ? "+" : ""}{pointEventRules[eventType].points ?? 0})</option>)}</select></label>
+                    <label><span>วันที่เกิดเหตุการณ์</span><input required type="date" value={pointEventForm.eventDate} onChange={(event) => setPointEventForm((form) => ({ ...form, eventDate: event.target.value }))} /></label>
+                    <label><span>ลิงก์หลักฐาน (ถ้ามี)</span><input type="url" value={pointEventForm.evidenceUrl} onChange={(event) => setPointEventForm((form) => ({ ...form, evidenceUrl: event.target.value }))} placeholder="https://..." /></label>
+                    <label className="wide"><span>เหตุผล / รายละเอียด</span><textarea required value={pointEventForm.note} onChange={(event) => setPointEventForm((form) => ({ ...form, note: event.target.value }))} placeholder="ระบุข้อเท็จจริง ผลกระทบ และเอกสารอ้างอิง โดยหลีกเลี่ยงข้อมูลส่วนบุคคลที่ไม่จำเป็น" /></label>
+                  </div>
+                  <button className={selectedPointEventRule.points !== null && selectedPointEventRule.points < 0 ? "penalty" : ""} disabled={isSaving}>{isSaving ? "กำลังบันทึก..." : selectedPointEventRule.points !== null && selectedPointEventRule.points < 0 ? `ยืนยันหัก ${Math.abs(selectedPointEventRule.points)} แต้ม` : `บันทึก ${selectedPointEventRule.points ?? 0} แต้ม`}</button>
+                </form>
+
+                <section className="point-ledger-panel">
+                  <div className="point-ledger-heading"><div><p className="eyebrow">AUDIT LEDGER</p><h3>ประวัติแต้มล่าสุด</h3></div><label><span className="sr-only">กรองประวัติแต้มตามพนักงาน</span><select value={pointHistoryEmployeeId} onChange={(event) => setPointHistoryEmployeeId(event.target.value)}><option value="all">พนักงานทั้งหมด</option>{employees.filter((employee) => employee.status === "active").map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></label></div>
+                  <div className="point-ledger-list">
+                    {visiblePointLedger.slice(0, 12).map((entry) => {
+                      const employee = employeesById.get(entry.employeeId);
+                      return <article key={entry.id}><span className={entry.points >= 0 ? "positive" : "negative"}>{entry.points >= 0 ? "+" : ""}{formatMoney(entry.points)}</span><p><strong>{entry.note}</strong><small>{employee?.name ?? "พนักงาน"} · {formatUpdatedAt(entry.createdAt)}</small></p><b>{entry.sourceType === "evaluation" ? "ประเมิน" : entry.sourceType === "attendance" ? "เวลาเข้างาน" : entry.sourceType === "deadline" ? "กำหนดส่ง" : entry.sourceType === "quality" ? "คุณภาพงาน" : entry.sourceType === "discipline" ? "วินัย" : entry.sourceType === "redemption" ? "แลกรางวัล" : entry.sourceType === "quest" || entry.sourceType === "mission" ? "เควสต์" : "ผลงาน"}</b></article>;
+                    })}
+                    {!visiblePointLedger.length && <div className="point-ledger-empty"><span>★</span><strong>ยังไม่มีประวัติแต้ม</strong><p>บันทึกเหตุการณ์หรือประมวลผลแต้มรายเดือนเพื่อเริ่มต้น</p></div>}
+                  </div>
+                </section>
+              </div>
+              <div className="points-policy-note"><span>!</span><p><strong>บทลงโทษต้องเป็นธรรมและตรวจสอบได้</strong> การลาที่อนุมัติแล้วไม่หักแต้ม ส่วนการมาสาย ขาดงาน งานผิดพลาด ใบเตือน และการผิดระเบียบควรบันทึกหลังตรวจสอบข้อเท็จจริง เปิดโอกาสให้พนักงานชี้แจง และใช้ตามนโยบายบริษัท</p></div>
+            </section>
+
             <section className="reward-center-card">
-              <div className="reward-center-heading"><div><p className="eyebrow">REWARD STORE</p><h2>สะสมแต้ม แลกรางวัล</h2><p>เปลี่ยนความสำเร็จจากงานและภารกิจเป็นสิทธิประโยชน์ที่เลือกได้</p></div><span><strong>{formatMoney(totalPoints)}</strong> แต้มในระบบ</span></div>
+              <div className="reward-center-heading"><div><p className="eyebrow">REWARD STORE</p><h2>สะสมแต้ม แลกกิฟต์วอเชอร์และรางวัล</h2><p>มีตั้งแต่คูปองเงินสด 100 บาท ราคา 1,000 แต้ม ไปจนถึง iPhone 18 ราคา 500,000 แต้ม</p></div><span><strong>{formatMoney(totalPoints)}</strong> แต้มในระบบ</span></div>
               <div className="reward-center-grid">
                 <div className="reward-catalog">
                   {rewards.filter((reward) => reward.isActive).map((reward) => <article key={reward.id}><span className={`reward-icon ${reward.category}`}>{reward.icon}</span><div><b>{reward.title}</b><p>{reward.description}</p><small>เหลือ {reward.stock} สิทธิ์</small></div><div className="reward-cost"><strong>{formatMoney(reward.costPoints)}</strong><small>แต้ม</small><button disabled={reward.stock <= 0} onClick={() => { setRewardToRedeem(reward); setRewardEmployeeId(leaderboard[0]?.employee.id ?? employees[0]?.id ?? ""); }}>{reward.stock > 0 ? "แลกรางวัล" : "หมดแล้ว"}</button></div></article>)}

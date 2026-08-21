@@ -136,7 +136,7 @@ export const rewards = sqliteTable("rewards", {
 export const pointLedger = sqliteTable("point_ledger", {
   id: text("id").primaryKey(),
   employeeId: text("employee_id").notNull().references(() => employees.id, { onDelete: "cascade" }),
-  sourceType: text("source_type", { enum: ["task", "mission", "bonus", "redemption"] }).notNull(),
+  sourceType: text("source_type", { enum: ["task", "mission", "quest", "evaluation", "attendance", "deadline", "quality", "discipline", "bonus", "redemption"] }).notNull(),
   sourceId: text("source_id").notNull(),
   points: integer("points").notNull(),
   note: text("note").notNull().default(""),
@@ -144,6 +144,21 @@ export const pointLedger = sqliteTable("point_ledger", {
 }, (table) => [
   uniqueIndex("point_ledger_source_unique").on(table.sourceType, table.sourceId),
   index("point_ledger_employee_created_idx").on(table.employeeId, table.createdAt),
+]);
+
+export const pointEvents = sqliteTable("point_events", {
+  id: text("id").primaryKey(),
+  employeeId: text("employee_id").notNull().references(() => employees.id, { onDelete: "cascade" }),
+  eventType: text("event_type", { enum: ["monthly_evaluation", "attendance_on_time", "attendance_late", "absence", "approved_leave", "early_finish", "on_time_finish", "work_error", "warning", "rule_violation", "bonus", "quest"] }).notNull(),
+  points: integer("points").notNull(),
+  eventDate: text("event_date").notNull(),
+  note: text("note").notNull().default(""),
+  evidenceUrl: text("evidence_url").notNull().default(""),
+  recordedBy: text("recorded_by").notNull().default(""),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  index("point_events_employee_date_idx").on(table.employeeId, table.eventDate),
+  index("point_events_type_date_idx").on(table.eventType, table.eventDate),
 ]);
 
 export const rewardRedemptions = sqliteTable("reward_redemptions", {

@@ -134,6 +134,19 @@ export function ensureDatabase() {
     )`),
     d1.prepare("CREATE UNIQUE INDEX IF NOT EXISTS point_ledger_source_unique ON point_ledger (source_type, source_id)"),
     d1.prepare("CREATE INDEX IF NOT EXISTS point_ledger_employee_created_idx ON point_ledger (employee_id, created_at)"),
+    d1.prepare(`CREATE TABLE IF NOT EXISTS point_events (
+      id TEXT PRIMARY KEY NOT NULL,
+      employee_id TEXT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+      event_type TEXT NOT NULL,
+      points INTEGER NOT NULL,
+      event_date TEXT NOT NULL,
+      note TEXT NOT NULL DEFAULT '',
+      evidence_url TEXT NOT NULL DEFAULT '',
+      recorded_by TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`),
+    d1.prepare("CREATE INDEX IF NOT EXISTS point_events_employee_date_idx ON point_events (employee_id, event_date)"),
+    d1.prepare("CREATE INDEX IF NOT EXISTS point_events_type_date_idx ON point_events (event_type, event_date)"),
     d1.prepare(`CREATE TABLE IF NOT EXISTS reward_redemptions (
       id TEXT PRIMARY KEY NOT NULL,
       employee_id TEXT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
