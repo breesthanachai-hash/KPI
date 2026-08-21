@@ -42,6 +42,11 @@ test("builds the People Pulse KPI product bundle", async () => {
   assert.match(pageAsset, /SMART TO-DO WORKSPACE/);
   assert.match(pageAsset, /พื้นที่ทำงาน/);
   assert.match(pageAsset, /บุคลากร/);
+  assert.match(pageAsset, /สำนักงานจำลอง/);
+  assert.match(pageAsset, /LIVE OFFICE SIMULATION/);
+  assert.match(pageAsset, /LIVE TEAM FLOOR/);
+  assert.match(pageAsset, /ภาระเทียบตำแหน่ง/);
+  assert.match(pageAsset, /ตัวอย่าง: นักตัดต่อมีงานหลายชิ้น/);
   assert.match(pageAsset, /TODAY/);
   assert.match(pageAsset, /MASTER TO-DO LIST/);
   assert.match(pageAsset, /รายการงานทั้งหมดของทีม/);
@@ -81,6 +86,9 @@ test("builds the People Pulse KPI product bundle", async () => {
   assert.match(styles, /Modern workspace refresh/);
   assert.match(styles, /app-shell \{ padding-left: 248px/);
   assert.match(styles, /nav-section-label/);
+  assert.match(styles, /Live office simulation/);
+  assert.match(styles, /office-timeline-play/);
+  assert.match(styles, /prefers-reduced-motion/);
   assert.doesNotMatch(pageAsset, /Your site is taking shape|Building your site|codex-preview/i);
 });
 

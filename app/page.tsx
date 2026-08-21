@@ -37,7 +37,28 @@ import {
   seedWorkItems,
 } from "../lib/kpi-data";
 
-type View = "overview" | "employees" | "profiles" | "skills" | "power" | "hr" | "portfolio" | "work";
+type View = "overview" | "employees" | "profiles" | "skills" | "power" | "hr" | "portfolio" | "work" | "office";
+
+type OfficeLoadLevel = "available" | "steady" | "busy" | "overloaded";
+
+type OfficeLoadFilter = "all" | OfficeLoadLevel;
+
+type OfficeScene = "sales" | "campaign" | "service" | "code" | "edit" | "people";
+
+type OfficePersonModel = {
+  employee: EmployeeRecord;
+  role: ReturnType<typeof getRole>;
+  scene: OfficeScene;
+  openItems: WorkItemRecord[];
+  doneItems: WorkItemRecord[];
+  currentTask: WorkItemRecord | null;
+  capacity: number;
+  loadUnits: number;
+  loadRatio: number;
+  level: OfficeLoadLevel;
+  averageProgress: number;
+  overdueCount: number;
+};
 
 type PortfolioStatusFilter = "all" | "approved" | "submitted" | "revision" | "missing";
 
@@ -335,6 +356,103 @@ function formatFileSize(bytes: number) {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
+const officeCapacityByRole: Record<string, number> = {
+  "sales-manager": 4.5,
+  marketing: 4,
+  "customer-service": 5,
+  developer: 4.5,
+  "video-editor": 4,
+  hr: 4.5,
+};
+
+const officeLevelMeta: Record<OfficeLoadLevel, { label: string; copy: string }> = {
+  available: { label: "พร้อมรับงาน", copy: "มีพื้นที่สำหรับงานใหม่" },
+  steady: { label: "สมดุล", copy: "กำลังทำงานตามแผน" },
+  busy: { label: "งานแน่น", copy: "กำลังเร่งหลายรายการ" },
+  overloaded: { label: "งานล้น", copy: "ควรช่วยแบ่งหรือเลื่อนงาน" },
+};
+
+const officeSceneMeta: Record<OfficeScene, { label: string; activity: string; glyph: string }> = {
+  sales: { label: "โต๊ะปิดการขาย", activity: "คุยลูกค้าและติดตามดีล", glyph: "↗" },
+  campaign: { label: "โต๊ะแคมเปญ", activity: "วางคอนเทนต์และวิเคราะห์ผล", glyph: "●" },
+  service: { label: "โต๊ะบริการลูกค้า", activity: "ตอบคำถามและแก้เคส", glyph: "⌕" },
+  code: { label: "โต๊ะพัฒนาระบบ", activity: "เขียนโค้ดและทดสอบระบบ", glyph: "</>" },
+  edit: { label: "ห้องตัดต่อ", activity: "ตัดต่อภาพ เสียง และ Timeline", glyph: "▶" },
+  people: { label: "โต๊ะดูแลบุคลากร", activity: "จัดการคน เอกสาร และแผนพัฒนา", glyph: "+" },
+};
+
+function officeSceneForRole(roleId: string): OfficeScene {
+  if (roleId === "sales-manager") return "sales";
+  if (roleId === "customer-service") return "service";
+  if (roleId === "developer") return "code";
+  if (roleId === "video-editor") return "edit";
+  if (roleId === "hr") return "people";
+  return "campaign";
+}
+
+function officeLevelFor(loadRatio: number, openCount: number): OfficeLoadLevel {
+  if (openCount === 0 || loadRatio < .22) return "available";
+  if (loadRatio < .65) return "steady";
+  if (loadRatio < 1) return "busy";
+  return "overloaded";
+}
+
+function OfficeDeskAnimation({ scene, level, initials, openCount }: { scene: OfficeScene; level: OfficeLoadLevel; initials: string; openCount: number }) {
+  const meta = officeSceneMeta[scene];
+  return (
+    <div className={`office-scene scene-${scene} load-${level}`} aria-hidden="true">
+      <div className="office-window"><i /><i /><span /></div>
+      <div className="office-task-bubbles">
+        {Array.from({ length: Math.min(3, Math.max(1, openCount)) }, (_, index) => <i key={index} />)}
+      </div>
+      <div className="office-monitor">
+        <span className="office-monitor-top"><i /><i /><i /></span>
+        <b>{meta.glyph}</b>
+        <div className="office-screen-lines"><i /><i /><i /></div>
+        {scene === "edit" && <div className="office-timeline"><i /><i /><i /><b /></div>}
+        {scene === "code" && <div className="office-code-lines"><i /><i /><i /></div>}
+        {scene === "service" && <div className="office-chat-dots"><i /><i /><i /></div>}
+      </div>
+      <div className="office-worker">
+        <span className="office-head"><i /><b /></span>
+        <span className="office-body"><b>{initials}</b></span>
+        <i className="office-arm left" /><i className="office-arm right" />
+      </div>
+      <div className="office-desk"><span className="office-keyboard" /><span className="office-cup"><i /></span><i className="office-desk-leg left" /><i className="office-desk-leg right" /></div>
+      <div className="office-floor-shadow" />
+    </div>
+  );
+}
+
+function OfficeWorkerCard({ person, index, onOpenTasks }: { person: OfficePersonModel; index: number; onOpenTasks: () => void }) {
+  const status = officeLevelMeta[person.level];
+  const scene = officeSceneMeta[person.scene];
+  const loadPercent = Math.round(person.loadRatio * 100);
+  return (
+    <article className={`office-worker-card load-${person.level}`} style={{ "--office-delay": `${index * -0.16}s` } as React.CSSProperties}>
+      <div className="office-worker-heading">
+        <div><span className="office-live-dot" /><p><strong>{person.employee.name}</strong><small>{person.role.name}</small></p></div>
+        <b>{status.label}</b>
+      </div>
+      <OfficeDeskAnimation scene={person.scene} level={person.level} initials={person.employee.initials} openCount={person.openItems.length} />
+      <div className="office-worker-status">
+        <span><small>{scene.label}</small><strong>{person.openItems.length ? scene.activity : "จัดโต๊ะและพร้อมรับงานใหม่"}</strong></span>
+        <p>{person.currentTask?.title ?? status.copy}</p>
+      </div>
+      <div className="office-load-meter">
+        <span><small>ภาระเทียบตำแหน่ง</small><strong>{loadPercent}%</strong></span>
+        <i><b style={{ width: `${Math.min(100, loadPercent)}%` }} /></i>
+      </div>
+      <div className="office-worker-facts">
+        <span><strong>{person.openItems.length}</strong><small>งานที่เปิดอยู่</small></span>
+        <span><strong>{person.averageProgress}%</strong><small>คืบหน้าเฉลี่ย</small></span>
+        <span className={person.overdueCount ? "alert" : ""}><strong>{person.overdueCount}</strong><small>เกินกำหนด</small></span>
+      </div>
+      <button onClick={onOpenTasks}>ดูทูดูลิสของคนนี้ <span>→</span></button>
+    </article>
+  );
+}
+
 const viewMeta: Record<View, { eyebrow: string; title: string; description: string }> = {
   overview: { eyebrow: "ภาพรวมองค์กร", title: "ภาพรวม KPI พนักงาน", description: "ติดตามเป้าหมาย ประเมินผลงาน และวางแผนพัฒนาทีมในที่เดียว" },
   employees: { eyebrow: "ทะเบียนและการประเมิน", title: "พนักงานและผลประเมิน", description: "ค้นหา เพิ่มพนักงาน และบันทึกผล KPI พร้อมระดับสกิลรายบุคคล" },
@@ -344,6 +462,7 @@ const viewMeta: Record<View, { eyebrow: string; title: string; description: stri
   hr: { eyebrow: "WORKFORCE MANAGEMENT", title: "บริหารทรัพยากรบุคคล", description: "เชื่อมผลงาน สกิล การทดสอบ แผนพัฒนา ตำแหน่งที่เหมาะสม และค่าตอบแทน เพื่อการตัดสินใจที่รอบด้าน" },
   portfolio: { eyebrow: "EMPLOYEE WORK PORTFOLIO", title: "แฟ้มผลงานพนักงาน", description: "ค้นหางานที่ส่งมอบแล้ว ไฟล์ ลิงก์ ผู้ตรวจ และผลประเมินของแต่ละคนได้จากที่เดียว" },
   work: { eyebrow: "SMART TO-DO WORKSPACE", title: "ทูดูลิสงานและโปรเจกต์", description: "เห็นงานที่ต้องทำวันนี้ งานค้าง ผู้รับผิดชอบ กำหนดส่ง และความคืบหน้าของทีมเป็นอันดับแรก" },
+  office: { eyebrow: "LIVE OFFICE SIMULATION", title: "สำนักงานจำลองของทีม", description: "เห็นพนักงานแต่ละบทบาทกำลังทำอะไร ใครงานแน่น ใครพร้อมรับงาน และควรช่วยกระจายงานตรงไหน" },
 };
 
 export default function Home() {
@@ -398,6 +517,7 @@ export default function Home() {
   const [workDueFilter, setWorkDueFilter] = useState<WorkDueFilter>("all");
   const [workAssigneeFilter, setWorkAssigneeFilter] = useState("all");
   const [workViewMode, setWorkViewMode] = useState<WorkViewMode>("list");
+  const [officeLoadFilter, setOfficeLoadFilter] = useState<OfficeLoadFilter>("all");
   const [quickUpdatingWorkId, setQuickUpdatingWorkId] = useState("");
   const [portfolioSearch, setPortfolioSearch] = useState("");
   const [portfolioEmployeeId, setPortfolioEmployeeId] = useState("all");
@@ -558,6 +678,52 @@ export default function Home() {
   const overdueWorkItems = workItems.filter((item) => item.status !== "done" && item.dueDate < todayDate);
   const dueThisWeekWorkItems = workItems.filter((item) => item.status !== "done" && item.dueDate >= todayDate && item.dueDate <= weekEndDate);
   const reviewQueueWorkItems = workItems.filter((item) => item.status === "review");
+  const officePeople = useMemo<OfficePersonModel[]>(() => {
+    const priorityWeight: Record<WorkItemRecord["priority"], number> = { low: .7, medium: 1, high: 1.4, urgent: 1.8 };
+    const statusWeight: Record<Exclude<WorkItemRecord["status"], "done">, number> = { todo: 0, in_progress: .4, review: .2 };
+    return employees
+      .filter((employee) => employee.status === "active")
+      .map((employee) => {
+        const role = getRole(employee.roleId);
+        const assignedItems = workItems.filter((item) => item.assigneeEmployeeId === employee.id);
+        const openItems = assignedItems.filter((item) => item.status !== "done");
+        const doneItems = assignedItems.filter((item) => item.status === "done");
+        const loadUnits = openItems.reduce((sum, item) => sum + priorityWeight[item.priority] + statusWeight[item.status as Exclude<WorkItemRecord["status"], "done">] + (item.dueDate < todayDate ? .7 : 0), 0);
+        const capacity = officeCapacityByRole[role.id] ?? 4;
+        const loadRatio = loadUnits / capacity;
+        const priorityRank: Record<WorkItemRecord["priority"], number> = { urgent: 0, high: 1, medium: 2, low: 3 };
+        const currentTask = openItems.slice().sort((a, b) => {
+          if (a.status === "in_progress" && b.status !== "in_progress") return -1;
+          if (a.status !== "in_progress" && b.status === "in_progress") return 1;
+          return a.dueDate.localeCompare(b.dueDate) || priorityRank[a.priority] - priorityRank[b.priority];
+        })[0] ?? null;
+        return {
+          employee,
+          role,
+          scene: officeSceneForRole(role.id),
+          openItems,
+          doneItems,
+          currentTask,
+          capacity,
+          loadUnits,
+          loadRatio,
+          level: officeLevelFor(loadRatio, openItems.length),
+          averageProgress: openItems.length ? Math.round(openItems.reduce((sum, item) => sum + item.progress, 0) / openItems.length) : 0,
+          overdueCount: openItems.filter((item) => item.dueDate < todayDate).length,
+        };
+      })
+      .sort((a, b) => b.loadRatio - a.loadRatio || b.openItems.length - a.openItems.length);
+  }, [employees, todayDate, workItems]);
+  const visibleOfficePeople = officePeople.filter((person) => {
+    const departmentMatches = activeDepartment === "all" || person.role.departmentId === activeDepartment;
+    const loadMatches = officeLoadFilter === "all" || person.level === officeLoadFilter;
+    return departmentMatches && loadMatches;
+  });
+  const officeAvailableCount = officePeople.filter((person) => person.level === "available").length;
+  const officePressureCount = officePeople.filter((person) => person.level === "busy" || person.level === "overloaded").length;
+  const officeOverdueCount = officePeople.reduce((sum, person) => sum + person.overdueCount, 0);
+  const officeMostLoaded = officePeople[0] ?? null;
+  const officeHasVideoEditor = officePeople.some((person) => person.scene === "edit");
   const visibleWorkItems = useMemo(() => {
     const query = workSearch.trim().toLocaleLowerCase("th");
     const priorityRank: Record<WorkItemRecord["priority"], number> = { urgent: 0, high: 1, medium: 2, low: 3 };
@@ -1277,6 +1443,7 @@ export default function Home() {
         <nav aria-label="เมนูหลัก">
           <span className="nav-section-label">พื้นที่ทำงาน</span>
           <button className={view === "work" ? "active" : ""} onClick={() => setView("work")}><span aria-hidden="true">✓</span><b>ทูดูลิส</b><em>{workItems.filter((item) => item.status !== "done").length}</em></button>
+          <button className={view === "office" ? "active" : ""} onClick={() => setView("office")}><span aria-hidden="true">⌂</span><b>สำนักงานจำลอง</b><em>{officePressureCount}</em></button>
           <button className={view === "overview" ? "active" : ""} onClick={() => setView("overview")}><span aria-hidden="true">◫</span><b>ภาพรวม</b></button>
           <span className="nav-section-label">บุคลากร</span>
           <button className={view === "employees" ? "active" : ""} onClick={() => setView("employees")}><span aria-hidden="true">♙</span><b>พนักงาน</b></button>
@@ -1307,10 +1474,15 @@ export default function Home() {
             <p>{viewMeta[view].description}</p>
           </div>
           <div className="heading-actions">
-            <button className="secondary-button" onClick={() => view === "work" ? setShowProjectForm(true) : view === "profiles" ? showToast(`${requiredDocumentTypes.length - verifiedRequiredDocuments} เอกสารจำเป็นยังตรวจไม่ครบ`) : view === "power" ? showToast("ค่าพลังรวมมาจากค่าสกิล 70% และ KPI 30%") : view === "portfolio" ? exportPortfolioReport() : exportReport()}><span aria-hidden="true">{view === "work" ? "◇" : view === "profiles" ? "▣" : view === "power" ? "i" : "↓"}</span> {view === "work" ? "สร้างโปรเจกต์" : view === "profiles" ? "เช็กเอกสารที่ขาด" : view === "power" ? "วิธีคำนวณ" : view === "portfolio" ? "ส่งออกแฟ้ม CSV" : "ส่งออกรายงาน"}</button>
+            <button className="secondary-button" onClick={() => view === "work" ? setShowProjectForm(true) : view === "office" ? setView("work") : view === "profiles" ? showToast(`${requiredDocumentTypes.length - verifiedRequiredDocuments} เอกสารจำเป็นยังตรวจไม่ครบ`) : view === "power" ? showToast("ค่าพลังรวมมาจากค่าสกิล 70% และ KPI 30%") : view === "portfolio" ? exportPortfolioReport() : exportReport()}><span aria-hidden="true">{view === "work" ? "◇" : view === "office" ? "✓" : view === "profiles" ? "▣" : view === "power" ? "i" : "↓"}</span> {view === "work" ? "สร้างโปรเจกต์" : view === "office" ? "เปิดทูดูลิส" : view === "profiles" ? "เช็กเอกสารที่ขาด" : view === "power" ? "วิธีคำนวณ" : view === "portfolio" ? "ส่งออกแฟ้ม CSV" : "ส่งออกรายงาน"}</button>
             <button className="primary-button" onClick={() => {
               if (view === "work") {
                 openWorkItemForm();
+                return;
+              }
+              if (view === "office") {
+                setOfficeLoadFilter("available");
+                window.setTimeout(() => document.getElementById("office-team-floor")?.scrollIntoView({ behavior: "smooth", block: "start" }), 40);
                 return;
               }
               if (view === "profiles") {
@@ -1334,7 +1506,7 @@ export default function Home() {
               }
               if (pendingEmployees[0]) openEvaluation(pendingEmployees[0]);
               else setView("employees");
-            }}><span aria-hidden="true">{view === "power" ? "VS" : "＋"}</span> {view === "work" ? "เพิ่มงานหรือภารกิจ" : view === "hr" ? "เพิ่มแผนบุคลากร" : view === "profiles" ? "แก้ไขโปรไฟล์" : view === "power" ? "เปรียบเทียบค่าพลัง" : view === "portfolio" ? "เติมหลักฐานที่ขาด" : "เริ่มประเมิน"}</button>
+            }}><span aria-hidden="true">{view === "power" ? "VS" : view === "office" ? "⌁" : "＋"}</span> {view === "work" ? "เพิ่มงานหรือภารกิจ" : view === "office" ? "หาคนพร้อมรับงาน" : view === "hr" ? "เพิ่มแผนบุคลากร" : view === "profiles" ? "แก้ไขโปรไฟล์" : view === "power" ? "เปรียบเทียบค่าพลัง" : view === "portfolio" ? "เติมหลักฐานที่ขาด" : "เริ่มประเมิน"}</button>
           </div>
         </div>
 
@@ -1343,6 +1515,68 @@ export default function Home() {
             <button key={filter.id} className={activeDepartment === filter.id ? "active" : ""} onClick={() => setActiveDepartment(filter.id)}>{filter.label}</button>
           ))}
         </div>
+
+        {view === "office" && (
+          <section className="office-simulation-layout">
+            <section className="office-command-center">
+              <div className="office-command-copy">
+                <span className="office-live-label"><i /> LIVE TEAM FLOOR</span>
+                <h2>สำนักงานที่มองเห็น<br />จังหวะการทำงานของทุกคน</h2>
+                <p>อนิเมชันเปลี่ยนตามตำแหน่ง จำนวนงาน ความสำคัญ สถานะ และกำหนดส่ง โดยเทียบกับความจุงานของแต่ละบทบาท</p>
+                <div className="office-legend" aria-label="คำอธิบายสีภาระงาน">
+                  {(Object.entries(officeLevelMeta) as [OfficeLoadLevel, (typeof officeLevelMeta)[OfficeLoadLevel]][]).map(([level, meta]) => <span key={level} className={level}><i />{meta.label}</span>)}
+                </div>
+              </div>
+              <div className="office-command-focus">
+                <span>ภาระงานสูงสุดตอนนี้</span>
+                {officeMostLoaded ? <><strong>{officeMostLoaded.employee.name}</strong><small>{officeMostLoaded.role.name} · {officeMostLoaded.openItems.length} งานเปิดอยู่</small><div><i><b style={{ width: `${Math.min(100, Math.round(officeMostLoaded.loadRatio * 100))}%` }} /></i><em>{Math.round(officeMostLoaded.loadRatio * 100)}%</em></div></> : <strong>ยังไม่มีข้อมูล</strong>}
+              </div>
+              <div className="office-command-stats">
+                <span><b>{officePeople.length}</b><small>คนในสำนักงาน</small></span>
+                <span><b>{officePressureCount}</b><small>งานแน่น/งานล้น</small></span>
+                <span className="positive"><b>{officeAvailableCount}</b><small>พร้อมรับงาน</small></span>
+                <span className={officeOverdueCount ? "negative" : ""}><b>{officeOverdueCount}</b><small>งานเกินกำหนด</small></span>
+              </div>
+            </section>
+
+            <div className="office-floor-toolbar" id="office-team-floor">
+              <div><p className="eyebrow">WORKLOAD VIEW</p><h2>พื้นที่ทำงานของทีม</h2><small>เรียงจากผู้ที่มีภาระงานสูงสุด เพื่อช่วยตัดสินใจกระจายงาน</small></div>
+              <div className="office-load-filters" aria-label="กรองตามภาระงาน">
+                {([
+                  ["all", "ทั้งหมด"],
+                  ["overloaded", "งานล้น"],
+                  ["busy", "งานแน่น"],
+                  ["steady", "สมดุล"],
+                  ["available", "พร้อมรับงาน"],
+                ] as [OfficeLoadFilter, string][]).map(([value, label]) => <button key={value} className={officeLoadFilter === value ? "active" : ""} onClick={() => setOfficeLoadFilter(value)}>{label}</button>)}
+              </div>
+            </div>
+
+            <div className="office-team-grid">
+              {visibleOfficePeople.map((person, index) => (
+                <OfficeWorkerCard key={person.employee.id} person={person} index={index} onOpenTasks={() => {
+                  setWorkAssigneeFilter(person.employee.id);
+                  setWorkDueFilter("all");
+                  setWorkSearch("");
+                  setView("work");
+                }} />
+              ))}
+              {!visibleOfficePeople.length && <div className="office-empty"><span>⌂</span><strong>ไม่มีพนักงานในกลุ่มนี้</strong><p>ลองเลือกภาระงานหรือแผนกอื่นเพื่อดูสำนักงานจำลอง</p><button onClick={() => { setOfficeLoadFilter("all"); setActiveDepartment("all"); }}>แสดงทุกคน</button></div>}
+            </div>
+
+            {!officeHasVideoEditor && (
+              <section className="office-role-demo">
+                <div className="office-role-demo-scene"><span className="office-demo-badge">ตัวอย่างตำแหน่ง</span><OfficeDeskAnimation scene="edit" level="busy" initials="ตต" openCount={3} /></div>
+                <div className="office-role-demo-copy">
+                  <p className="eyebrow">ROLE ANIMATION PREVIEW</p>
+                  <h2>ตัวอย่าง: นักตัดต่อมีงานหลายชิ้น</h2>
+                  <p>Timeline จะเคลื่อนเร็วขึ้น ตัวละครพิมพ์และสลับหน้าจอถี่ขึ้น พร้อมแสดงสถานะ “งานแน่น” เมื่อมีงานตัดต่อหลายชิ้นหรือใกล้กำหนดส่ง เมื่อเพิ่มพนักงานตำแหน่งนักตัดต่อ ระบบจะใช้อนิเมชันนี้กับข้อมูลจริงโดยอัตโนมัติ</p>
+                  <div className="office-role-chips"><span>▶ ตัดต่อวิดีโอ</span><span>&lt;/&gt; พัฒนาระบบ</span><span>⌕ บริการลูกค้า</span><span>↗ ฝ่ายขาย</span><span>● การตลาด</span><span>+ ทรัพยากรบุคคล</span></div>
+                </div>
+              </section>
+            )}
+          </section>
+        )}
 
         {view === "overview" && (
           <>
@@ -2009,7 +2243,7 @@ export default function Home() {
         )}
       </section>
 
-      <footer><span>PEOPLE PULSE</span><p>Profile · Document · Contract · KPI · Skill · Power · Work Portfolio · Reward</p></footer>
+      <footer><span>PEOPLE PULSE</span><p>Smart To-do · Live Office · Profile · KPI · Skill · Work Portfolio · Reward</p></footer>
 
       {showProfileEditor && profileEmployee && (
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setShowProfileEditor(false)}>
