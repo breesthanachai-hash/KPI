@@ -45,8 +45,11 @@ test("builds the People Pulse KPI product bundle", async () => {
   assert.match(pageAsset, /สำนักงานจำลอง/);
   assert.match(pageAsset, /LIVE OFFICE SIMULATION/);
   assert.match(pageAsset, /LIVE TEAM FLOOR/);
-  assert.match(pageAsset, /ภาระเทียบตำแหน่ง/);
-  assert.match(pageAsset, /ตัวอย่าง: นักตัดต่อมีงานหลายชิ้น/);
+  assert.match(pageAsset, /ความจุงานของแต่ละบทบาท/);
+  assert.match(pageAsset, /ทุกคนอยู่ในออฟฟิศเดียวกัน/);
+  assert.match(pageAsset, /เดินพักในออฟฟิศ/);
+  assert.match(pageAsset, /พักบนโซฟา/);
+  assert.match(pageAsset, /คุยกับเพื่อนร่วมทีม/);
   assert.match(pageAsset, /TODAY/);
   assert.match(pageAsset, /MASTER TO-DO LIST/);
   assert.match(pageAsset, /รายการงานทั้งหมดของทีม/);
@@ -88,6 +91,10 @@ test("builds the People Pulse KPI product bundle", async () => {
   assert.match(styles, /nav-section-label/);
   assert.match(styles, /Live office simulation/);
   assert.match(styles, /office-timeline-play/);
+  assert.match(styles, /One shared cartoon office/);
+  assert.match(styles, /shared-office-room/);
+  assert.match(styles, /shared-walk/);
+  assert.match(styles, /shared-nap/);
   assert.match(styles, /prefers-reduced-motion/);
   assert.doesNotMatch(pageAsset, /Your site is taking shape|Building your site|codex-preview/i);
 });

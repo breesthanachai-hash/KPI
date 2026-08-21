@@ -45,6 +45,8 @@ type OfficeLoadFilter = "all" | OfficeLoadLevel;
 
 type OfficeScene = "sales" | "campaign" | "service" | "code" | "edit" | "people";
 
+type OfficeBehavior = "rush" | "work" | "chill" | "walk" | "nap" | "chat";
+
 type OfficePersonModel = {
   employee: EmployeeRecord;
   role: ReturnType<typeof getRole>;
@@ -397,58 +399,53 @@ function officeLevelFor(loadRatio: number, openCount: number): OfficeLoadLevel {
   return "overloaded";
 }
 
-function OfficeDeskAnimation({ scene, level, initials, openCount }: { scene: OfficeScene; level: OfficeLoadLevel; initials: string; openCount: number }) {
-  const meta = officeSceneMeta[scene];
-  return (
-    <div className={`office-scene scene-${scene} load-${level}`} aria-hidden="true">
-      <div className="office-window"><i /><i /><span /></div>
-      <div className="office-task-bubbles">
-        {Array.from({ length: Math.min(3, Math.max(1, openCount)) }, (_, index) => <i key={index} />)}
-      </div>
-      <div className="office-monitor">
-        <span className="office-monitor-top"><i /><i /><i /></span>
-        <b>{meta.glyph}</b>
-        <div className="office-screen-lines"><i /><i /><i /></div>
-        {scene === "edit" && <div className="office-timeline"><i /><i /><i /><b /></div>}
-        {scene === "code" && <div className="office-code-lines"><i /><i /><i /></div>}
-        {scene === "service" && <div className="office-chat-dots"><i /><i /><i /></div>}
-      </div>
-      <div className="office-worker">
-        <span className="office-head"><i /><b /></span>
-        <span className="office-body"><b>{initials}</b></span>
-        <i className="office-arm left" /><i className="office-arm right" />
-      </div>
-      <div className="office-desk"><span className="office-keyboard" /><span className="office-cup"><i /></span><i className="office-desk-leg left" /><i className="office-desk-leg right" /></div>
-      <div className="office-floor-shadow" />
-    </div>
-  );
+function officeBehaviorFor(level: OfficeLoadLevel, index: number): OfficeBehavior {
+  if (level === "overloaded") return "rush";
+  if (level === "busy") return "work";
+  if (level === "steady") return "chill";
+  return (["walk", "nap", "chat"] as OfficeBehavior[])[index % 3];
 }
 
-function OfficeWorkerCard({ person, index, onOpenTasks }: { person: OfficePersonModel; index: number; onOpenTasks: () => void }) {
-  const status = officeLevelMeta[person.level];
+const officeBehaviorCopy: Record<OfficeBehavior, { label: string; detail: string }> = {
+  rush: { label: "กำลังเร่งงานหนัก", detail: "งานเข้าต่อเนื่อง ควรช่วยแบ่งเบา" },
+  work: { label: "กำลังทำงานยุ่ง", detail: "ตั้งใจทำหลายรายการพร้อมกัน" },
+  chill: { label: "ทำงานชิล ๆ", detail: "งานอยู่ในระดับสมดุล" },
+  walk: { label: "เดินพักในออฟฟิศ", detail: "รอรับงานใหม่" },
+  nap: { label: "พักบนโซฟา", detail: "ไม่มีงานเปิดอยู่ในขณะนี้" },
+  chat: { label: "คุยกับเพื่อนร่วมทีม", detail: "พร้อมช่วยงานคนอื่น" },
+};
+
+function SharedOfficeWorker({ person, index, onOpenTasks }: { person: OfficePersonModel; index: number; onOpenTasks: () => void }) {
+  const behavior = officeBehaviorFor(person.level, index);
+  const behaviorCopy = officeBehaviorCopy[behavior];
   const scene = officeSceneMeta[person.scene];
   const loadPercent = Math.round(person.loadRatio * 100);
+  const taskBubbleCount = Math.min(3, person.openItems.length);
   return (
-    <article className={`office-worker-card load-${person.level}`} style={{ "--office-delay": `${index * -0.16}s` } as React.CSSProperties}>
-      <div className="office-worker-heading">
-        <div><span className="office-live-dot" /><p><strong>{person.employee.name}</strong><small>{person.role.name}</small></p></div>
-        <b>{status.label}</b>
+    <article className={`shared-office-worker load-${person.level} behavior-${behavior} scene-${person.scene}`} style={{ "--worker-delay": `${index * -.22}s` } as React.CSSProperties}>
+      <button className="shared-worker-stage" onClick={onOpenTasks} aria-label={`ดูทูดูลิสของ ${person.employee.name}`}>
+        <span className="shared-worker-speech"><b>{behaviorCopy.label}</b><small>{person.currentTask?.title ?? behaviorCopy.detail}</small></span>
+        {taskBubbleCount > 0 && <span className="shared-task-pile">{Array.from({ length: taskBubbleCount }, (_, taskIndex) => <i key={taskIndex} />)}</span>}
+        {(behavior === "rush" || behavior === "work" || behavior === "chill") && <>
+          <span className="shared-monitor"><i>{scene.glyph}</i><b /><b /><em>{person.scene === "edit" ? "▶ ━━━" : person.scene === "code" ? "{···}" : "● ● ●"}</em></span>
+          <span className="shared-desk"><i /><b /><em /></span>
+        </>}
+        {behavior === "nap" && <span className="shared-sofa"><i /><b /><em>z</em><em>z</em></span>}
+        {behavior === "chat" && <span className="shared-chat-bubble"><i /><i /><i /></span>}
+        {behavior === "walk" && <span className="shared-walk-path"><i /><i /><i /><i /></span>}
+        <span className="shared-character">
+          <span className="shared-character-head"><i /><b /></span>
+          <span className="shared-character-body"><b>{person.employee.initials}</b></span>
+          <i className="shared-character-arm left" /><i className="shared-character-arm right" />
+          <i className="shared-character-leg left" /><i className="shared-character-leg right" />
+        </span>
+        <span className="shared-worker-shadow" />
+      </button>
+      <div className="shared-worker-info">
+        <span><i /><p><strong>{person.employee.name}</strong><small>{person.role.name}</small></p></span>
+        <b>{person.openItems.length} งาน · {loadPercent}%</b>
       </div>
-      <OfficeDeskAnimation scene={person.scene} level={person.level} initials={person.employee.initials} openCount={person.openItems.length} />
-      <div className="office-worker-status">
-        <span><small>{scene.label}</small><strong>{person.openItems.length ? scene.activity : "จัดโต๊ะและพร้อมรับงานใหม่"}</strong></span>
-        <p>{person.currentTask?.title ?? status.copy}</p>
-      </div>
-      <div className="office-load-meter">
-        <span><small>ภาระเทียบตำแหน่ง</small><strong>{loadPercent}%</strong></span>
-        <i><b style={{ width: `${Math.min(100, loadPercent)}%` }} /></i>
-      </div>
-      <div className="office-worker-facts">
-        <span><strong>{person.openItems.length}</strong><small>งานที่เปิดอยู่</small></span>
-        <span><strong>{person.averageProgress}%</strong><small>คืบหน้าเฉลี่ย</small></span>
-        <span className={person.overdueCount ? "alert" : ""}><strong>{person.overdueCount}</strong><small>เกินกำหนด</small></span>
-      </div>
-      <button onClick={onOpenTasks}>ดูทูดูลิสของคนนี้ <span>→</span></button>
+      <div className="shared-worker-load"><i style={{ width: `${Math.min(100, loadPercent)}%` }} /></div>
     </article>
   );
 }
@@ -462,7 +459,7 @@ const viewMeta: Record<View, { eyebrow: string; title: string; description: stri
   hr: { eyebrow: "WORKFORCE MANAGEMENT", title: "บริหารทรัพยากรบุคคล", description: "เชื่อมผลงาน สกิล การทดสอบ แผนพัฒนา ตำแหน่งที่เหมาะสม และค่าตอบแทน เพื่อการตัดสินใจที่รอบด้าน" },
   portfolio: { eyebrow: "EMPLOYEE WORK PORTFOLIO", title: "แฟ้มผลงานพนักงาน", description: "ค้นหางานที่ส่งมอบแล้ว ไฟล์ ลิงก์ ผู้ตรวจ และผลประเมินของแต่ละคนได้จากที่เดียว" },
   work: { eyebrow: "SMART TO-DO WORKSPACE", title: "ทูดูลิสงานและโปรเจกต์", description: "เห็นงานที่ต้องทำวันนี้ งานค้าง ผู้รับผิดชอบ กำหนดส่ง และความคืบหน้าของทีมเป็นอันดับแรก" },
-  office: { eyebrow: "LIVE OFFICE SIMULATION", title: "สำนักงานจำลองของทีม", description: "เห็นพนักงานแต่ละบทบาทกำลังทำอะไร ใครงานแน่น ใครพร้อมรับงาน และควรช่วยกระจายงานตรงไหน" },
+  office: { eyebrow: "LIVE OFFICE SIMULATION", title: "ออฟฟิศการ์ตูนของทีม", description: "รวมทุกคนไว้ในออฟฟิศเดียว ตัวละครจะเร่งงาน ทำงานชิล เดินพัก คุย หรืองีบตามภาระงานจากทูดูลิส" },
 };
 
 export default function Home() {
@@ -723,7 +720,6 @@ export default function Home() {
   const officePressureCount = officePeople.filter((person) => person.level === "busy" || person.level === "overloaded").length;
   const officeOverdueCount = officePeople.reduce((sum, person) => sum + person.overdueCount, 0);
   const officeMostLoaded = officePeople[0] ?? null;
-  const officeHasVideoEditor = officePeople.some((person) => person.scene === "edit");
   const visibleWorkItems = useMemo(() => {
     const query = workSearch.trim().toLocaleLowerCase("th");
     const priorityRank: Record<WorkItemRecord["priority"], number> = { urgent: 0, high: 1, medium: 2, low: 3 };
@@ -1540,7 +1536,7 @@ export default function Home() {
             </section>
 
             <div className="office-floor-toolbar" id="office-team-floor">
-              <div><p className="eyebrow">WORKLOAD VIEW</p><h2>พื้นที่ทำงานของทีม</h2><small>เรียงจากผู้ที่มีภาระงานสูงสุด เพื่อช่วยตัดสินใจกระจายงาน</small></div>
+              <div><p className="eyebrow">ONE SHARED OFFICE</p><h2>ทุกคนอยู่ในออฟฟิศเดียวกัน</h2><small>พฤติกรรมของตัวละครเปลี่ยนตามภาระงาน และกดแต่ละคนเพื่อเปิดทูดูลิสได้</small></div>
               <div className="office-load-filters" aria-label="กรองตามภาระงาน">
                 {([
                   ["all", "ทั้งหมด"],
@@ -1552,29 +1548,37 @@ export default function Home() {
               </div>
             </div>
 
-            <div className="office-team-grid">
-              {visibleOfficePeople.map((person, index) => (
-                <OfficeWorkerCard key={person.employee.id} person={person} index={index} onOpenTasks={() => {
-                  setWorkAssigneeFilter(person.employee.id);
-                  setWorkDueFilter("all");
-                  setWorkSearch("");
-                  setView("work");
-                }} />
-              ))}
-              {!visibleOfficePeople.length && <div className="office-empty"><span>⌂</span><strong>ไม่มีพนักงานในกลุ่มนี้</strong><p>ลองเลือกภาระงานหรือแผนกอื่นเพื่อดูสำนักงานจำลอง</p><button onClick={() => { setOfficeLoadFilter("all"); setActiveDepartment("all"); }}>แสดงทุกคน</button></div>}
-            </div>
-
-            {!officeHasVideoEditor && (
-              <section className="office-role-demo">
-                <div className="office-role-demo-scene"><span className="office-demo-badge">ตัวอย่างตำแหน่ง</span><OfficeDeskAnimation scene="edit" level="busy" initials="ตต" openCount={3} /></div>
-                <div className="office-role-demo-copy">
-                  <p className="eyebrow">ROLE ANIMATION PREVIEW</p>
-                  <h2>ตัวอย่าง: นักตัดต่อมีงานหลายชิ้น</h2>
-                  <p>Timeline จะเคลื่อนเร็วขึ้น ตัวละครพิมพ์และสลับหน้าจอถี่ขึ้น พร้อมแสดงสถานะ “งานแน่น” เมื่อมีงานตัดต่อหลายชิ้นหรือใกล้กำหนดส่ง เมื่อเพิ่มพนักงานตำแหน่งนักตัดต่อ ระบบจะใช้อนิเมชันนี้กับข้อมูลจริงโดยอัตโนมัติ</p>
-                  <div className="office-role-chips"><span>▶ ตัดต่อวิดีโอ</span><span>&lt;/&gt; พัฒนาระบบ</span><span>⌕ บริการลูกค้า</span><span>↗ ฝ่ายขาย</span><span>● การตลาด</span><span>+ ทรัพยากรบุคคล</span></div>
+            <section className="shared-office-shell">
+              <div className="shared-office-topline">
+                <div><span className="office-live-dot" /><p><strong>PEOPLE PULSE OFFICE</strong><small>ข้อมูลจากทูดูลิสล่าสุด · {visibleOfficePeople.length} คนในฉาก</small></p></div>
+                <span>คลิกตัวละครเพื่อดูงาน</span>
+              </div>
+              <div className="shared-office-viewport">
+                <div className="shared-office-room">
+                  <div className="shared-office-wall">
+                    <span className="shared-office-window"><i /><i /><b /></span>
+                    <span className="shared-office-clock"><i /><b /></span>
+                    <span className="shared-office-board"><b>TEAM FLOW</b><i /><i /><i /></span>
+                    <span className="shared-office-edit-bay"><b>CREATIVE BAY</b><i>▶</i><em /></span>
+                  </div>
+                  <span className="shared-office-plant"><i /><i /><i /><b /></span>
+                  <span className="shared-office-rug" />
+                  <span className="shared-office-water"><i /><b /></span>
+                  <div className="shared-office-people">
+                    {visibleOfficePeople.map((person, index) => (
+                      <SharedOfficeWorker key={person.employee.id} person={person} index={index} onOpenTasks={() => {
+                        setWorkAssigneeFilter(person.employee.id);
+                        setWorkDueFilter("all");
+                        setWorkSearch("");
+                        setView("work");
+                      }} />
+                    ))}
+                    {!visibleOfficePeople.length && <div className="shared-office-empty"><span>⌂</span><strong>ไม่มีพนักงานในกลุ่มนี้</strong><p>ลองเลือกสถานะหรือแผนกอื่นเพื่อเรียกทุกคนกลับเข้าฉาก</p><button onClick={() => { setOfficeLoadFilter("all"); setActiveDepartment("all"); }}>แสดงทุกคน</button></div>}
+                  </div>
                 </div>
-              </section>
-            )}
+              </div>
+              <div className="shared-office-caption"><span><i className="busy" />งานมาก: พิมพ์เร็วและมีงานลอย</span><span><i className="steady" />งานสมดุล: ทำงานพร้อมกาแฟ</span><span><i className="available" />ว่าง: เดินพัก คุยกับทีม หรืองีบบนโซฟา</span><small>ใช้เพื่อช่วยจัดสรรงาน ไม่ใช่คะแนนประเมินผลงาน</small></div>
+            </section>
           </section>
         )}
 
