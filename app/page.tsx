@@ -4,6 +4,7 @@ import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import type { Office3DPerson } from "./office-3d";
 import {
   type ApplicationDocumentRecord,
+  type AttendanceRecord,
   type EmployeeRecord,
   type EmployeeProfileRecord,
   type EmploymentContractRecord,
@@ -15,6 +16,7 @@ import {
   type ProjectRecord,
   type RewardRecord,
   type RewardRedemptionRecord,
+  type SkillAchievementRecord,
   type TalentActionRecord,
   type WorkItemRecord,
   type WorkSubmissionRecord,
@@ -25,6 +27,7 @@ import {
   roleSalaryBands,
   roles,
   scoreStatus,
+  seedAttendanceRecords,
   seedEmployees,
   seedApplicationDocuments,
   seedEmployeeProfiles,
@@ -34,13 +37,15 @@ import {
   seedProjects,
   seedRewardRedemptions,
   seedRewards,
+  seedSkillAchievements,
   seedTalentActions,
   seedWorkItems,
+  skillAllowanceFor,
 } from "../lib/kpi-data";
 
 const Office3D = lazy(() => import("./office-3d"));
 
-type View = "overview" | "employees" | "profiles" | "skills" | "power" | "hr" | "portfolio" | "work" | "office";
+type View = "overview" | "employees" | "profiles" | "skills" | "power" | "peopleOps" | "hr" | "portfolio" | "work" | "office";
 
 type OfficeLoadLevel = "available" | "steady" | "busy" | "overloaded";
 
@@ -186,6 +191,29 @@ const submissionTypeLabels: Record<WorkSubmissionRecord["submissionType"], strin
   service: "Ticket / หลักฐานบริการลูกค้า",
   hr: "เอกสาร HR / การอบรม",
   other: "หลักฐานประเภทอื่น",
+};
+
+const attendanceStatusMeta: Record<AttendanceRecord["status"], { label: string; tone: string }> = {
+  present: { label: "ตรงเวลา", tone: "positive" },
+  late: { label: "มาสาย", tone: "warning" },
+  absent: { label: "ขาดงาน", tone: "negative" },
+  leave: { label: "ลา", tone: "leave" },
+};
+
+const leaveTypeLabels: Record<NonNullable<AttendanceRecord["leaveType"]>, string> = {
+  sick: "ลาป่วย",
+  personal: "ลากิจ",
+  vacation: "ลาพักร้อน",
+  other: "ลาอื่น ๆ",
+};
+
+const growthRoleNames: Record<string, string> = {
+  "sales-manager": "ผู้อำนวยการฝ่ายขาย",
+  marketing: "นักกลยุทธ์การตลาดอาวุโส",
+  "customer-service": "หัวหน้าทีมบริการลูกค้า",
+  developer: "Senior Software Developer",
+  "video-editor": "Senior Video Editor",
+  hr: "People Development Lead",
 };
 
 const roleProofGuides: Record<string, { defaultType: WorkSubmissionRecord["submissionType"]; headline: string; examples: string[] }> = {
@@ -406,6 +434,7 @@ const viewMeta: Record<View, { eyebrow: string; title: string; description: stri
   profiles: { eyebrow: "EMPLOYEE DIGITAL DOSSIER", title: "แฟ้มประวัติพนักงาน", description: "รวมข้อมูลส่วนตัว เอกสารสมัครงาน การตรวจเอกสาร และสัญญาจ้างพร้อมลายเซ็นอิเล็กทรอนิกส์" },
   skills: { eyebrow: "COMPETENCY MATRIX", title: "ภาพรวมสกิลของทีม", description: "มองเห็นจุดแข็ง ช่องว่าง และความพร้อมของแต่ละสายงาน" },
   power: { eyebrow: "TEAM POWER RATINGS", title: "ค่าพลังพนักงาน", description: "ดูค่าพลังรวมและ 6 สกิลหลักในรูปแบบการ์ด พร้อมเปรียบเทียบจุดเด่นของพนักงานแบบตัวต่อตัว" },
+  peopleOps: { eyebrow: "PEOPLE OPERATING SYSTEM", title: "เวลาเข้างานและเส้นทางเติบโต", description: "ลงเวลา อนุมัติวันลา ยืนยันสกิล เพิ่มค่าตอบแทน และเห็นความพร้อมเลื่อนตำแหน่งในระบบเดียว" },
   hr: { eyebrow: "WORKFORCE MANAGEMENT", title: "บริหารทรัพยากรบุคคล", description: "เชื่อมผลงาน สกิล การทดสอบ แผนพัฒนา ตำแหน่งที่เหมาะสม และค่าตอบแทน เพื่อการตัดสินใจที่รอบด้าน" },
   portfolio: { eyebrow: "EMPLOYEE WORK PORTFOLIO", title: "แฟ้มผลงานพนักงาน", description: "ค้นหางานที่ส่งมอบแล้ว ไฟล์ ลิงก์ ผู้ตรวจ และผลประเมินของแต่ละคนได้จากที่เดียว" },
   work: { eyebrow: "SMART TO-DO WORKSPACE", title: "ทูดูลิสงานและโปรเจกต์", description: "เห็นงานที่ต้องทำวันนี้ งานค้าง ผู้รับผิดชอบ กำหนดส่ง และความคืบหน้าของทีมเป็นอันดับแรก" },
@@ -421,6 +450,8 @@ export default function Home() {
     seedEmployees.map(fallbackEvaluation).filter((item): item is EvaluationRecord => item !== null),
   );
   const [hrProfiles, setHrProfiles] = useState<HrProfileRecord[]>(seedHrProfiles);
+  const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>(seedAttendanceRecords);
+  const [skillAchievements, setSkillAchievements] = useState<SkillAchievementRecord[]>(seedSkillAchievements);
   const [talentActions, setTalentActions] = useState<TalentActionRecord[]>(seedTalentActions);
   const [projects, setProjects] = useState<ProjectRecord[]>(seedProjects);
   const [workItems, setWorkItems] = useState<WorkItemRecord[]>(seedWorkItems);
@@ -472,6 +503,9 @@ export default function Home() {
   const [portfolioStatus, setPortfolioStatus] = useState<PortfolioStatusFilter>("all");
   const [monthlyPointMonth, setMonthlyPointMonth] = useState(new Date().toISOString().slice(0, 7));
   const [pointHistoryEmployeeId, setPointHistoryEmployeeId] = useState("all");
+  const [peopleOpsEmployeeId, setPeopleOpsEmployeeId] = useState(seedEmployees[0]?.id ?? "");
+  const [attendanceDate, setAttendanceDate] = useState(bangkokIsoDate());
+  const [officeClock, setOfficeClock] = useState("--:--");
   const [employeeForm, setEmployeeForm] = useState({ name: "", email: "", roleId: roles[0].id, manager: "" });
   const [hrForm, setHrForm] = useState({ actionId: "", currentSalary: 0, salaryReviewMonth: "มกราคม 2570", planType: "upskill" as TalentActionRecord["type"], title: "", dueDate: "2026-09-30", targetRoleId: roles[0].id });
   const [workForm, setWorkForm] = useState({ projectId: seedProjects[0].id, assigneeEmployeeId: seedEmployees[0].id, kind: "task" as WorkItemRecord["kind"], title: "", description: "", priority: "medium" as WorkItemRecord["priority"], status: "todo" as WorkItemRecord["status"], progress: 0, points: 100, dueDate: "2026-09-05" });
@@ -482,16 +516,20 @@ export default function Home() {
   const [contractForm, setContractForm] = useState({ title: "สัญญาจ้างพนักงาน", version: "1.0", status: "sent" as "draft" | "sent", effectiveDate: "2026-09-01", expiryDate: "", documentId: "" });
   const [signatureForm, setSignatureForm] = useState({ signedName: "", consent: false });
   const [pointEventForm, setPointEventForm] = useState({ employeeId: seedEmployees[0]?.id ?? "", eventType: "attendance_on_time" as PointEventType, eventDate: new Date().toISOString().slice(0, 10), note: "", evidenceUrl: "" });
+  const [attendanceForm, setAttendanceForm] = useState({ employeeId: seedEmployees[0]?.id ?? "", workDate: bangkokIsoDate(), status: "present" as AttendanceRecord["status"], clockIn: "09:00", clockOut: "", leaveType: "personal" as NonNullable<AttendanceRecord["leaveType"]>, note: "" });
+  const [skillAchievementForm, setSkillAchievementForm] = useState({ skillId: "", level: 2, evidenceUrl: "", note: "" });
 
   useEffect(() => {
     const controller = new AbortController();
     fetch(`/api/dashboard?period=${encodeURIComponent(period)}`, { signal: controller.signal })
       .then(async (response) => {
-        const body = await response.json() as { employees?: EmployeeRecord[]; evaluations?: EvaluationRecord[]; hrProfiles?: HrProfileRecord[]; talentActions?: TalentActionRecord[]; projects?: ProjectRecord[]; workItems?: WorkItemRecord[]; workSubmissions?: WorkSubmissionRecord[]; rewards?: RewardRecord[]; pointLedger?: PointLedgerRecord[]; pointEvents?: PointEventRecord[]; rewardRedemptions?: RewardRedemptionRecord[]; employeeProfiles?: EmployeeProfileRecord[]; applicationDocuments?: ApplicationDocumentRecord[]; employmentContracts?: EmploymentContractRecord[]; error?: string };
+        const body = await response.json() as { employees?: EmployeeRecord[]; evaluations?: EvaluationRecord[]; hrProfiles?: HrProfileRecord[]; attendanceRecords?: AttendanceRecord[]; skillAchievements?: SkillAchievementRecord[]; talentActions?: TalentActionRecord[]; projects?: ProjectRecord[]; workItems?: WorkItemRecord[]; workSubmissions?: WorkSubmissionRecord[]; rewards?: RewardRecord[]; pointLedger?: PointLedgerRecord[]; pointEvents?: PointEventRecord[]; rewardRedemptions?: RewardRedemptionRecord[]; employeeProfiles?: EmployeeProfileRecord[]; applicationDocuments?: ApplicationDocumentRecord[]; employmentContracts?: EmploymentContractRecord[]; error?: string };
         if (!response.ok) throw new Error(body.error ?? "โหลดข้อมูลไม่สำเร็จ");
         setEmployees(body.employees ?? []);
         setEvaluations(body.evaluations ?? []);
         setHrProfiles(body.hrProfiles ?? []);
+        setAttendanceRecords(body.attendanceRecords ?? []);
+        setSkillAchievements(body.skillAchievements ?? []);
         setTalentActions(body.talentActions ?? []);
         setProjects(body.projects ?? []);
         setWorkItems(body.workItems ?? []);
@@ -514,6 +552,13 @@ export default function Home() {
       });
     return () => controller.abort();
   }, [period]);
+
+  useEffect(() => {
+    const updateClock = () => setOfficeClock(new Intl.DateTimeFormat("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date()));
+    updateClock();
+    const timer = window.setInterval(updateClock, 30000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     if (!selectedEmployee && !skillProfileEmployee && !hrEmployee && !showAddEmployee && !showWorkForm && !showProjectForm && !submissionWorkItem && !rewardToRedeem && !showProfileEditor && !showContractForm && !contractToSign) return;
@@ -621,6 +666,40 @@ export default function Home() {
   }), [projects, workItems]);
   const todayDate = bangkokIsoDate();
   const weekEndDate = addIsoDays(todayDate, 7);
+  const activeEmployees = employees.filter((employee) => employee.status === "active");
+  const attendanceForDate = attendanceRecords.filter((record) => record.workDate === attendanceDate);
+  const attendanceOnTimeCount = attendanceForDate.filter((record) => record.status === "present").length;
+  const attendanceLateCount = attendanceForDate.filter((record) => record.status === "late").length;
+  const attendanceAbsentCount = attendanceForDate.filter((record) => record.status === "absent").length;
+  const attendanceLeaveCount = attendanceForDate.filter((record) => record.status === "leave" && record.approvalStatus !== "rejected").length;
+  const attendanceUnrecordedCount = Math.max(0, activeEmployees.length - new Set(attendanceForDate.map((record) => record.employeeId)).size);
+  const attendanceOnTimeRate = attendanceOnTimeCount + attendanceLateCount ? attendanceOnTimeCount / (attendanceOnTimeCount + attendanceLateCount) * 100 : 0;
+  const pendingLeaveRecords = attendanceRecords.filter((record) => record.status === "leave" && record.approvalStatus === "pending").sort((a, b) => a.workDate.localeCompare(b.workDate));
+  const peopleOpsEmployee = employeesById.get(peopleOpsEmployeeId) ?? activeEmployees[0] ?? null;
+  const peopleOpsRole = peopleOpsEmployee ? getRole(peopleOpsEmployee.roleId) : null;
+  const peopleOpsEvaluation = peopleOpsEmployee ? evaluationsByEmployee.get(peopleOpsEmployee.id) ?? null : null;
+  const peopleOpsHrProfile = peopleOpsEmployee ? hrProfilesByEmployee.get(peopleOpsEmployee.id) ?? null : null;
+  const peopleOpsAchievements = peopleOpsEmployee ? skillAchievements.filter((achievement) => achievement.employeeId === peopleOpsEmployee.id).sort((a, b) => b.verifiedAt.localeCompare(a.verifiedAt)) : [];
+  const peopleOpsSkillUplift = peopleOpsAchievements.reduce((sum, achievement) => sum + achievement.monthlyAllowance, 0);
+  const peopleOpsWork = peopleOpsEmployee ? workItems.filter((item) => item.assigneeEmployeeId === peopleOpsEmployee.id) : [];
+  const peopleOpsMissions = peopleOpsWork.filter((item) => item.kind === "mission");
+  const missionGrowthScore = peopleOpsMissions.length ? peopleOpsMissions.filter((item) => item.status === "done").length / peopleOpsMissions.length * 100 : 0;
+  const peopleOpsAttendanceHistory = peopleOpsEmployee ? attendanceRecords.filter((record) => record.employeeId === peopleOpsEmployee.id).sort((a, b) => b.workDate.localeCompare(a.workDate)) : [];
+  const attendanceReliabilityRecords = peopleOpsAttendanceHistory.filter((record) => !(record.status === "leave" && record.approvalStatus === "approved"));
+  const attendanceReliability = attendanceReliabilityRecords.length ? attendanceReliabilityRecords.reduce((sum, record) => sum + (record.status === "present" ? 100 : record.status === "late" ? 70 : record.status === "leave" ? 100 : 0), 0) / attendanceReliabilityRecords.length : 100;
+  const promotionReadiness = Math.round((peopleOpsEvaluation?.kpiScore ?? 0) * .4 + (peopleOpsEvaluation?.skillScore ?? 0) * .4 + missionGrowthScore * .15 + attendanceReliability * .05);
+  const nextSkillOpportunities = peopleOpsRole ? peopleOpsRole.skills.map((skill) => {
+    const currentLevel = peopleOpsEvaluation?.skillScores[skill.id] ?? 0;
+    const highestVerifiedLevel = peopleOpsAchievements.filter((achievement) => achievement.skillId === skill.id).reduce((highest, achievement) => Math.max(highest, achievement.level), 0);
+    return { skill, currentLevel, highestVerifiedLevel, allowance: skillAllowanceFor(peopleOpsRole.id, currentLevel), canVerify: currentLevel >= 2 && currentLevel > highestVerifiedLevel };
+  }) : [];
+  const growthTeam = activeEmployees.map((employee) => {
+    const role = getRole(employee.roleId);
+    const evaluation = evaluationsByEmployee.get(employee.id) ?? null;
+    const openWork = workItems.filter((item) => item.assigneeEmployeeId === employee.id && item.status !== "done").length;
+    const strength = evaluation ? role.skills.slice().sort((a, b) => (evaluation.skillScores[b.id] ?? 0) - (evaluation.skillScores[a.id] ?? 0))[0]?.name ?? role.shortName : role.shortName;
+    return { employee, role, evaluation, openWork, strength };
+  }).sort((a, b) => a.openWork - b.openWork || (b.evaluation?.skillScore ?? 0) - (a.evaluation?.skillScore ?? 0)).filter((candidate, index, all) => all.findIndex((item) => item.role.departmentId === candidate.role.departmentId) === index).slice(0, 4);
   const todayWorkItems = workItems.filter((item) => item.status !== "done" && item.dueDate === todayDate);
   const overdueWorkItems = workItems.filter((item) => item.status !== "done" && item.dueDate < todayDate);
   const dueThisWeekWorkItems = workItems.filter((item) => item.status !== "done" && item.dueDate >= todayDate && item.dueDate <= weekEndDate);
@@ -890,6 +969,95 @@ export default function Home() {
     } catch (error) {
       showToast(error instanceof Error ? error.message : "อัปเดตสถานะไม่สำเร็จ");
     }
+  };
+
+  const selectPeopleOpsEmployee = (employeeId: string) => {
+    const employee = employeesById.get(employeeId);
+    setPeopleOpsEmployeeId(employeeId);
+    setAttendanceForm((form) => ({ ...form, employeeId }));
+    if (!employee) return;
+    const role = getRole(employee.roleId);
+    const evaluation = evaluationsByEmployee.get(employeeId);
+    const firstSkill = role.skills[0];
+    setSkillAchievementForm({ skillId: firstSkill?.id ?? "", level: Math.max(2, evaluation?.skillScores[firstSkill?.id ?? ""] ?? 2), evidenceUrl: "", note: "" });
+  };
+
+  const saveAttendanceRecord = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setIsSaving(true);
+    try {
+      const response = await fetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "saveAttendance", ...attendanceForm }) });
+      const body = await response.json() as { attendanceRecord?: AttendanceRecord; error?: string };
+      if (!response.ok || !body.attendanceRecord) throw new Error(body.error ?? "บันทึกเวลาไม่สำเร็จ");
+      setAttendanceRecords((items) => [...items.filter((item) => item.id !== body.attendanceRecord?.id && !(item.employeeId === body.attendanceRecord?.employeeId && item.workDate === body.attendanceRecord?.workDate)), body.attendanceRecord as AttendanceRecord]);
+      setAttendanceDate(body.attendanceRecord.workDate);
+      setAttendanceForm((form) => ({ ...form, note: "" }));
+      showToast(body.attendanceRecord.status === "leave" ? "ส่งคำขอลาเข้าคิวอนุมัติแล้ว" : `บันทึกเวลาของ ${employeesById.get(body.attendanceRecord.employeeId)?.name ?? "พนักงาน"} แล้ว`);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "บันทึกเวลาไม่สำเร็จ");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const quickClock = async () => {
+    if (!peopleOpsEmployee) return;
+    const nowTime = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date());
+    const existing = attendanceRecords.find((record) => record.employeeId === peopleOpsEmployee.id && record.workDate === todayDate);
+    const payload = existing?.clockIn
+      ? { action: "saveAttendance", employeeId: peopleOpsEmployee.id, workDate: todayDate, status: existing.status === "late" ? "late" : "present", clockIn: existing.clockIn, clockOut: nowTime, note: existing.note }
+      : { action: "saveAttendance", employeeId: peopleOpsEmployee.id, workDate: todayDate, status: "present", clockIn: nowTime, clockOut: "", note: "ลงเวลาจากปุ่มด่วน" };
+    setIsSaving(true);
+    try {
+      const response = await fetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
+      const body = await response.json() as { attendanceRecord?: AttendanceRecord; error?: string };
+      if (!response.ok || !body.attendanceRecord) throw new Error(body.error ?? "ลงเวลาไม่สำเร็จ");
+      setAttendanceRecords((items) => [...items.filter((item) => item.id !== body.attendanceRecord?.id && !(item.employeeId === body.attendanceRecord?.employeeId && item.workDate === body.attendanceRecord?.workDate)), body.attendanceRecord as AttendanceRecord]);
+      setAttendanceDate(todayDate);
+      showToast(existing?.clockIn ? `ลงเวลาออก ${nowTime} แล้ว` : `ลงเวลาเข้า ${nowTime} แล้ว`);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "ลงเวลาไม่สำเร็จ");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const approveAttendance = async (attendanceRecord: AttendanceRecord, approvalStatus: "approved" | "rejected") => {
+    try {
+      const response = await fetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "approveAttendance", attendanceId: attendanceRecord.id, approvalStatus }) });
+      const body = await response.json() as { attendanceRecord?: AttendanceRecord; error?: string };
+      if (!response.ok || !body.attendanceRecord) throw new Error(body.error ?? "อัปเดตคำขอลาไม่สำเร็จ");
+      setAttendanceRecords((items) => items.map((item) => item.id === attendanceRecord.id ? body.attendanceRecord as AttendanceRecord : item));
+      showToast(approvalStatus === "approved" ? "อนุมัติวันลาแล้ว โดยไม่หักคะแนนความน่าเชื่อถือ" : "ไม่อนุมัติคำขอลาแล้ว");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "อัปเดตคำขอลาไม่สำเร็จ");
+    }
+  };
+
+  const verifySkillAchievement = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!peopleOpsEmployee) return;
+    setIsSaving(true);
+    try {
+      const response = await fetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "verifySkillAchievement", employeeId: peopleOpsEmployee.id, ...skillAchievementForm }) });
+      const body = await response.json() as { skillAchievement?: SkillAchievementRecord; hrProfile?: HrProfileRecord; talentAction?: TalentActionRecord; error?: string };
+      if (!response.ok || !body.skillAchievement || !body.hrProfile || !body.talentAction) throw new Error(body.error ?? "ยืนยันสกิลไม่สำเร็จ");
+      setSkillAchievements((items) => [body.skillAchievement as SkillAchievementRecord, ...items]);
+      setHrProfiles((items) => [...items.filter((item) => item.employeeId !== body.hrProfile?.employeeId), body.hrProfile as HrProfileRecord]);
+      setTalentActions((items) => [body.talentAction as TalentActionRecord, ...items]);
+      setSkillAchievementForm((form) => ({ ...form, evidenceUrl: "", note: "" }));
+      showToast(`ยืนยันสกิลแล้ว เพิ่มค่าตอบแทน ฿${formatMoney(body.skillAchievement.monthlyAllowance)}/เดือน`);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "ยืนยันสกิลไม่สำเร็จ");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const buildGrowthTeam = () => {
+    const lead = growthTeam[0]?.employee;
+    setProjectForm({ name: "Growth Quest Squad", description: `ทีมข้ามสายงานเพื่อทำเควสต์ใหม่ · ${growthTeam.map(({ employee, role }) => `${employee.name} (${role.shortName})`).join(" · ")}`, ownerEmployeeId: lead?.id ?? activeEmployees[0]?.id ?? "", status: "planned", dueDate: addIsoDays(todayDate, 30), color: "mustard" });
+    setShowProjectForm(true);
   };
 
   const openWorkItemForm = (item?: WorkItemRecord) => {
@@ -1404,6 +1572,7 @@ export default function Home() {
           <button className={view === "office" ? "active" : ""} onClick={() => setView("office")}><span aria-hidden="true">⌂</span><b>สำนักงานจำลอง</b><em>{officePressureCount}</em></button>
           <button className={view === "overview" ? "active" : ""} onClick={() => setView("overview")}><span aria-hidden="true">◫</span><b>ภาพรวม</b></button>
           <span className="nav-section-label">บุคลากร</span>
+          <button className={view === "peopleOps" ? "active" : ""} onClick={() => setView("peopleOps")}><span aria-hidden="true">◷</span><b>เวลา &amp; เติบโต</b><em>{pendingLeaveRecords.length}</em></button>
           <button className={view === "employees" ? "active" : ""} onClick={() => setView("employees")}><span aria-hidden="true">♙</span><b>พนักงาน</b></button>
           <button className={view === "profiles" ? "active" : ""} onClick={() => setView("profiles")}><span aria-hidden="true">▣</span><b>แฟ้มพนักงาน</b></button>
           <button className={view === "skills" ? "active" : ""} onClick={() => setView("skills")}><span aria-hidden="true">✦</span><b>สกิลทีม</b></button>
@@ -1432,7 +1601,7 @@ export default function Home() {
             <p>{viewMeta[view].description}</p>
           </div>
           <div className="heading-actions">
-            <button className="secondary-button" onClick={() => view === "work" ? setShowProjectForm(true) : view === "office" ? setView("work") : view === "profiles" ? showToast(`${requiredDocumentTypes.length - verifiedRequiredDocuments} เอกสารจำเป็นยังตรวจไม่ครบ`) : view === "power" ? showToast("ค่าพลังรวมมาจากค่าสกิล 70% และ KPI 30%") : view === "portfolio" ? exportPortfolioReport() : exportReport()}><span aria-hidden="true">{view === "work" ? "◇" : view === "office" ? "✓" : view === "profiles" ? "▣" : view === "power" ? "i" : "↓"}</span> {view === "work" ? "สร้างโปรเจกต์" : view === "office" ? "เปิดทูดูลิส" : view === "profiles" ? "เช็กเอกสารที่ขาด" : view === "power" ? "วิธีคำนวณ" : view === "portfolio" ? "ส่งออกแฟ้ม CSV" : "ส่งออกรายงาน"}</button>
+            <button className="secondary-button" onClick={() => view === "work" ? setShowProjectForm(true) : view === "office" ? setView("work") : view === "peopleOps" ? buildGrowthTeam() : view === "profiles" ? showToast(`${requiredDocumentTypes.length - verifiedRequiredDocuments} เอกสารจำเป็นยังตรวจไม่ครบ`) : view === "power" ? showToast("ค่าพลังรวมมาจากค่าสกิล 70% และ KPI 30%") : view === "portfolio" ? exportPortfolioReport() : exportReport()}><span aria-hidden="true">{view === "work" ? "◇" : view === "office" ? "✓" : view === "peopleOps" ? "♙" : view === "profiles" ? "▣" : view === "power" ? "i" : "↓"}</span> {view === "work" ? "สร้างโปรเจกต์" : view === "office" ? "เปิดทูดูลิส" : view === "peopleOps" ? "สร้างทีมจากสกิล" : view === "profiles" ? "เช็กเอกสารที่ขาด" : view === "power" ? "วิธีคำนวณ" : view === "portfolio" ? "ส่งออกแฟ้ม CSV" : "ส่งออกรายงาน"}</button>
             <button className="primary-button" onClick={() => {
               if (view === "work") {
                 openWorkItemForm();
@@ -1441,6 +1610,10 @@ export default function Home() {
               if (view === "office") {
                 setOfficeLoadFilter("available");
                 window.setTimeout(() => document.getElementById("office-team-floor")?.scrollIntoView({ behavior: "smooth", block: "start" }), 40);
+                return;
+              }
+              if (view === "peopleOps") {
+                quickClock();
                 return;
               }
               if (view === "profiles") {
@@ -1464,7 +1637,7 @@ export default function Home() {
               }
               if (pendingEmployees[0]) openEvaluation(pendingEmployees[0]);
               else setView("employees");
-            }}><span aria-hidden="true">{view === "power" ? "VS" : view === "office" ? "⌁" : "＋"}</span> {view === "work" ? "เพิ่มงานหรือภารกิจ" : view === "office" ? "หาคนพร้อมรับงาน" : view === "hr" ? "เพิ่มแผนบุคลากร" : view === "profiles" ? "แก้ไขโปรไฟล์" : view === "power" ? "เปรียบเทียบค่าพลัง" : view === "portfolio" ? "เติมหลักฐานที่ขาด" : "เริ่มประเมิน"}</button>
+            }}><span aria-hidden="true">{view === "power" ? "VS" : view === "office" ? "⌁" : view === "peopleOps" ? "◷" : "＋"}</span> {view === "work" ? "เพิ่มงานหรือภารกิจ" : view === "office" ? "หาคนพร้อมรับงาน" : view === "peopleOps" ? "ลงเวลาตอนนี้" : view === "hr" ? "เพิ่มแผนบุคลากร" : view === "profiles" ? "แก้ไขโปรไฟล์" : view === "power" ? "เปรียบเทียบค่าพลัง" : view === "portfolio" ? "เติมหลักฐานที่ขาด" : "เริ่มประเมิน"}</button>
           </div>
         </div>
 
@@ -1849,6 +2022,137 @@ export default function Home() {
                 </>
               ) : <div className="empty-state">ต้องมีพนักงานอย่างน้อย 2 คนเพื่อเปรียบเทียบค่าพลัง</div>}
             </section>
+          </section>
+        )}
+
+        {view === "peopleOps" && (
+          <section className="people-ops-layout">
+            <section className="people-ops-hero">
+              <div className="people-ops-hero-copy">
+                <span className="people-ops-live"><i /> HR OS · LIVE</span>
+                <h2>เริ่มจากเวลาเข้างาน<br />ไปจนถึงวันที่เติบโต</h2>
+                <p>ข้อมูลเวลา งาน KPI สกิล เควสต์ ค่าตอบแทน และการเลื่อนตำแหน่งเชื่อมเป็นเส้นทางเดียวที่พนักงานและ HR ตรวจสอบได้</p>
+                <div className="people-ops-principles"><span>✓ วันลาอนุมัติไม่ถูกลงโทษ</span><span>✓ เงินเพิ่มมีหลักฐาน</span><span>✓ เห็นเป้าหมายขั้นถัดไป</span></div>
+              </div>
+              <div className="people-ops-clock">
+                <small>เวลาสำนักงาน · กรุงเทพฯ</small><strong>{officeClock}</strong><span>{new Date(todayDate + "T00:00:00").toLocaleDateString("th-TH", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}</span>
+                <label><small>ลงเวลาในชื่อ</small><select value={peopleOpsEmployeeId} onChange={(event) => selectPeopleOpsEmployee(event.target.value)}>{activeEmployees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></label>
+                <button onClick={() => void quickClock()} disabled={isSaving || !peopleOpsEmployee}>{attendanceRecords.find((record) => record.employeeId === peopleOpsEmployeeId && record.workDate === todayDate)?.clockIn ? "ลงเวลาออกตอนนี้" : "ลงเวลาเข้าตอนนี้"}</button>
+              </div>
+              <div className="people-ops-summary">
+                <span><b>{attendanceOnTimeRate ? attendanceOnTimeRate.toFixed(0) : "—"}%</b><small>มาตรงเวลา</small></span>
+                <span className="warning"><b>{attendanceLateCount}</b><small>มาสาย</small></span>
+                <span className="negative"><b>{attendanceAbsentCount}</b><small>ขาดงาน</small></span>
+                <span><b>{attendanceLeaveCount}</b><small>ลา</small></span>
+                <span className="pending"><b>{pendingLeaveRecords.length}</b><small>รออนุมัติ</small></span>
+              </div>
+            </section>
+
+            <div className="people-ops-grid">
+              <section className="attendance-center">
+                <div className="people-ops-section-heading"><div><p className="eyebrow">TIME &amp; ATTENDANCE</p><h2>เวลาเข้างาน ขาด ลา มาสาย</h2><p>บันทึกเวลาและเห็นสถานะของทีมรายวัน พร้อมประวัติผู้อนุมัติ</p></div><label><span>วันที่แสดง</span><input type="date" value={attendanceDate} onChange={(event) => setAttendanceDate(event.target.value)} /></label></div>
+                <form className="attendance-form" onSubmit={saveAttendanceRecord}>
+                  <label><span>พนักงาน</span><select value={attendanceForm.employeeId} onChange={(event) => { setAttendanceForm((form) => ({ ...form, employeeId: event.target.value })); setPeopleOpsEmployeeId(event.target.value); }}>{activeEmployees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></label>
+                  <label><span>วันที่</span><input required type="date" value={attendanceForm.workDate} onChange={(event) => setAttendanceForm((form) => ({ ...form, workDate: event.target.value }))} /></label>
+                  <label><span>สถานะ</span><select value={attendanceForm.status} onChange={(event) => setAttendanceForm((form) => ({ ...form, status: event.target.value as AttendanceRecord["status"] }))}><option value="present">มาทำงาน</option><option value="late">มาสาย</option><option value="absent">ขาดงาน</option><option value="leave">ลา</option></select></label>
+                  {attendanceForm.status === "leave" ? <label><span>ประเภทการลา</span><select value={attendanceForm.leaveType} onChange={(event) => setAttendanceForm((form) => ({ ...form, leaveType: event.target.value as NonNullable<AttendanceRecord["leaveType"]> }))}>{(Object.entries(leaveTypeLabels) as [NonNullable<AttendanceRecord["leaveType"]>, string][]).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label> : <><label><span>เวลาเข้า</span><input type="time" value={attendanceForm.clockIn} onChange={(event) => setAttendanceForm((form) => ({ ...form, clockIn: event.target.value }))} /></label><label><span>เวลาออก</span><input type="time" value={attendanceForm.clockOut} onChange={(event) => setAttendanceForm((form) => ({ ...form, clockOut: event.target.value }))} /></label></>}
+                  <label className="wide"><span>หมายเหตุ</span><input value={attendanceForm.note} onChange={(event) => setAttendanceForm((form) => ({ ...form, note: event.target.value }))} placeholder={attendanceForm.status === "leave" ? "เหตุผลการลา หรืออ้างอิงเอกสาร" : "รายละเอียดเพิ่มเติม (ถ้ามี)"} /></label>
+                  <button disabled={isSaving}>{isSaving ? "กำลังบันทึก..." : attendanceForm.status === "leave" ? "ส่งคำขอลา" : "บันทึกเวลา"}</button>
+                </form>
+                <div className="attendance-day-strip"><span><b>{attendanceForDate.length}</b> มีรายการ</span><span><b>{attendanceUnrecordedCount}</b> ยังไม่ลงเวลา</span><small>เวลาเริ่มมาตรฐาน 09:00 · ระบบคำนวณนาทีมาสายอัตโนมัติ</small></div>
+                <div className="attendance-roster">
+                  {activeEmployees.map((employee) => {
+                    const record = attendanceForDate.find((item) => item.employeeId === employee.id);
+                    const meta = record ? attendanceStatusMeta[record.status] : null;
+                    return <article key={employee.id} className={record ? meta?.tone : "missing"}>
+                      <EmployeeAvatar employee={employee} profile={employeeProfilesById.get(employee.id)} className="avatar-sm" />
+                      <div><strong>{employee.name}</strong><small>{getRole(employee.roleId).name}</small></div>
+                      <span className="attendance-times"><b>{record?.clockIn ?? "—"}</b><i>→</i><b>{record?.clockOut ?? "—"}</b></span>
+                      <span className={"attendance-status " + (meta?.tone ?? "missing")}>{record ? record.status === "leave" && record.leaveType ? leaveTypeLabels[record.leaveType] : meta?.label : "ยังไม่ลงเวลา"}</span>
+                      <small className="attendance-detail">{record?.status === "late" ? "สาย " + record.minutesLate + " นาที" : record?.status === "leave" ? record.approvalStatus === "approved" ? "อนุมัติแล้ว" : record.approvalStatus === "rejected" ? "ไม่อนุมัติ" : "รออนุมัติ" : record?.note || "—"}</small>
+                      {record?.approvalStatus === "pending" && <div className="attendance-row-actions"><button onClick={() => void approveAttendance(record, "approved")}>อนุมัติ</button><button className="reject" onClick={() => void approveAttendance(record, "rejected")}>ไม่อนุมัติ</button></div>}
+                    </article>;
+                  })}
+                </div>
+              </section>
+
+              <aside className="leave-approval-card">
+                <div className="people-ops-section-heading compact"><div><p className="eyebrow">APPROVAL INBOX</p><h2>คำขอลารออนุมัติ</h2></div><span>{pendingLeaveRecords.length}</span></div>
+                <div className="leave-approval-list">
+                  {pendingLeaveRecords.map((record) => {
+                    const employee = employeesById.get(record.employeeId);
+                    return <article key={record.id}><span className="leave-date"><b>{record.workDate.slice(8, 10)}</b><small>{new Date(record.workDate + "T00:00:00").toLocaleDateString("th-TH", { month: "short" })}</small></span><div><strong>{employee?.name ?? "ไม่พบพนักงาน"}</strong><small>{record.leaveType ? leaveTypeLabels[record.leaveType] : "วันลา"} · {record.note || "ไม่ระบุเหตุผล"}</small></div><div><button onClick={() => void approveAttendance(record, "approved")}>✓ อนุมัติ</button><button className="reject" onClick={() => void approveAttendance(record, "rejected")}>×</button></div></article>;
+                  })}
+                  {!pendingLeaveRecords.length && <div className="people-ops-empty"><span>✓</span><strong>ไม่มีคำขอค้าง</strong><p>รายการอนุมัติวันลาครบแล้ว</p></div>}
+                </div>
+                <div className="fairness-note"><span>i</span><p><strong>หลักความเป็นธรรม</strong> วันลาที่อนุมัติจะไม่ถูกนับเป็นขาดงานและไม่ลดคะแนนความพร้อมเลื่อนตำแหน่ง</p></div>
+              </aside>
+            </div>
+
+            {peopleOpsEmployee && peopleOpsRole && (
+              <section className="growth-command-center">
+                <div className="growth-heading">
+                  <div className="growth-person"><EmployeeAvatar employee={peopleOpsEmployee} profile={employeeProfilesById.get(peopleOpsEmployee.id)} className="avatar-growth" /><div><p className="eyebrow">GROWTH &amp; REWARD PATH</p><h2>เส้นทางเติบโตของ {peopleOpsEmployee.name}</h2><p>{peopleOpsRole.name} · ทุกขั้นเชื่อมจากหลักฐานผลงานและสกิล</p></div></div>
+                  <label><span>เลือกพนักงาน</span><select value={peopleOpsEmployeeId} onChange={(event) => selectPeopleOpsEmployee(event.target.value)}>{activeEmployees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name} · {getRole(employee.roleId).shortName}</option>)}</select></label>
+                </div>
+                <div className="growth-summary-grid">
+                  <article><small>เงินเดือนปัจจุบัน</small><strong>฿{formatMoney(peopleOpsHrProfile?.currentSalary ?? 0)}</strong><span>อัปเดตล่าสุด {peopleOpsHrProfile ? formatUpdatedAt(peopleOpsHrProfile.updatedAt) : "—"}</span></article>
+                  <article className="positive"><small>เงินเพิ่มจากสกิลสะสม</small><strong>+฿{formatMoney(peopleOpsSkillUplift)}</strong><span>ต่อเดือน · {peopleOpsAchievements.length} ระดับที่ยืนยันแล้ว</span></article>
+                  <article><small>เป้าหมายตำแหน่งถัดไป</small><strong>{growthRoleNames[peopleOpsRole.id] ?? "หัวหน้าทีม" + peopleOpsRole.department}</strong><span>วัดจาก KPI สกิล เควสต์ และความสม่ำเสมอ</span></article>
+                  <article className={promotionReadiness >= 80 ? "positive" : "warning"}><small>ความพร้อมเลื่อนตำแหน่ง</small><strong>{promotionReadiness}%</strong><i><b style={{ width: promotionReadiness + "%" }} /></i></article>
+                </div>
+
+                <div className="growth-roadmap">
+                  <article className="done"><span>01</span><div><small>ตำแหน่งปัจจุบัน</small><strong>{peopleOpsRole.name}</strong><p>KPI {peopleOpsEvaluation?.kpiScore.toFixed(0) ?? "—"} · สกิล {peopleOpsEvaluation?.skillScore.toFixed(0) ?? "—"}</p></div><b>กำลังทำอยู่</b></article>
+                  <i>→</i>
+                  <article className={promotionReadiness >= 65 ? "active" : "locked"}><span>02</span><div><small>ด่านความพร้อม</small><strong>รับงานและเควสต์ระดับถัดไป</strong><p>{peopleOpsMissions.filter((item) => item.status === "done").length}/{peopleOpsMissions.length} เควสต์สำเร็จ · งานเปิด {peopleOpsWork.filter((item) => item.status !== "done").length}</p></div><b>{promotionReadiness >= 65 ? "ปลดล็อกแล้ว" : "กำลังพัฒนา"}</b></article>
+                  <i>→</i>
+                  <article className={promotionReadiness >= 80 ? "active" : "locked"}><span>03</span><div><small>ตำแหน่งเป้าหมาย</small><strong>{growthRoleNames[peopleOpsRole.id] ?? "หัวหน้าทีม" + peopleOpsRole.department}</strong><p>พร้อมเสนอพิจารณาเมื่อคะแนนรวมถึง 80%</p></div><b>{promotionReadiness >= 80 ? "พร้อมเสนอ" : "อีก " + (80 - promotionReadiness) + "%"}</b></article>
+                </div>
+
+                <div className="growth-detail-grid">
+                  <section className="skill-pay-card">
+                    <div className="people-ops-section-heading"><div><p className="eyebrow">SKILL-BASED PAY</p><h2>เงินเพิ่มตามสกิลที่ยืนยันแล้ว</h2><p>ระดับใหม่เพิ่มค่าตอบแทนและความรับผิดชอบ โดยไม่จำกัดเส้นทางเติบโตไว้ที่อายุงาน</p></div><button onClick={() => setView("skills")}>ดูกราฟสกิล →</button></div>
+                    <div className="skill-opportunity-list">
+                      {nextSkillOpportunities.map(({ skill, currentLevel, highestVerifiedLevel, allowance, canVerify }) => <article key={skill.id} className={canVerify ? "ready" : ""}>
+                        <div><strong>{skill.name}</strong><small>ปัจจุบันระดับ {currentLevel || "—"} · ยืนยันสูงสุด {highestVerifiedLevel || "ยังไม่ยืนยัน"}</small></div>
+                        <span className="skill-level-dots">{[1, 2, 3, 4, 5].map((level) => <i key={level} className={level <= currentLevel ? "filled" : ""} />)}</span>
+                        <div className="skill-pay-value"><small>เงินเพิ่มระดับนี้</small><strong>+฿{formatMoney(allowance)}/เดือน</strong></div>
+                        <button disabled={!canVerify} onClick={() => { setSkillAchievementForm({ skillId: skill.id, level: currentLevel, evidenceUrl: "", note: "" }); document.getElementById("skill-verification-form")?.scrollIntoView({ behavior: "smooth", block: "center" }); }}>{canVerify ? "ตรวจและยืนยัน" : currentLevel ? "ยืนยันแล้ว" : "รอประเมิน"}</button>
+                      </article>)}
+                    </div>
+                    <form id="skill-verification-form" className="skill-verification-form" onSubmit={verifySkillAchievement}>
+                      <div><p className="eyebrow">VERIFICATION</p><h3>ยืนยันสกิลและเพิ่มค่าตอบแทน</h3><small>ระบบตรวจระดับจากผลประเมินล่าสุดและป้องกันการเพิ่มซ้ำอัตโนมัติ</small></div>
+                      <label><span>สกิล</span><select required value={skillAchievementForm.skillId} onChange={(event) => { const skillId = event.target.value; setSkillAchievementForm((form) => ({ ...form, skillId, level: Math.max(2, peopleOpsEvaluation?.skillScores[skillId] ?? 2) })); }}><option value="">เลือกสกิล</option>{peopleOpsRole.skills.map((skill) => <option key={skill.id} value={skill.id}>{skill.name}</option>)}</select></label>
+                      <label><span>ระดับที่ยืนยัน</span><input required type="number" min="2" max="5" value={skillAchievementForm.level} onChange={(event) => setSkillAchievementForm((form) => ({ ...form, level: Number(event.target.value) }))} /></label>
+                      <label className="wide"><span>ลิงก์หลักฐานการทดสอบ / ผลงาน</span><input type="url" value={skillAchievementForm.evidenceUrl} onChange={(event) => setSkillAchievementForm((form) => ({ ...form, evidenceUrl: event.target.value }))} placeholder="https://... (ถ้ามี)" /></label>
+                      <label className="wide"><span>เหตุผลที่ผ่านเกณฑ์</span><input value={skillAchievementForm.note} onChange={(event) => setSkillAchievementForm((form) => ({ ...form, note: event.target.value }))} placeholder="เช่น ผ่าน Skill Test 86% และมีผลงานจริง 2 ชิ้น" /></label>
+                      <div className="skill-verification-value"><span>เงินเพิ่มเมื่อยืนยัน</span><strong>+฿{formatMoney(skillAllowanceFor(peopleOpsRole.id, skillAchievementForm.level))}/เดือน</strong></div>
+                      <button disabled={isSaving || !skillAchievementForm.skillId}>{isSaving ? "กำลังยืนยัน..." : "ยืนยันและอัปเดตเงินเดือน"}</button>
+                    </form>
+                  </section>
+
+                  <aside className="promotion-score-card">
+                    <div><p className="eyebrow">PROMOTION SCORE</p><h2>สูตรความพร้อมที่ตรวจสอบได้</h2><p>ไม่มีการใช้ตัวเลขเดียวตัดสิน และ HR เป็นผู้อนุมัติขั้นสุดท้าย</p></div>
+                    {([
+                      ["ผลงาน KPI", peopleOpsEvaluation?.kpiScore ?? 0, 40],
+                      ["ระดับสกิล", peopleOpsEvaluation?.skillScore ?? 0, 40],
+                      ["เควสต์พัฒนา", missionGrowthScore, 15],
+                      ["ความสม่ำเสมอ", attendanceReliability, 5],
+                    ] as [string, number, number][]).map(([label, score, weight]) => <article key={label}><span><strong>{label}</strong><small>น้ำหนัก {weight}%</small></span><i><b style={{ width: score + "%" }} /></i><em>{score.toFixed(0)}</em></article>)}
+                    <div className="promotion-score-total"><span><small>คะแนนรวม</small><strong>{promotionReadiness}/100</strong></span><b>{promotionReadiness >= 80 ? "พร้อมเสนอเลื่อนตำแหน่ง" : promotionReadiness >= 65 ? "พร้อมรับงานระดับถัดไป" : "เดินหน้าพัฒนาตามแผน"}</b></div>
+                    <button onClick={() => openHrManagement(peopleOpsEmployee, "role_review")}>เปิดแผนเลื่อนตำแหน่ง</button>
+                    <p className="promotion-policy">ผลนี้เป็นคำแนะนำเพื่อการพูดคุย ไม่ใช่การอนุมัติอัตโนมัติ ควรพิจารณาคุณภาพงาน ความสนใจ และโอกาสขององค์กรร่วมด้วย</p>
+                  </aside>
+                </div>
+
+                <section className="team-builder-card">
+                  <div><p className="eyebrow">SMART TEAM BUILDER</p><h2>สร้างทีมจากจุดแข็งและภาระงาน</h2><p>แนะนำทีมข้ามสายงานจากคนที่มีงานเปิดน้อย พร้อมระบุสกิลเด่นก่อนสร้างโปรเจกต์และเควสต์</p></div>
+                  <div className="growth-team-list">{growthTeam.map(({ employee, role, openWork, strength }, index) => <article key={employee.id}><span className="team-slot">{String(index + 1).padStart(2, "0")}</span><EmployeeAvatar employee={employee} profile={employeeProfilesById.get(employee.id)} className="avatar-sm" /><div><strong>{employee.name}</strong><small>{role.name}</small></div><span><small>จุดแข็ง</small><b>{strength}</b></span><em>{openWork} งานเปิด</em></article>)}</div>
+                  <button onClick={buildGrowthTeam}>สร้างโปรเจกต์ให้ทีมนี้</button>
+                </section>
+              </section>
+            )}
           </section>
         )}
 

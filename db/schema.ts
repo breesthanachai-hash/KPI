@@ -43,6 +43,46 @@ export const hrProfiles = sqliteTable("hr_profiles", {
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
+export const attendanceRecords = sqliteTable("attendance_records", {
+  id: text("id").primaryKey(),
+  employeeId: text("employee_id").notNull().references(() => employees.id, { onDelete: "cascade" }),
+  workDate: text("work_date").notNull(),
+  status: text("status", { enum: ["present", "late", "absent", "leave"] }).notNull().default("present"),
+  clockIn: text("clock_in"),
+  clockOut: text("clock_out"),
+  minutesLate: integer("minutes_late").notNull().default(0),
+  leaveType: text("leave_type", { enum: ["sick", "personal", "vacation", "other"] }),
+  note: text("note").notNull().default(""),
+  approvalStatus: text("approval_status", { enum: ["not_required", "pending", "approved", "rejected"] }).notNull().default("not_required"),
+  approvedBy: text("approved_by"),
+  approvedAt: text("approved_at"),
+  createdBy: text("created_by").notNull().default("ฝ่ายทรัพยากรบุคคล"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("attendance_employee_date_unique").on(table.employeeId, table.workDate),
+  index("attendance_work_date_idx").on(table.workDate),
+  index("attendance_approval_date_idx").on(table.approvalStatus, table.workDate),
+]);
+
+export const skillAchievements = sqliteTable("skill_achievements", {
+  id: text("id").primaryKey(),
+  employeeId: text("employee_id").notNull().references(() => employees.id, { onDelete: "cascade" }),
+  roleId: text("role_id").notNull(),
+  skillId: text("skill_id").notNull(),
+  skillName: text("skill_name").notNull(),
+  level: integer("level").notNull(),
+  monthlyAllowance: integer("monthly_allowance").notNull().default(0),
+  verifiedBy: text("verified_by").notNull(),
+  verifiedAt: text("verified_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  evidenceUrl: text("evidence_url").notNull().default(""),
+  note: text("note").notNull().default(""),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("skill_achievement_milestone_unique").on(table.employeeId, table.skillId, table.level),
+  index("skill_achievement_employee_verified_idx").on(table.employeeId, table.verifiedAt),
+]);
+
 export const talentActions = sqliteTable("talent_actions", {
   id: text("id").primaryKey(),
   employeeId: text("employee_id").notNull().references(() => employees.id, { onDelete: "cascade" }),

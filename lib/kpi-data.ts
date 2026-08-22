@@ -46,6 +46,39 @@ export type HrProfileRecord = {
   updatedAt: string;
 };
 
+export type AttendanceRecord = {
+  id: string;
+  employeeId: string;
+  workDate: string;
+  status: "present" | "late" | "absent" | "leave";
+  clockIn: string | null;
+  clockOut: string | null;
+  minutesLate: number;
+  leaveType: "sick" | "personal" | "vacation" | "other" | null;
+  note: string;
+  approvalStatus: "not_required" | "pending" | "approved" | "rejected";
+  approvedBy: string | null;
+  approvedAt: string | null;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type SkillAchievementRecord = {
+  id: string;
+  employeeId: string;
+  roleId: string;
+  skillId: string;
+  skillName: string;
+  level: number;
+  monthlyAllowance: number;
+  verifiedBy: string;
+  verifiedAt: string;
+  evidenceUrl: string;
+  note: string;
+  createdAt: string;
+};
+
 export type TalentActionRecord = {
   id: string;
   employeeId: string;
@@ -379,6 +412,23 @@ export const roleSalaryBands: Record<string, { min: number; mid: number; max: nu
   hr: { min: 32000, mid: 45000, max: 62000 },
 };
 
+const roleSkillPayMultiplier: Record<string, number> = {
+  "sales-manager": 1.2,
+  marketing: 1,
+  "customer-service": .9,
+  developer: 1.5,
+  "video-editor": 1.2,
+  hr: 1,
+};
+
+export const skillAllowanceByLevel: Record<number, number> = { 1: 0, 2: 500, 3: 800, 4: 1200, 5: 1800 };
+
+export function skillAllowanceFor(roleId: string, level: number) {
+  const base = skillAllowanceByLevel[Math.max(1, Math.min(5, Math.round(level)))] ?? 0;
+  const multiplier = roleSkillPayMultiplier[roleId] ?? 1;
+  return Math.round(base * multiplier / 100) * 100;
+}
+
 export const seedEmployees: EmployeeRecord[] = [
   { id: "emp-narin", initials: "นก", name: "นรินทร์ กิตติคุณ", email: "narin@peoplepulse.co", roleId: "sales-manager", manager: "วารุณี ภักดี", status: "active", latestScore: 92, latestSkillScore: 88, latestPeriod: periods[0], updatedAt: "2026-08-02T09:30:00.000Z" },
   { id: "emp-pimchanok", initials: "พส", name: "พิมพ์ชนก สุขใจ", email: "pimchanok@peoplepulse.co", roleId: "marketing", manager: "อรทัย ศรีสุข", status: "active", latestScore: 87, latestSkillScore: 84, latestPeriod: periods[0], updatedAt: "2026-08-01T08:20:00.000Z" },
@@ -399,6 +449,18 @@ export const seedHrProfiles: HrProfileRecord[] = [
   { employeeId: "emp-nattapong", currentSalary: 61000, salaryReviewMonth: "ตุลาคม 2569", updatedAt: "2026-07-29T11:05:00.000Z" },
   { employeeId: "emp-sirilak", currentSalary: 36000, salaryReviewMonth: "มกราคม 2570", updatedAt: "2026-07-20T06:00:00.000Z" },
   { employeeId: "emp-pattarapon", currentSalary: 52000, salaryReviewMonth: "มกราคม 2570", updatedAt: "2026-07-18T05:50:00.000Z" },
+];
+
+export const seedAttendanceRecords: AttendanceRecord[] = [
+  { id: "attendance-narin-2026-08-22", employeeId: "emp-narin", workDate: "2026-08-22", status: "present", clockIn: "08:42", clockOut: null, minutesLate: 0, leaveType: null, note: "ลงเวลาผ่านระบบ", approvalStatus: "not_required", approvedBy: null, approvedAt: null, createdBy: "ระบบลงเวลา", createdAt: "2026-08-22T01:42:00.000Z", updatedAt: "2026-08-22T01:42:00.000Z" },
+  { id: "attendance-pimchanok-2026-08-22", employeeId: "emp-pimchanok", workDate: "2026-08-22", status: "late", clockIn: "09:18", clockOut: null, minutesLate: 18, leaveType: null, note: "รถติด แจ้งหัวหน้าแล้ว", approvalStatus: "not_required", approvedBy: null, approvedAt: null, createdBy: "ระบบลงเวลา", createdAt: "2026-08-22T02:18:00.000Z", updatedAt: "2026-08-22T02:18:00.000Z" },
+  { id: "attendance-thanawat-2026-08-22", employeeId: "emp-thanawat", workDate: "2026-08-22", status: "leave", clockIn: null, clockOut: null, minutesLate: 0, leaveType: "sick", note: "ลาป่วย 1 วัน แนบเอกสารในแฟ้มพนักงาน", approvalStatus: "pending", approvedBy: null, approvedAt: null, createdBy: "ธนวัฒน์ พงศ์ศรี", createdAt: "2026-08-22T00:30:00.000Z", updatedAt: "2026-08-22T00:30:00.000Z" },
+  { id: "attendance-supakorn-2026-08-22", employeeId: "emp-supakorn", workDate: "2026-08-22", status: "present", clockIn: "08:55", clockOut: null, minutesLate: 0, leaveType: null, note: "", approvalStatus: "not_required", approvedBy: null, approvedAt: null, createdBy: "ระบบลงเวลา", createdAt: "2026-08-22T01:55:00.000Z", updatedAt: "2026-08-22T01:55:00.000Z" },
+];
+
+export const seedSkillAchievements: SkillAchievementRecord[] = [
+  { id: "achievement-narin-negotiation-4", employeeId: "emp-narin", roleId: "sales-manager", skillId: "negotiation", skillName: "การเจรจาต่อรอง", level: 4, monthlyAllowance: 1400, verifiedBy: "ฝ่ายทรัพยากรบุคคล", verifiedAt: "2026-08-05T04:00:00.000Z", evidenceUrl: "", note: "ผ่านการทดสอบและมีผลงานปิดดีลตามเกณฑ์", createdAt: "2026-08-05T04:00:00.000Z" },
+  { id: "achievement-supakorn-engineering-4", employeeId: "emp-supakorn", roleId: "developer", skillId: "engineering", skillName: "ทักษะวิศวกรรมซอฟต์แวร์", level: 4, monthlyAllowance: 1800, verifiedBy: "ฝ่ายทรัพยากรบุคคล", verifiedAt: "2026-08-08T04:00:00.000Z", evidenceUrl: "", note: "ผ่านผลงานจริงและการทดสอบระดับ 4", createdAt: "2026-08-08T04:00:00.000Z" },
 ];
 
 export const seedTalentActions: TalentActionRecord[] = [

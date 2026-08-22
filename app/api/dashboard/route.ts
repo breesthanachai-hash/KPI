@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { ensureDatabase } from "../../../db/initialize";
-import { applicationDocuments, employeeProfiles, employees, employmentContracts, evaluations, hrProfiles, pointEvents, pointLedger, projects, rewardRedemptions, rewards, talentActions, workItems, workSubmissions } from "../../../db/schema";
+import { applicationDocuments, attendanceRecords, employeeProfiles, employees, employmentContracts, evaluations, hrProfiles, pointEvents, pointLedger, projects, rewardRedemptions, rewards, skillAchievements, talentActions, workItems, workSubmissions } from "../../../db/schema";
 import {
   clampScore,
   clampSkillLevel,
@@ -11,6 +11,7 @@ import {
   pointEventRules,
   roleSalaryBands,
   roles,
+  seedAttendanceRecords,
   seedEmployees,
   seedApplicationDocuments,
   seedEmployeeProfiles,
@@ -20,8 +21,10 @@ import {
   seedProjects,
   seedRewardRedemptions,
   seedRewards,
+  seedSkillAchievements,
   seedTalentActions,
   seedWorkItems,
+  skillAllowanceFor,
   type PointEventRecord,
   type PointEventType,
   type PointLedgerRecord,
@@ -79,6 +82,12 @@ async function ensureSeedData() {
 
   const [existingTalentAction] = await db.select({ id: talentActions.id }).from(talentActions).limit(1);
   if (!existingTalentAction) await db.insert(talentActions).values(seedTalentActions).onConflictDoNothing();
+
+  const [existingAttendanceRecord] = await db.select({ id: attendanceRecords.id }).from(attendanceRecords).limit(1);
+  if (!existingAttendanceRecord) await db.insert(attendanceRecords).values(seedAttendanceRecords).onConflictDoNothing();
+
+  const [existingSkillAchievement] = await db.select({ id: skillAchievements.id }).from(skillAchievements).limit(1);
+  if (!existingSkillAchievement) await db.insert(skillAchievements).values(seedSkillAchievements).onConflictDoNothing();
 
   const [existingProject] = await db.select({ id: projects.id }).from(projects).limit(1);
   if (!existingProject) await db.insert(projects).values(seedProjects).onConflictDoNothing();
@@ -150,10 +159,12 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const period = url.searchParams.get("period") ?? periods[0];
     const db = getDb();
-    const [employeeRows, evaluationRows, hrProfileRows, talentActionRows, projectRows, workItemRows, workSubmissionRows, rewardRows, pointRows, pointEventRows, redemptionRows, employeeProfileRows, applicationDocumentRows, employmentContractRows] = await Promise.all([
+    const [employeeRows, evaluationRows, hrProfileRows, attendanceRows, skillAchievementRows, talentActionRows, projectRows, workItemRows, workSubmissionRows, rewardRows, pointRows, pointEventRows, redemptionRows, employeeProfileRows, applicationDocumentRows, employmentContractRows] = await Promise.all([
       db.select().from(employees),
       db.select().from(evaluations).where(eq(evaluations.period, period)),
       db.select().from(hrProfiles),
+      db.select().from(attendanceRecords),
+      db.select().from(skillAchievements),
       db.select().from(talentActions),
       db.select().from(projects),
       db.select().from(workItems),
@@ -167,7 +178,7 @@ export async function GET(request: Request) {
       db.select().from(employmentContracts),
     ]);
 
-    return Response.json({ employees: employeeRows, evaluations: evaluationRows, hrProfiles: hrProfileRows, talentActions: talentActionRows, projects: projectRows, workItems: workItemRows, workSubmissions: workSubmissionRows, rewards: rewardRows, pointLedger: pointRows, pointEvents: pointEventRows, rewardRedemptions: redemptionRows, employeeProfiles: employeeProfileRows, applicationDocuments: applicationDocumentRows, employmentContracts: employmentContractRows, period });
+    return Response.json({ employees: employeeRows, evaluations: evaluationRows, hrProfiles: hrProfileRows, attendanceRecords: attendanceRows, skillAchievements: skillAchievementRows, talentActions: talentActionRows, projects: projectRows, workItems: workItemRows, workSubmissions: workSubmissionRows, rewards: rewardRows, pointLedger: pointRows, pointEvents: pointEventRows, rewardRedemptions: redemptionRows, employeeProfiles: employeeProfileRows, applicationDocuments: applicationDocumentRows, employmentContracts: employmentContractRows, period });
   } catch (error) {
     return apiError(error);
   }
@@ -206,6 +217,32 @@ type CompleteTalentActionPayload = {
   action: "completeTalentAction";
   actionId?: string;
   score?: number;
+};
+
+type AttendancePayload = {
+  action: "saveAttendance";
+  employeeId?: string;
+  workDate?: string;
+  status?: "present" | "late" | "absent" | "leave";
+  clockIn?: string;
+  clockOut?: string;
+  leaveType?: "sick" | "personal" | "vacation" | "other";
+  note?: string;
+};
+
+type AttendanceApprovalPayload = {
+  action: "approveAttendance";
+  attendanceId?: string;
+  approvalStatus?: "approved" | "rejected";
+};
+
+type SkillAchievementPayload = {
+  action: "verifySkillAchievement";
+  employeeId?: string;
+  skillId?: string;
+  level?: number;
+  evidenceUrl?: string;
+  note?: string;
 };
 
 type ProjectPayload = {
@@ -313,7 +350,7 @@ type SendContractPayload = {
 export async function POST(request: Request) {
   try {
     await ensureSeedData();
-    const payload = await request.json() as EmployeePayload | EvaluationPayload | HrPlanPayload | CompleteTalentActionPayload | ProjectPayload | WorkItemPayload | ReviewWorkSubmissionPayload | RecordPointEventPayload | RunMonthlyPointCyclePayload | RedeemRewardPayload | EmployeeProfilePayload | DocumentStatusPayload | ContractPayload | SignContractPayload | SendContractPayload;
+    const payload = await request.json() as EmployeePayload | EvaluationPayload | HrPlanPayload | CompleteTalentActionPayload | AttendancePayload | AttendanceApprovalPayload | SkillAchievementPayload | ProjectPayload | WorkItemPayload | ReviewWorkSubmissionPayload | RecordPointEventPayload | RunMonthlyPointCyclePayload | RedeemRewardPayload | EmployeeProfilePayload | DocumentStatusPayload | ContractPayload | SignContractPayload | SendContractPayload;
     const db = getDb();
 
     if (payload.action === "createEmployee") {
@@ -506,6 +543,117 @@ export async function POST(request: Request) {
       const [talentAction] = await db.select().from(talentActions).where(eq(talentActions.id, actionId)).limit(1);
       if (!talentAction) return Response.json({ error: "ไม่พบแผนที่เลือก" }, { status: 404 });
       return Response.json({ talentAction });
+    }
+
+    if (payload.action === "saveAttendance") {
+      const employeeId = payload.employeeId ?? "";
+      const [employee] = await db.select().from(employees).where(eq(employees.id, employeeId)).limit(1);
+      if (!employee) return Response.json({ error: "ไม่พบพนักงานที่เลือก" }, { status: 404 });
+      const workDate = /^\d{4}-\d{2}-\d{2}$/.test(payload.workDate ?? "") ? payload.workDate as string : "";
+      const status = payload.status ?? "present";
+      if (!workDate) return Response.json({ error: "กรุณาระบุวันที่ทำงาน" }, { status: 400 });
+      const isTime = (value?: string) => /^([01]\d|2[0-3]):[0-5]\d$/.test(value ?? "");
+      const clockIn = isTime(payload.clockIn) ? payload.clockIn as string : null;
+      const clockOut = isTime(payload.clockOut) ? payload.clockOut as string : null;
+      const startMinutes = 9 * 60;
+      const clockInMinutes = clockIn ? Number(clockIn.slice(0, 2)) * 60 + Number(clockIn.slice(3, 5)) : 0;
+      const minutesLate = status === "leave" || status === "absent" || !clockIn ? 0 : Math.max(0, clockInMinutes - startMinutes);
+      const resolvedStatus = status === "present" && minutesLate > 0 ? "late" as const : status;
+      const now = new Date().toISOString();
+      const actor = evaluatorName(request);
+      const [existing] = await db.select().from(attendanceRecords).where(and(eq(attendanceRecords.employeeId, employeeId), eq(attendanceRecords.workDate, workDate))).limit(1);
+      const attendanceRecord = {
+        id: existing?.id ?? `attendance-${crypto.randomUUID()}`,
+        employeeId,
+        workDate,
+        status: resolvedStatus,
+        clockIn: resolvedStatus === "leave" || resolvedStatus === "absent" ? null : clockIn,
+        clockOut: resolvedStatus === "leave" || resolvedStatus === "absent" ? null : clockOut,
+        minutesLate,
+        leaveType: resolvedStatus === "leave" ? payload.leaveType ?? "personal" as const : null,
+        note: payload.note?.trim().slice(0, 1000) ?? "",
+        approvalStatus: resolvedStatus === "leave" ? "pending" as const : "not_required" as const,
+        approvedBy: null,
+        approvedAt: null,
+        createdBy: existing?.createdBy ?? actor,
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+      };
+      await db.insert(attendanceRecords).values(attendanceRecord).onConflictDoUpdate({
+        target: [attendanceRecords.employeeId, attendanceRecords.workDate],
+        set: { status: attendanceRecord.status, clockIn: attendanceRecord.clockIn, clockOut: attendanceRecord.clockOut, minutesLate, leaveType: attendanceRecord.leaveType, note: attendanceRecord.note, approvalStatus: attendanceRecord.approvalStatus, approvedBy: null, approvedAt: null, updatedAt: now },
+      });
+      return Response.json({ attendanceRecord });
+    }
+
+    if (payload.action === "approveAttendance") {
+      const attendanceId = payload.attendanceId ?? "";
+      const approvalStatus = payload.approvalStatus;
+      if (!approvalStatus) return Response.json({ error: "กรุณาเลือกผลการอนุมัติ" }, { status: 400 });
+      const [existing] = await db.select().from(attendanceRecords).where(eq(attendanceRecords.id, attendanceId)).limit(1);
+      if (!existing || existing.status !== "leave") return Response.json({ error: "ไม่พบคำขอลาที่เลือก" }, { status: 404 });
+      const now = new Date().toISOString();
+      await db.update(attendanceRecords).set({ approvalStatus, approvedBy: evaluatorName(request), approvedAt: now, updatedAt: now }).where(eq(attendanceRecords.id, attendanceId));
+      const [attendanceRecord] = await db.select().from(attendanceRecords).where(eq(attendanceRecords.id, attendanceId)).limit(1);
+      return Response.json({ attendanceRecord });
+    }
+
+    if (payload.action === "verifySkillAchievement") {
+      const employeeId = payload.employeeId ?? "";
+      const [employee] = await db.select().from(employees).where(eq(employees.id, employeeId)).limit(1);
+      if (!employee) return Response.json({ error: "ไม่พบพนักงานที่เลือก" }, { status: 404 });
+      const role = getRole(employee.roleId);
+      const skill = role.skills.find((item) => item.id === payload.skillId);
+      const level = Math.max(1, Math.min(5, Math.round(Number(payload.level) || 0)));
+      if (!skill || level < 2) return Response.json({ error: "กรุณาเลือกสกิลและระดับที่ผ่านการยืนยัน" }, { status: 400 });
+      if (!isSafeOptionalUrl(payload.evidenceUrl?.trim() ?? "")) return Response.json({ error: "ลิงก์หลักฐานต้องขึ้นต้นด้วย http หรือ https" }, { status: 400 });
+      const [evaluation] = await db.select().from(evaluations).where(and(eq(evaluations.employeeId, employeeId), eq(evaluations.period, periods[0]))).limit(1);
+      const evaluatedLevel = Number(evaluation?.skillScores?.[skill.id] ?? 0);
+      if (evaluatedLevel < level) return Response.json({ error: `ผลประเมินล่าสุดของ ${skill.name} ยังไม่ถึงระดับ ${level}` }, { status: 400 });
+      const [duplicate] = await db.select().from(skillAchievements).where(and(eq(skillAchievements.employeeId, employeeId), and(eq(skillAchievements.skillId, skill.id), eq(skillAchievements.level, level)))).limit(1);
+      if (duplicate) return Response.json({ error: "ระดับสกิลนี้ได้รับเงินเพิ่มแล้ว ระบบไม่เพิ่มซ้ำ" }, { status: 409 });
+      const now = new Date().toISOString();
+      const allowance = skillAllowanceFor(role.id, level);
+      const verifier = evaluatorName(request);
+      const achievement = {
+        id: `achievement-${crypto.randomUUID()}`,
+        employeeId,
+        roleId: role.id,
+        skillId: skill.id,
+        skillName: skill.name,
+        level,
+        monthlyAllowance: allowance,
+        verifiedBy: verifier,
+        verifiedAt: now,
+        evidenceUrl: payload.evidenceUrl?.trim().slice(0, 1000) ?? "",
+        note: payload.note?.trim().slice(0, 1000) ?? "",
+        createdAt: now,
+      };
+      const [profile] = await db.select().from(hrProfiles).where(eq(hrProfiles.employeeId, employeeId)).limit(1);
+      const hrProfile = {
+        employeeId,
+        currentSalary: Math.round((profile?.currentSalary ?? roleSalaryBands[role.id].mid) + allowance),
+        salaryReviewMonth: profile?.salaryReviewMonth || "รอบถัดไปตามนโยบายบริษัท",
+        updatedAt: now,
+      };
+      const talentAction = {
+        id: `action-${crypto.randomUUID()}`,
+        employeeId,
+        type: "salary_review" as const,
+        title: `ยืนยัน ${skill.name} ระดับ ${level} · เพิ่ม ฿${allowance.toLocaleString("th-TH")}/เดือน`,
+        status: "completed" as const,
+        score: level * 20,
+        dueDate: now.slice(0, 10),
+        targetRoleId: role.id,
+        createdAt: now,
+        updatedAt: now,
+      };
+      await db.batch([
+        db.insert(skillAchievements).values(achievement),
+        db.insert(hrProfiles).values(hrProfile).onConflictDoUpdate({ target: hrProfiles.employeeId, set: { currentSalary: hrProfile.currentSalary, updatedAt: now } }),
+        db.insert(talentActions).values(talentAction),
+      ]);
+      return Response.json({ skillAchievement: achievement, hrProfile, talentAction });
     }
 
     if (payload.action === "saveProject") {

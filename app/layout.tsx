@@ -7,8 +7,8 @@ export async function generateMetadata(): Promise<Metadata> {
   const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host") ?? "localhost:3000";
   const protocol = requestHeaders.get("x-forwarded-proto") ?? (host.includes("localhost") ? "http" : "https");
   const origin = `${protocol}://${host}`;
-  const title = "People Pulse — ทูดูลิสงานและโปรเจกต์สำหรับทีม";
-  const description = "จัดการทูดูลิสและออฟฟิศจำลอง 3D แบบเกม เห็นภาระงาน ผู้รับผิดชอบ ความคืบหน้า โปรเจกต์ KPI สกิล และรางวัลของทีมในระบบเดียว";
+  const title = "People Pulse — HR OS จัดการคน งาน เวลา และการเติบโต";
+  const description = "ระบบ HR ครบวงจรสำหรับเวลาเข้างาน วันลา งาน KPI สกิล เงินเพิ่มตามความสามารถ เส้นทางเลื่อนตำแหน่ง เควสต์ ทีม และรางวัลในที่เดียว";
 
   return {
     metadataBase: new URL(origin),
