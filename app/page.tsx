@@ -64,9 +64,7 @@ type OfficePersonModel = {
 
 type PortfolioStatusFilter = "all" | "approved" | "submitted" | "revision" | "missing";
 
-type WorkDueFilter = "all" | "today" | "overdue" | "week";
-
-type WorkViewMode = "list" | "board";
+type WorkDueFilter = "all" | "today" | "overdue" | "week" | "review" | "done";
 
 type TalentDimensionId = "analysis" | "communication" | "problemSolving" | "leadership" | "execution";
 
@@ -429,7 +427,7 @@ const viewMeta: Record<View, { eyebrow: string; title: string; description: stri
   peopleOps: { eyebrow: "PEOPLE OPERATING SYSTEM", title: "เวลาเข้างานและเส้นทางเติบโต", description: "ลงเวลา อนุมัติวันลา ยืนยันสกิล เพิ่มค่าตอบแทน และเห็นความพร้อมเลื่อนตำแหน่งในระบบเดียว" },
   hr: { eyebrow: "WORKFORCE MANAGEMENT", title: "บริหารทรัพยากรบุคคล", description: "เชื่อมผลงาน สกิล การทดสอบ แผนพัฒนา ตำแหน่งที่เหมาะสม และค่าตอบแทน เพื่อการตัดสินใจที่รอบด้าน" },
   portfolio: { eyebrow: "EMPLOYEE WORK PORTFOLIO", title: "แฟ้มผลงานพนักงาน", description: "ค้นหางานที่ส่งมอบแล้ว ไฟล์ ลิงก์ ผู้ตรวจ และผลประเมินของแต่ละคนได้จากที่เดียว" },
-  work: { eyebrow: "SMART TO-DO WORKSPACE", title: "ทูดูลิสงานและโปรเจกต์", description: "เห็นงานที่ต้องทำวันนี้ งานค้าง ผู้รับผิดชอบ กำหนดส่ง และความคืบหน้าของทีมเป็นอันดับแรก" },
+  work: { eyebrow: "จัดการงาน", title: "งานของทีม", description: "เลือกงาน เริ่มทำ ส่งหลักฐาน และติดตามความคืบหน้าได้จากรายการเดียว" },
   office: { eyebrow: "REAL-TIME 3D HERO OFFICE", title: "สำนักงานจำลอง 3D", description: "เข้าสู่โลกสำนักงาน 3D แบบไอโซเมตริก ตัวละครโมเดล 3D เดิน เลือกห้อง และทำกิจกรรมตามภาระงานจริง" },
   access: { eyebrow: "ACCESS & PERMISSIONS", title: "ผู้ใช้งานและสิทธิ์เข้าถึง", description: "ผูกอีเมลเข้าสู่ระบบกับพนักงาน และกำหนดว่าใครเป็น HR หัวหน้าทีม หรือพนักงาน" },
 };
@@ -489,7 +487,6 @@ export default function Home() {
   const [workSearch, setWorkSearch] = useState("");
   const [workDueFilter, setWorkDueFilter] = useState<WorkDueFilter>("all");
   const [workAssigneeFilter, setWorkAssigneeFilter] = useState("all");
-  const [workViewMode, setWorkViewMode] = useState<WorkViewMode>("list");
   const [officeLoadFilter, setOfficeLoadFilter] = useState<OfficeLoadFilter>("all");
   const [quickUpdatingWorkId, setQuickUpdatingWorkId] = useState("");
   const [portfolioSearch, setPortfolioSearch] = useState("");
@@ -800,7 +797,9 @@ export default function Home() {
       const dueMatches = workDueFilter === "all"
         || (workDueFilter === "today" && item.dueDate === todayDate)
         || (workDueFilter === "overdue" && item.status !== "done" && item.dueDate < todayDate)
-        || (workDueFilter === "week" && item.status !== "done" && item.dueDate >= todayDate && item.dueDate <= weekEndDate);
+        || (workDueFilter === "week" && item.status !== "done" && item.dueDate >= todayDate && item.dueDate <= weekEndDate)
+        || (workDueFilter === "review" && item.status === "review")
+        || (workDueFilter === "done" && item.status === "done");
       const queryMatches = !query || `${item.title} ${item.description} ${project?.name ?? ""} ${assignee?.name ?? ""}`.toLocaleLowerCase("th").includes(query);
       return departmentMatches && kindMatches && assigneeMatches && dueMatches && queryMatches;
     }).sort((a, b) => {
@@ -818,7 +817,6 @@ export default function Home() {
     });
     return grouped;
   }, [workSubmissions]);
-  const pendingSubmissionCount = workSubmissions.filter((submission) => submission.status === "submitted").length;
   const portfolioEntries = useMemo(() => workItems
     .map((item) => {
       const submissions = workSubmissionsByItem.get(item.id) ?? [];
@@ -1626,8 +1624,8 @@ export default function Home() {
   const isAdmin = currentUser?.role === "admin";
   const isEmployeeUser = currentUser?.role === "employee";
   const currentUserRoleLabel = currentUser?.role === "admin" ? "HR / Admin" : currentUser?.role === "manager" ? "หัวหน้าทีม" : "พนักงาน";
-  const activeViewTitle = isEmployeeUser && view === "work" ? "งานและภารกิจของฉัน" : isEmployeeUser && view === "portfolio" ? "แฟ้มผลงานของฉัน" : viewMeta[view].title;
-  const activeViewDescription = isEmployeeUser && view === "work" ? "ดูงานที่ได้รับมอบหมาย เริ่มงาน ส่งหลักฐาน สะสมแต้ม และแลกรางวัลได้ในหน้าเดียว" : isEmployeeUser && view === "portfolio" ? "ดูงานและหลักฐานที่ส่งไว้ พร้อมสถานะตรวจผลงานของคุณ" : viewMeta[view].description;
+  const activeViewTitle = isEmployeeUser && view === "work" ? "งานของฉัน" : isEmployeeUser && view === "portfolio" ? "แฟ้มผลงานของฉัน" : viewMeta[view].title;
+  const activeViewDescription = isEmployeeUser && view === "work" ? "ดูสิ่งที่ต้องทำ เริ่มงาน และส่งหลักฐานได้ในไม่กี่ขั้นตอน" : isEmployeeUser && view === "portfolio" ? "ดูงานและหลักฐานที่ส่งไว้ พร้อมสถานะตรวจผลงานของคุณ" : viewMeta[view].description;
 
   if (accessDenied) {
     return (
@@ -1652,14 +1650,14 @@ export default function Home() {
     <main className="app-shell future-shell">
       <div className="future-ambient" aria-hidden="true"><i className="future-orb orb-one" /><i className="future-orb orb-two" /><i className="future-grid-plane" /><i className="future-scan-beam" /></div>
       <header className="topbar">
-        <button className="brand" onClick={() => setView("work")} aria-label="ไปที่ทูดูลิส">
+        <button className="brand" onClick={() => { setActiveDepartment("all"); setView("work"); }} aria-label="ไปที่รายการงาน">
           <span className="brand-mark" aria-hidden="true"><i /><i /><i /></span>
           <span><strong>PEOPLE PULSE</strong><small>QUANTUM PEOPLE OS · 3000</small></span>
         </button>
         <div className="future-core-status"><i /><span>NEURAL CORE</span><b>ONLINE</b></div>
         <nav aria-label="เมนูหลัก">
           <span className="nav-section-label">พื้นที่ทำงาน</span>
-          <button className={view === "work" ? "active" : ""} onClick={() => setView("work")}><span aria-hidden="true">✓</span><b>ทูดูลิส</b><em>{workItems.filter((item) => item.status !== "done").length}</em></button>
+          <button className={view === "work" ? "active" : ""} onClick={() => { setActiveDepartment("all"); setView("work"); }}><span aria-hidden="true">✓</span><b>งาน</b><em>{workItems.filter((item) => item.status !== "done").length}</em></button>
           <button className={view === "portfolio" ? "active" : ""} onClick={() => setView("portfolio")}><span aria-hidden="true">◇</span><b>แฟ้มผลงาน</b></button>
           {!isEmployeeUser && <>
             <button className={view === "office" ? "active" : ""} onClick={() => setView("office")}><span aria-hidden="true">⌂</span><b>สำนักงานจำลอง</b><em>{officePressureCount}</em></button>
@@ -1699,7 +1697,7 @@ export default function Home() {
             <p>{activeViewDescription}</p>
             <div className="future-heading-meta"><span><i /> LIVE DATA STREAM</span><span>SECTOR / {view.toUpperCase()}</span><span>ERA 3000</span></div>
           </div>
-          {!isEmployeeUser && view !== "access" && <div className="heading-actions">
+          {!isEmployeeUser && view !== "access" && view !== "work" && <div className="heading-actions">
             <button className="secondary-button" onClick={() => view === "work" ? setShowProjectForm(true) : view === "office" ? setView("work") : view === "peopleOps" ? buildGrowthTeam() : view === "profiles" ? showToast(`${requiredDocumentTypes.length - verifiedRequiredDocuments} เอกสารจำเป็นยังตรวจไม่ครบ`) : view === "power" ? showToast("ค่าพลังรวมมาจากค่าสกิล 70% และ KPI 30%") : view === "portfolio" ? exportPortfolioReport() : exportReport()}><span aria-hidden="true">{view === "work" ? "◇" : view === "office" ? "✓" : view === "peopleOps" ? "♙" : view === "profiles" ? "▣" : view === "power" ? "i" : "↓"}</span> {view === "work" ? "สร้างโปรเจกต์" : view === "office" ? "เปิดทูดูลิส" : view === "peopleOps" ? "สร้างทีมจากสกิล" : view === "profiles" ? "เช็กเอกสารที่ขาด" : view === "power" ? "วิธีคำนวณ" : view === "portfolio" ? "ส่งออกแฟ้ม CSV" : "ส่งออกรายงาน"}</button>
             <button className="primary-button" onClick={() => {
               if (view === "work") {
@@ -1740,7 +1738,7 @@ export default function Home() {
           </div>}
         </div>
 
-        {!isEmployeeUser && view !== "access" && <div className="filter-row" aria-label="กรองตามแผนก">
+        {!isEmployeeUser && view !== "access" && view !== "work" && <div className="filter-row" aria-label="กรองตามแผนก">
           {departmentFilters.map((filter) => (
             <button key={filter.id} className={activeDepartment === filter.id ? "active" : ""} onClick={() => setActiveDepartment(filter.id)}>{filter.label}</button>
           ))}
@@ -2437,44 +2435,65 @@ export default function Home() {
 
         {view === "work" && (
           <section className="mission-layout">
-            <div className="mission-summary-grid">
-              <MetricCard label="ต้องทำวันนี้" value={`${todayWorkItems.length} งาน`} copy={`${dueThisWeekWorkItems.length} งานครบกำหนดภายใน 7 วัน`} tone="warning" icon="●" />
-              <MetricCard label="เกินกำหนด" value={`${overdueWorkItems.length} งาน`} copy={overdueWorkItems.length ? "ต้องจัดลำดับและติดตามทันที" : "ไม่มีงานค้างเกินกำหนด"} tone={overdueWorkItems.length ? "warning" : "positive"} icon="!" />
-              <MetricCard label="รอตรวจผลงาน" value={`${reviewQueueWorkItems.length} งาน`} copy={`${pendingSubmissionCount} หลักฐานรอการอนุมัติ`} icon="⌕" />
-              <MetricCard label="งานเสร็จทั้งหมด" value={`${workCompletion.toFixed(0)}%`} copy={`${workItems.filter((item) => item.status === "done").length} จาก ${workItems.length} รายการ`} tone="positive" progress={workCompletion} icon="✓" />
-            </div>
-
-            <section className="todo-focus-card">
-              <div className="todo-focus-heading">
-                <div><p className="eyebrow">TODAY&apos;S FOCUS</p><h2>{isEmployeeUser ? "งานที่ฉันควรลงมือทำต่อ" : "งานที่ทีมควรลงมือทำต่อ"}</h2><p>เรียงจากกำหนดส่งและความสำคัญ เพื่อให้เห็นสิ่งที่ต้องทำก่อนโดยไม่ต้องไล่เปิดทุกโปรเจกต์</p></div>
-                {permissions.canManageWork && <button onClick={() => openWorkItemForm()}><span>＋</span> เพิ่มงานด่วน</button>}
+            <section className="simple-todo-card" aria-labelledby="simple-todo-title">
+              <div className="simple-todo-heading">
+                <div><p className="eyebrow">งานของวันนี้</p><h2 id="simple-todo-title">{isEmployeeUser ? "ฉันต้องทำอะไรต่อ?" : "ทีมต้องทำอะไรต่อ?"}</h2><p>รายการเดียวจบ เรียงงานเร่งด่วนและกำหนดส่งให้แล้ว</p></div>
+                {permissions.canManageWork && <div className="simple-todo-create"><button className="secondary-button" onClick={() => setShowProjectForm(true)}>สร้างโปรเจกต์</button><button className="primary-button" onClick={() => openWorkItemForm()}><span>＋</span> เพิ่มงาน</button></div>}
               </div>
-              <div className="todo-focus-layout">
-                <div className="todo-agenda">
-                  {visibleWorkItems.filter((item) => item.status !== "done").slice(0, 6).map((item) => {
-                    const project = projectsById.get(item.projectId);
-                    const assignee = employeesById.get(item.assigneeEmployeeId);
-                    const dueState = item.dueDate < todayDate ? "overdue" : item.dueDate === todayDate ? "today" : "upcoming";
-                    const actionLabel = item.status === "todo" ? "เริ่มงาน" : item.status === "in_progress" ? "ส่งงาน" : item.status === "review" && isEmployeeUser ? "รอตรวจ" : item.status === "review" ? "ตรวจงาน" : "ดูผลงาน";
-                    return (
-                      <article key={item.id} className={`todo-agenda-row ${dueState}`}>
-                        <button className={`todo-state-mark ${item.status}`} onClick={() => item.status === "todo" ? void startWorkItem(item) : isEmployeeUser ? openSubmissionCenter(item) : openWorkItemForm(item)} aria-label={item.status === "todo" ? `เริ่มงาน ${item.title}` : `เปิดงาน ${item.title}`}><span>{item.status === "todo" ? "" : item.status === "review" ? "⌕" : "→"}</span></button>
-                        <div className="todo-agenda-copy"><span><b className={`work-priority ${item.priority}`}>{workPriorityLabel(item.priority)}</b><small>{project?.name ?? "ไม่ระบุโปรเจกต์"}</small></span><strong>{item.title}</strong><p>{item.description || "ยังไม่มีรายละเอียดเพิ่มเติม"}</p></div>
-                        <div className="todo-agenda-owner">{assignee ? <EmployeeAvatar employee={assignee} profile={employeeProfilesById.get(assignee.id)} className="avatar-todo-focus" /> : <i className="avatar-media avatar-todo-focus">PP</i>}<span><strong>{assignee?.name ?? "ยังไม่ระบุ"}</strong><small>{item.progress}% · {workStatusLabel(item.status)}</small></span></div>
-                        <div className={`todo-agenda-due ${dueState}`}><small>{dueState === "overdue" ? "เกินกำหนด" : dueState === "today" ? "วันนี้" : "กำหนดส่ง"}</small><strong>{formatDueDate(item.dueDate)}</strong></div>
-                        <button className="todo-row-action" disabled={quickUpdatingWorkId === item.id} onClick={() => item.status === "todo" ? void startWorkItem(item) : openSubmissionCenter(item)}>{quickUpdatingWorkId === item.id ? "กำลังเริ่ม..." : actionLabel}</button>
-                      </article>
-                    );
-                  })}
-                  {!visibleWorkItems.some((item) => item.status !== "done") && <div className="todo-agenda-empty"><span>✓</span><strong>เคลียร์งานครบแล้ว</strong><p>เพิ่มงานใหม่ หรือเปลี่ยนตัวกรองเพื่อดูงานของทีมอื่น</p></div>}
-                </div>
-                <aside className="todo-priority-panel">
-                  <p className="eyebrow">QUICK FILTER</p><h3>เลือกงานที่ต้องโฟกัส</h3>
-                  <button className={workDueFilter === "today" ? "active" : ""} onClick={() => setWorkDueFilter(workDueFilter === "today" ? "all" : "today")}><span className="today">●</span><p><strong>ครบกำหนดวันนี้</strong><small>ลงมือทำก่อนจบวัน</small></p><b>{todayWorkItems.length}</b></button>
-                  <button className={workDueFilter === "overdue" ? "active" : ""} onClick={() => setWorkDueFilter(workDueFilter === "overdue" ? "all" : "overdue")}><span className="overdue">!</span><p><strong>งานเกินกำหนด</strong><small>ติดตามผู้รับผิดชอบ</small></p><b>{overdueWorkItems.length}</b></button>
-                  <button className={workDueFilter === "week" ? "active" : ""} onClick={() => setWorkDueFilter(workDueFilter === "week" ? "all" : "week")}><span>7</span><p><strong>7 วันข้างหน้า</strong><small>วางแผนล่วงหน้าของทีม</small></p><b>{dueThisWeekWorkItems.length}</b></button>
-                  <button className="clear" onClick={() => { setWorkDueFilter("all"); setWorkAssigneeFilter("all"); setWorkFilter("all"); setWorkSearch(""); }}>ล้างตัวกรองทั้งหมด</button>
-                </aside>
+
+              <div className="simple-todo-overview" aria-label="เลือกดูงานแบบรวดเร็ว">
+                {([
+                  { id: "all", label: "งานทั้งหมด", value: workItems.length, icon: "☷" },
+                  { id: "today", label: "กำหนดวันนี้", value: todayWorkItems.length, icon: "●" },
+                  { id: "overdue", label: "เกินกำหนด", value: overdueWorkItems.length, icon: "!" },
+                  { id: "review", label: "รอตรวจ", value: reviewQueueWorkItems.length, icon: "⌕" },
+                  { id: "done", label: "เสร็จแล้ว", value: workItems.filter((item) => item.status === "done").length, icon: "✓" },
+                ] as const).map((filter) => <button key={filter.id} className={`${workDueFilter === filter.id ? "active" : ""} ${filter.id}`} onClick={() => setWorkDueFilter(filter.id)}><span>{filter.icon}</span><strong>{filter.value}</strong><small>{filter.label}</small></button>)}
+              </div>
+
+              <div className="simple-todo-toolbar">
+                <label className="search-field simple-todo-search"><span aria-hidden="true">⌕</span><input value={workSearch} onChange={(event) => setWorkSearch(event.target.value)} placeholder="ค้นหาชื่องานหรือโปรเจกต์" /><span className="sr-only">ค้นหางานและภารกิจ</span></label>
+                <details className="simple-todo-more">
+                  <summary>ตัวกรองเพิ่มเติม <span>⌄</span></summary>
+                  <div>
+                    {!isEmployeeUser && <label><span>ผู้รับผิดชอบ</span><select value={workAssigneeFilter} onChange={(event) => setWorkAssigneeFilter(event.target.value)}><option value="all">ทุกคนในทีม</option>{employees.filter((employee) => employee.status === "active").map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></label>}
+                    <label><span>ประเภทงาน</span><select value={workFilter} onChange={(event) => setWorkFilter(event.target.value as typeof workFilter)}><option value="all">ทุกประเภท</option><option value="task">งานทั่วไป</option><option value="request">รีเควสต์</option><option value="mission">ภารกิจ / เควสต์</option></select></label>
+                    <button className={workDueFilter === "week" ? "active" : ""} onClick={() => setWorkDueFilter(workDueFilter === "week" ? "all" : "week")}>งานภายใน 7 วัน ({dueThisWeekWorkItems.length})</button>
+                  </div>
+                </details>
+                {(workSearch || workFilter !== "all" || workDueFilter !== "all" || workAssigneeFilter !== "all") && <button className="simple-reset-filter" onClick={() => { setWorkSearch(""); setWorkFilter("all"); setWorkDueFilter("all"); setWorkAssigneeFilter("all"); }}>ล้างตัวกรอง</button>}
+              </div>
+
+              <div className="simple-todo-result"><span>พบ <strong>{visibleWorkItems.length}</strong> งาน</span><span>ทำเสร็จแล้ว <strong>{workCompletion.toFixed(0)}%</strong></span></div>
+              <div className="simple-task-list">
+                {visibleWorkItems.map((item) => {
+                  const project = projectsById.get(item.projectId);
+                  const assignee = employeesById.get(item.assigneeEmployeeId);
+                  const submissions = workSubmissionsByItem.get(item.id) ?? [];
+                  const dueState = item.status === "done" ? "done" : item.dueDate < todayDate ? "overdue" : item.dueDate === todayDate ? "today" : "upcoming";
+                  const actionLabel = item.status === "todo" ? "เริ่มงาน" : item.status === "in_progress" ? "ส่งงาน" : item.status === "review" && isEmployeeUser ? "ดูงานที่ส่ง" : item.status === "review" ? "ตรวจงาน" : "ดูผลงาน";
+                  return (
+                    <article className={`simple-task-row ${dueState}`} key={item.id}>
+                      <button className={`simple-task-check ${item.status}`} disabled={item.status === "done" || quickUpdatingWorkId === item.id} onClick={() => item.status === "todo" ? void startWorkItem(item) : openSubmissionCenter(item)} aria-label={`${workStatusLabel(item.status)}: ${item.title}`}>{item.status === "done" ? "✓" : item.status === "review" ? "⌕" : item.status === "in_progress" ? "→" : ""}</button>
+                      <div className="simple-task-main">
+                        <div className="simple-task-labels"><span className={`simple-task-status ${item.status}`}>{workStatusLabel(item.status)}</span><span className={`work-priority ${item.priority}`}>{workPriorityLabel(item.priority)}</span><small>{project?.name ?? "ไม่ระบุโปรเจกต์"}</small></div>
+                        <h3>{item.title}</h3>
+                        <p>{item.description || "ยังไม่มีรายละเอียดเพิ่มเติม"}</p>
+                        <div className="simple-task-meta">
+                          <span className={`simple-task-due ${dueState}`}><b>{dueState === "overdue" ? "เกินกำหนด" : dueState === "today" ? "ส่งวันนี้" : dueState === "done" ? "ปิดงานแล้ว" : `ส่ง ${formatDueDate(item.dueDate)}`}</b></span>
+                          <span>★ {formatMoney(item.points)} แต้ม</span>
+                          <span>{submissions.length} หลักฐาน</span>
+                        </div>
+                      </div>
+                      <div className="simple-task-side">
+                        <div className="simple-task-owner">{assignee ? <EmployeeAvatar employee={assignee} profile={employeeProfilesById.get(assignee.id)} className="avatar-simple-task" /> : <i className="avatar-media avatar-simple-task">PP</i>}<span><small>ผู้รับผิดชอบ</small><strong>{assignee?.name ?? "ยังไม่ระบุ"}</strong></span></div>
+                        <div className="simple-task-progress"><span><small>ความคืบหน้า</small><strong>{item.progress}%</strong></span><i><b style={{ width: `${item.progress}%` }} /></i></div>
+                      </div>
+                      <div className="simple-task-actions">{!isEmployeeUser && <button onClick={() => openWorkItemForm(item)}>รายละเอียด</button>}<button className="primary" disabled={quickUpdatingWorkId === item.id} onClick={() => item.status === "todo" ? void startWorkItem(item) : openSubmissionCenter(item)}>{quickUpdatingWorkId === item.id ? "กำลังเริ่ม..." : actionLabel}</button></div>
+                    </article>
+                  );
+                })}
+                {!visibleWorkItems.length && <div className="simple-task-empty"><span>✓</span><strong>ไม่พบงานในรายการนี้</strong><p>ลองเลือก “งานทั้งหมด” หรือล้างตัวกรองเพื่อดูงานอีกครั้ง</p><button onClick={() => { setWorkSearch(""); setWorkFilter("all"); setWorkDueFilter("all"); setWorkAssigneeFilter("all"); }}>แสดงงานทั้งหมด</button></div>}
               </div>
             </section>
 
@@ -2504,67 +2523,6 @@ export default function Home() {
                 <p className="points-note">ยอดคงเหลือรวมแต้มประเมิน งาน เควสต์ เวลาเข้างาน โบนัส รายการหัก และแต้มที่ใช้แลกรางวัล</p>
               </aside>
             </div>
-
-            <section className="work-board-card" id="todo-board">
-              <div className="work-board-heading">
-                <div><p className="eyebrow">MASTER TO-DO LIST</p><h2>{isEmployeeUser ? "รายการงานและภารกิจของฉัน" : "รายการงานทั้งหมดของทีม"}</h2><p>กรองตามกำหนดส่ง ผู้รับผิดชอบ และประเภทงาน แล้วเริ่มงานหรือส่งหลักฐานได้จากรายการเดียว</p></div>
-                <div className="work-view-switch" aria-label="เลือกรูปแบบการแสดงงาน"><button className={workViewMode === "list" ? "active" : ""} onClick={() => setWorkViewMode("list")}><span>☷</span> รายการ</button><button className={workViewMode === "board" ? "active" : ""} onClick={() => setWorkViewMode("board")}><span>▦</span> บอร์ด</button></div>
-              </div>
-              <div className="todo-control-bar">
-                <label className="search-field todo-search"><span aria-hidden="true">⌕</span><input value={workSearch} onChange={(event) => setWorkSearch(event.target.value)} placeholder="ค้นหาชื่องาน โปรเจกต์ หรือผู้รับผิดชอบ..." /><span className="sr-only">ค้นหางานและภารกิจ</span></label>
-                {!isEmployeeUser && <label className="todo-select"><span>ผู้รับผิดชอบ</span><select value={workAssigneeFilter} onChange={(event) => setWorkAssigneeFilter(event.target.value)}><option value="all">ทุกคนในทีม</option>{employees.filter((employee) => employee.status === "active").map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></label>}
-                <div className="work-due-filter" aria-label="กรองตามกำหนดส่ง">{([{ id: "all", label: "ทุกกำหนด" }, { id: "today", label: "วันนี้" }, { id: "overdue", label: "เกินกำหนด" }, { id: "week", label: "7 วัน" }] as const).map((filter) => <button key={filter.id} className={workDueFilter === filter.id ? "active" : ""} onClick={() => setWorkDueFilter(filter.id)}>{filter.label}</button>)}</div>
-                <div className="work-kind-filter" aria-label="กรองประเภทงาน">{([{ id: "all", label: "ทุกประเภท" }, { id: "task", label: "งาน" }, { id: "request", label: "รีเควสต์" }, { id: "mission", label: "เควสต์" }] as const).map((filter) => <button key={filter.id} className={workFilter === filter.id ? "active" : ""} onClick={() => setWorkFilter(filter.id)}>{filter.label}</button>)}</div>
-              </div>
-              <div className="todo-result-line"><span>แสดง <strong>{visibleWorkItems.length}</strong> จาก {workItems.length} งาน</span>{(workSearch || workFilter !== "all" || workDueFilter !== "all" || workAssigneeFilter !== "all") && <button onClick={() => { setWorkSearch(""); setWorkFilter("all"); setWorkDueFilter("all"); setWorkAssigneeFilter("all"); }}>ล้างตัวกรอง</button>}</div>
-              {workViewMode === "list" ? (
-                <div className="todo-table" role="table" aria-label="รายการทูดูลิสของทีม">
-                  <div className="todo-table-head" role="row"><span>สถานะและงาน</span><span>ผู้รับผิดชอบ</span><span>กำหนดส่ง</span><span>ความคืบหน้า</span><span>จัดการ</span></div>
-                  {visibleWorkItems.map((item) => {
-                    const project = projectsById.get(item.projectId);
-                    const assignee = employeesById.get(item.assigneeEmployeeId);
-                    const submissions = workSubmissionsByItem.get(item.id) ?? [];
-                    const dueState = item.status === "done" ? "done" : item.dueDate < todayDate ? "overdue" : item.dueDate === todayDate ? "today" : "upcoming";
-                    return (
-                      <article className={`todo-table-row ${dueState}`} role="row" key={item.id}>
-                        <span className="todo-table-task"><button className={`todo-table-check ${item.status}`} disabled={item.status === "done" || quickUpdatingWorkId === item.id} onClick={() => item.status === "todo" ? void startWorkItem(item) : isEmployeeUser ? openSubmissionCenter(item) : openWorkItemForm(item)} aria-label={`${workStatusLabel(item.status)}: ${item.title}`}>{item.status === "done" ? "✓" : item.status === "review" ? "⌕" : item.status === "in_progress" ? "→" : ""}</button><span><small><b className={`work-kind ${item.kind}`}>{workKindLabel(item.kind)}</b><i className={`work-priority ${item.priority}`}>{workPriorityLabel(item.priority)}</i>{project?.name ?? "ไม่ระบุโปรเจกต์"}</small><strong>{item.title}</strong><p>{item.description || "ยังไม่มีรายละเอียดเพิ่มเติม"}</p></span></span>
-                        <span className="todo-table-owner">{assignee ? <EmployeeAvatar employee={assignee} profile={employeeProfilesById.get(assignee.id)} className="avatar-todo-row" /> : <i className="avatar-media avatar-todo-row">PP</i>}<span><strong>{assignee?.name ?? "ยังไม่ระบุ"}</strong><small>{assignee ? getRole(assignee.roleId).shortName : "—"}</small></span></span>
-                        <span className={`todo-table-due ${dueState}`}><strong>{dueState === "overdue" ? "เกินกำหนด" : dueState === "today" ? "วันนี้" : dueState === "done" ? "ปิดงานแล้ว" : formatDueDate(item.dueDate)}</strong><small>{dueState === "overdue" || dueState === "today" ? formatDueDate(item.dueDate) : workStatusLabel(item.status)}</small></span>
-                        <span className="todo-table-progress"><span><i><b style={{ width: `${item.progress}%` }} /></i><strong>{item.progress}%</strong></span><small>★ {formatMoney(item.points)} แต้ม · {submissions.length} หลักฐาน</small></span>
-                        <span className="todo-table-actions"><button onClick={() => isEmployeeUser ? openSubmissionCenter(item) : openWorkItemForm(item)}>รายละเอียด</button>{item.status === "todo" ? <button className="primary" disabled={quickUpdatingWorkId === item.id} onClick={() => void startWorkItem(item)}>{quickUpdatingWorkId === item.id ? "กำลังเริ่ม" : "เริ่มงาน"}</button> : <button className="primary" onClick={() => openSubmissionCenter(item)}>{item.status === "review" && isEmployeeUser ? "รอตรวจ" : item.status === "review" ? "ตรวจงาน" : item.status === "done" ? "ดูผลงาน" : "ส่งงาน"}</button>}</span>
-                      </article>
-                    );
-                  })}
-                  {!visibleWorkItems.length && <div className="todo-table-empty"><span>⌕</span><strong>ไม่พบงานตามตัวกรอง</strong><p>ลองเปลี่ยนกำหนดส่ง ผู้รับผิดชอบ ประเภทงาน หรือคำค้นหา</p><button onClick={() => { setWorkSearch(""); setWorkFilter("all"); setWorkDueFilter("all"); setWorkAssigneeFilter("all"); }}>แสดงงานทั้งหมด</button></div>}
-                </div>
-              ) : (
-                <div className="work-kanban">
-                  {(["todo", "in_progress", "review", "done"] as WorkItemRecord["status"][]).map((status) => {
-                    const items = visibleWorkItems.filter((item) => item.status === status).sort((a, b) => a.dueDate.localeCompare(b.dueDate));
-                    return (
-                      <section className={`kanban-column ${status}`} key={status}>
-                        <div className="kanban-heading"><span><i />{workStatusLabel(status)}</span><b>{items.length}</b></div>
-                        <div className="kanban-list">
-                          {items.map((item) => {
-                            const project = projectsById.get(item.projectId);
-                            const assignee = employeesById.get(item.assigneeEmployeeId);
-                            const submissions = workSubmissionsByItem.get(item.id) ?? [];
-                            const latestSubmission = submissions[0];
-                            return (
-                              <article key={item.id} className="work-ticket">
-                                <button className="work-ticket-main" onClick={() => isEmployeeUser ? openSubmissionCenter(item) : openWorkItemForm(item)}><span className="work-ticket-meta"><b className={`work-kind ${item.kind}`}>{workKindLabel(item.kind)}</b><i className={`work-priority ${item.priority}`}>{workPriorityLabel(item.priority)}</i></span><strong>{item.title}</strong><small>{project?.name ?? "ไม่ระบุโปรเจกต์"}</small>{latestSubmission && <span className={`proof-status ${latestSubmission.status}`}>{workSubmissionStatusLabel(latestSubmission.status)} · {submissions.length} รายการ</span>}<span className="ticket-progress"><i><b style={{ width: `${item.progress}%` }} /></i><em>{item.progress}%</em></span><span className="work-ticket-foot">{assignee ? <EmployeeAvatar employee={assignee} profile={employeeProfilesById.get(assignee.id)} className="avatar-ticket" /> : <i className="avatar-media avatar-ticket">PP</i>}<small>{formatDueDate(item.dueDate)}</small><b>★ {item.points}</b></span></button>
-                                <div className="work-ticket-actions"><button onClick={() => isEmployeeUser ? openSubmissionCenter(item) : openWorkItemForm(item)}>รายละเอียด</button><button className="proof" onClick={() => item.status === "todo" ? void startWorkItem(item) : openSubmissionCenter(item)}>{item.status === "todo" ? "เริ่มงาน" : submissions.length ? `หลักฐาน (${submissions.length})` : "ส่งหลักฐาน"}</button></div>
-                              </article>
-                            );
-                          })}
-                          {!items.length && <div className="kanban-empty">ไม่มีรายการ</div>}
-                        </div>
-                      </section>
-                    );
-                  })}
-                </div>
-              )}
-            </section>
 
             <section className="points-operations-card">
               <div className="points-operations-heading">

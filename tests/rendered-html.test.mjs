@@ -49,7 +49,8 @@ test("builds the People Pulse KPI product bundle", async () => {
   assert.match(pageAsset, /saveHrPlan/);
   assert.match(pageAsset, /completeTalentAction/);
   assert.match(pageAsset, /ทูดูลิส/);
-  assert.match(pageAsset, /SMART TO-DO WORKSPACE/);
+  assert.match(pageAsset, /งานของทีม/);
+  assert.match(pageAsset, /รายการเดียวจบ/);
   assert.match(pageAsset, /พื้นที่ทำงาน/);
   assert.match(pageAsset, /บุคลากร/);
   assert.match(pageAsset, /สำนักงานจำลอง/);
@@ -85,11 +86,11 @@ test("builds the People Pulse KPI product bundle", async () => {
   assert.match(office3D, /addCampusPortal/);
   assert.match(office3D, /heroPositions/);
   assert.match(packageJson, /"three"/);
-  assert.match(pageAsset, /TODAY/);
-  assert.match(pageAsset, /MASTER TO-DO LIST/);
-  assert.match(pageAsset, /รายการงานทั้งหมดของทีม/);
-  assert.match(pageAsset, /งานเกินกำหนด/);
-  assert.match(pageAsset, /7 วันข้างหน้า/);
+  assert.match(pageAsset, /งานของวันนี้/);
+  assert.match(pageAsset, /simple-todo-card/);
+  assert.match(pageAsset, /งานทั้งหมด/);
+  assert.match(pageAsset, /เกินกำหนด/);
+  assert.match(pageAsset, /งานภายใน 7 วัน/);
   assert.match(pageAsset, /สะสมแต้ม แลกกิฟต์วอเชอร์และรางวัล/);
   assert.match(pageAsset, /POINTS OPERATIONS/);
   assert.match(pageAsset, /แต้มประเมินประจำเดือน/);
@@ -121,7 +122,7 @@ test("builds the People Pulse KPI product bundle", async () => {
   assert.match(pageAsset, /ACCESS & PERMISSIONS/);
   assert.match(pageAsset, /ผู้ใช้งานและสิทธิ์เข้าถึง/);
   assert.match(pageAsset, /ให้แต่ละคนเห็นเฉพาะสิ่งที่ควรเห็น/);
-  assert.match(pageAsset, /งานและภารกิจของฉัน/);
+  assert.match(pageAsset, /งานของฉัน/);
   assert.match(pageAsset, /saveUserAccount/);
   assert.match(pageAsset, /QUANTUM PEOPLE OS/);
   assert.match(pageAsset, /NEURAL CORE/);
@@ -246,7 +247,8 @@ test("ships durable role-based access and scoped people, work, portfolio and rew
   assert.match(page, /useState<View>\("work"\)/);
   assert.match(page, /workDueFilter/);
   assert.match(page, /workAssigneeFilter/);
-  assert.match(page, /workViewMode/);
+  assert.match(page, /simple-todo-card/);
+  assert.match(page, /ฉันต้องทำอะไรต่อ/);
   assert.match(page, /redeemReward/);
   assert.match(page, /recordPointEvent/);
   assert.match(page, /runMonthlyPointCycle/);
