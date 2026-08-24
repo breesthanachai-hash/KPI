@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { getDb, getFilesBucket } from "../../../db";
 import { ensureDatabase } from "../../../db/initialize";
 import { employeeProfiles, employees } from "../../../db/schema";
+import { authenticateRequest, canAccessEmployee, ensureBootstrapAccounts } from "../../../lib/access-control";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,9 @@ function errorResponse(error: unknown) {
 export async function POST(request: Request) {
   try {
     await ensureDatabase();
+    await ensureBootstrapAccounts();
+    const currentUser = await authenticateRequest(request);
+    if (!currentUser) return Response.json({ error: "บัญชีนี้ไม่มีสิทธิ์ใช้งาน" }, { status: 403 });
     const formData = await request.formData();
     const employeeId = String(formData.get("employeeId") ?? "");
     const file = formData.get("file");
@@ -29,6 +33,7 @@ export async function POST(request: Request) {
       db.select().from(employeeProfiles).where(eq(employeeProfiles.employeeId, employeeId)).limit(1),
     ]);
     if (!employee) return Response.json({ error: "ไม่พบพนักงานที่เลือก" }, { status: 404 });
+    if (!(await canAccessEmployee(currentUser, employeeId))) return Response.json({ error: "ไม่มีสิทธิ์แก้ไขรูปของพนักงานคนนี้" }, { status: 403 });
 
     const extension = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";
     const storageKey = `employee-profile-images/${employeeId}/${crypto.randomUUID()}.${extension}`;
@@ -60,7 +65,11 @@ export async function POST(request: Request) {
 export async function GET(request: Request) {
   try {
     await ensureDatabase();
+    await ensureBootstrapAccounts();
+    const currentUser = await authenticateRequest(request);
+    if (!currentUser) return Response.json({ error: "บัญชีนี้ไม่มีสิทธิ์ใช้งาน" }, { status: 403 });
     const employeeId = new URL(request.url).searchParams.get("employeeId") ?? "";
+    if (!(await canAccessEmployee(currentUser, employeeId))) return Response.json({ error: "ไม่มีสิทธิ์ดูรูปของพนักงานคนนี้" }, { status: 403 });
     const db = getDb();
     const [profile] = await db.select({
       storageKey: employeeProfiles.profileImageKey,

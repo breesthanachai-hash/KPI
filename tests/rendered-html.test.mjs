@@ -98,6 +98,11 @@ test("builds the People Pulse KPI product bundle", async () => {
   assert.match(pageAsset, /saveEmployeeProfile/);
   assert.match(pageAsset, /createContract/);
   assert.match(pageAsset, /signContract/);
+  assert.match(pageAsset, /ACCESS & PERMISSIONS/);
+  assert.match(pageAsset, /ผู้ใช้งานและสิทธิ์เข้าถึง/);
+  assert.match(pageAsset, /ให้แต่ละคนเห็นเฉพาะสิ่งที่ควรเห็น/);
+  assert.match(pageAsset, /งานและภารกิจของฉัน/);
+  assert.match(pageAsset, /saveUserAccount/);
   assert.match(pageAsset, /รายละเอียดสกิล \(ปัจจุบัน\/เป้าหมาย\)/);
   assert.match(layout, /People Pulse — HR OS จัดการคน งาน เวลา และการเติบโต/);
   assert.match(layout, /\/og\.png/);
@@ -112,8 +117,8 @@ test("builds the People Pulse KPI product bundle", async () => {
   assert.doesNotMatch(pageAsset, /Your site is taking shape|Building your site|codex-preview/i);
 });
 
-test("ships durable people, document, contract, proof, points, work and reward storage", async () => {
-  const [hosting, migration, workforceMigration, workMigration, dossierMigration, dossierIndexMigration, proofMigration, pointsMigration, peopleOpsMigration, packagedMigration, packagedWorkforceMigration, packagedWorkMigration, packagedDossierMigration, packagedDossierIndexMigration, packagedProofMigration, packagedPointsMigration, packagedPeopleOpsMigration, page, dashboardRoute, data, schema, documentRoute, profileImageRoute, workSubmissionRoute, nextConfig] = await Promise.all([
+test("ships durable role-based access and scoped people, work, portfolio and reward storage", async () => {
+  const [hosting, migration, workforceMigration, workMigration, dossierMigration, dossierIndexMigration, proofMigration, pointsMigration, peopleOpsMigration, accessMigration, packagedMigration, packagedWorkforceMigration, packagedWorkMigration, packagedDossierMigration, packagedDossierIndexMigration, packagedProofMigration, packagedPointsMigration, packagedPeopleOpsMigration, packagedAccessMigration, page, dashboardRoute, accessControl, data, schema, documentRoute, profileImageRoute, workSubmissionRoute, nextConfig] = await Promise.all([
     readFile(new URL("../.openai/hosting.json", import.meta.url), "utf8"),
     readFile(new URL("../drizzle/0000_marvelous_pandemic.sql", import.meta.url), "utf8"),
     readFile(new URL("../drizzle/0001_outstanding_leper_queen.sql", import.meta.url), "utf8"),
@@ -123,6 +128,7 @@ test("ships durable people, document, contract, proof, points, work and reward s
     readFile(new URL("../drizzle/0005_neat_kingpin.sql", import.meta.url), "utf8"),
     readFile(new URL("../drizzle/0006_typical_zuras.sql", import.meta.url), "utf8"),
     readFile(new URL("../drizzle/0007_colossal_lord_tyger.sql", import.meta.url), "utf8"),
+    readFile(new URL("../drizzle/0008_spotty_trauma.sql", import.meta.url), "utf8"),
     readFile(new URL("../dist/.openai/drizzle/0000_marvelous_pandemic.sql", import.meta.url), "utf8"),
     readFile(new URL("../dist/.openai/drizzle/0001_outstanding_leper_queen.sql", import.meta.url), "utf8"),
     readFile(new URL("../dist/.openai/drizzle/0002_legal_vector.sql", import.meta.url), "utf8"),
@@ -131,8 +137,10 @@ test("ships durable people, document, contract, proof, points, work and reward s
     readFile(new URL("../dist/.openai/drizzle/0005_neat_kingpin.sql", import.meta.url), "utf8"),
     readFile(new URL("../dist/.openai/drizzle/0006_typical_zuras.sql", import.meta.url), "utf8"),
     readFile(new URL("../dist/.openai/drizzle/0007_colossal_lord_tyger.sql", import.meta.url), "utf8"),
+    readFile(new URL("../dist/.openai/drizzle/0008_spotty_trauma.sql", import.meta.url), "utf8"),
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/api/dashboard/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/access-control.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/kpi-data.ts", import.meta.url), "utf8"),
     readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/documents/route.ts", import.meta.url), "utf8"),
@@ -172,6 +180,11 @@ test("ships durable people, document, contract, proof, points, work and reward s
   assert.match(peopleOpsMigration, /attendance_employee_date_unique/);
   assert.match(peopleOpsMigration, /skill_achievement_milestone_unique/);
   assert.equal(packagedPeopleOpsMigration, peopleOpsMigration);
+  assert.match(accessMigration, /CREATE TABLE `user_accounts`/);
+  assert.match(accessMigration, /user_accounts_email_unique/);
+  assert.match(accessMigration, /user_accounts_auth_user_unique/);
+  assert.match(accessMigration, /user_accounts_employee_unique/);
+  assert.equal(packagedAccessMigration, accessMigration);
   assert.match(schema, /kpiScores/);
   assert.match(schema, /skillScores/);
   assert.match(schema, /currentSalary/);
@@ -189,6 +202,7 @@ test("ships durable people, document, contract, proof, points, work and reward s
   assert.match(schema, /workSubmissions/);
   assert.match(schema, /attendanceRecords/);
   assert.match(schema, /skillAchievements/);
+  assert.match(schema, /userAccounts/);
   assert.match(page, /saveEvaluation/);
   assert.match(page, /saveHrPlan/);
   assert.match(page, /saveWorkItem/);
@@ -205,6 +219,12 @@ test("ships durable people, document, contract, proof, points, work and reward s
   assert.match(dashboardRoute, /saveAttendance/);
   assert.match(dashboardRoute, /approveAttendance/);
   assert.match(dashboardRoute, /verifySkillAchievement/);
+  assert.match(dashboardRoute, /saveUserAccount/);
+  assert.match(dashboardRoute, /visibleEmployeeIds/);
+  assert.match(dashboardRoute, /canManageAccounts/);
+  assert.match(accessControl, /oai-authenticated-user-id/);
+  assert.match(accessControl, /authenticateRequest/);
+  assert.match(accessControl, /canAccessEmployee/);
   assert.match(data, /pointEventRules/);
   assert.match(data, /reward-cash-100/);
   assert.match(data, /reward-iphone-18/);

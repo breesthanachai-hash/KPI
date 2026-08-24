@@ -18,6 +18,7 @@ import {
   type RewardRedemptionRecord,
   type SkillAchievementRecord,
   type TalentActionRecord,
+  type UserAccountRecord,
   type WorkItemRecord,
   type WorkSubmissionRecord,
   getRole,
@@ -27,25 +28,16 @@ import {
   roleSalaryBands,
   roles,
   scoreStatus,
-  seedAttendanceRecords,
-  seedEmployees,
-  seedApplicationDocuments,
-  seedEmployeeProfiles,
-  seedEmploymentContracts,
-  seedHrProfiles,
-  seedPointLedger,
-  seedProjects,
-  seedRewardRedemptions,
-  seedRewards,
-  seedSkillAchievements,
-  seedTalentActions,
-  seedWorkItems,
   skillAllowanceFor,
 } from "../lib/kpi-data";
 
 const Office3D = lazy(() => import("./office-3d"));
 
-type View = "overview" | "employees" | "profiles" | "skills" | "power" | "peopleOps" | "hr" | "portfolio" | "work" | "office";
+type View = "overview" | "employees" | "profiles" | "skills" | "power" | "peopleOps" | "hr" | "portfolio" | "work" | "office" | "access";
+
+type CurrentUser = UserAccountRecord & { authenticatedName: string };
+
+type AppPermissions = { canManageAccounts: boolean; canManagePeople: boolean; canManageWork: boolean; canReviewWork: boolean; canViewTeam: boolean };
 
 type OfficeLoadLevel = "available" | "steady" | "busy" | "overloaded";
 
@@ -439,30 +431,33 @@ const viewMeta: Record<View, { eyebrow: string; title: string; description: stri
   portfolio: { eyebrow: "EMPLOYEE WORK PORTFOLIO", title: "แฟ้มผลงานพนักงาน", description: "ค้นหางานที่ส่งมอบแล้ว ไฟล์ ลิงก์ ผู้ตรวจ และผลประเมินของแต่ละคนได้จากที่เดียว" },
   work: { eyebrow: "SMART TO-DO WORKSPACE", title: "ทูดูลิสงานและโปรเจกต์", description: "เห็นงานที่ต้องทำวันนี้ งานค้าง ผู้รับผิดชอบ กำหนดส่ง และความคืบหน้าของทีมเป็นอันดับแรก" },
   office: { eyebrow: "INTERACTIVE 3D OFFICE WORLD", title: "ออฟฟิศ 3D แบบเกม", description: "หมุนและซูมฉากได้ ตัวละครทำงานหรือเลือกเส้นทางเดินเองตามภาระงานจากทูดูลิส" },
+  access: { eyebrow: "ACCESS & PERMISSIONS", title: "ผู้ใช้งานและสิทธิ์เข้าถึง", description: "ผูกอีเมลเข้าสู่ระบบกับพนักงาน และกำหนดว่าใครเป็น HR หัวหน้าทีม หรือพนักงาน" },
 };
 
 export default function Home() {
   const [view, setView] = useState<View>("work");
   const [activeDepartment, setActiveDepartment] = useState("all");
   const [period, setPeriod] = useState(periods[0]);
-  const [employees, setEmployees] = useState<EmployeeRecord[]>(seedEmployees);
-  const [evaluations, setEvaluations] = useState<EvaluationRecord[]>(
-    seedEmployees.map(fallbackEvaluation).filter((item): item is EvaluationRecord => item !== null),
-  );
-  const [hrProfiles, setHrProfiles] = useState<HrProfileRecord[]>(seedHrProfiles);
-  const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>(seedAttendanceRecords);
-  const [skillAchievements, setSkillAchievements] = useState<SkillAchievementRecord[]>(seedSkillAchievements);
-  const [talentActions, setTalentActions] = useState<TalentActionRecord[]>(seedTalentActions);
-  const [projects, setProjects] = useState<ProjectRecord[]>(seedProjects);
-  const [workItems, setWorkItems] = useState<WorkItemRecord[]>(seedWorkItems);
+  const [employees, setEmployees] = useState<EmployeeRecord[]>([]);
+  const [evaluations, setEvaluations] = useState<EvaluationRecord[]>([]);
+  const [hrProfiles, setHrProfiles] = useState<HrProfileRecord[]>([]);
+  const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
+  const [skillAchievements, setSkillAchievements] = useState<SkillAchievementRecord[]>([]);
+  const [talentActions, setTalentActions] = useState<TalentActionRecord[]>([]);
+  const [projects, setProjects] = useState<ProjectRecord[]>([]);
+  const [workItems, setWorkItems] = useState<WorkItemRecord[]>([]);
   const [workSubmissions, setWorkSubmissions] = useState<WorkSubmissionRecord[]>([]);
-  const [rewards, setRewards] = useState<RewardRecord[]>(seedRewards);
-  const [pointLedger, setPointLedger] = useState<PointLedgerRecord[]>(seedPointLedger);
+  const [rewards, setRewards] = useState<RewardRecord[]>([]);
+  const [pointLedger, setPointLedger] = useState<PointLedgerRecord[]>([]);
   const [pointEvents, setPointEvents] = useState<PointEventRecord[]>([]);
-  const [rewardRedemptions, setRewardRedemptions] = useState<RewardRedemptionRecord[]>(seedRewardRedemptions);
-  const [employeeProfiles, setEmployeeProfiles] = useState<EmployeeProfileRecord[]>(seedEmployeeProfiles);
-  const [applicationDocuments, setApplicationDocuments] = useState<ApplicationDocumentRecord[]>(seedApplicationDocuments);
-  const [employmentContracts, setEmploymentContracts] = useState<EmploymentContractRecord[]>(seedEmploymentContracts);
+  const [rewardRedemptions, setRewardRedemptions] = useState<RewardRedemptionRecord[]>([]);
+  const [employeeProfiles, setEmployeeProfiles] = useState<EmployeeProfileRecord[]>([]);
+  const [applicationDocuments, setApplicationDocuments] = useState<ApplicationDocumentRecord[]>([]);
+  const [employmentContracts, setEmploymentContracts] = useState<EmploymentContractRecord[]>([]);
+  const [userAccounts, setUserAccounts] = useState<UserAccountRecord[]>([]);
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
+  const [permissions, setPermissions] = useState<AppPermissions>({ canManageAccounts: false, canManagePeople: false, canManageWork: false, canReviewWork: false, canViewTeam: false });
+  const [accessDenied, setAccessDenied] = useState<{ email: string; name: string } | null>(null);
   const [selectedEmployee, setSelectedEmployee] = useState<EmployeeRecord | null>(null);
   const [skillProfileEmployee, setSkillProfileEmployee] = useState<EmployeeRecord | null>(null);
   const [hrEmployee, setHrEmployee] = useState<EmployeeRecord | null>(null);
@@ -482,14 +477,14 @@ export default function Home() {
   const [submissionFile, setSubmissionFile] = useState<File | null>(null);
   const [reviewerNote, setReviewerNote] = useState("");
   const [rewardToRedeem, setRewardToRedeem] = useState<RewardRecord | null>(null);
-  const [profileEmployeeId, setProfileEmployeeId] = useState(seedEmployees[0].id);
+  const [profileEmployeeId, setProfileEmployeeId] = useState("");
   const [showProfileEditor, setShowProfileEditor] = useState(false);
   const [showContractForm, setShowContractForm] = useState(false);
   const [contractToSign, setContractToSign] = useState<EmploymentContractRecord | null>(null);
   const [uploadingDocumentType, setUploadingDocumentType] = useState<ApplicationDocumentRecord["documentType"] | null>(null);
   const [uploadingProfileImage, setUploadingProfileImage] = useState(false);
-  const [powerLeftId, setPowerLeftId] = useState(seedEmployees[0]?.id ?? "");
-  const [powerRightId, setPowerRightId] = useState(seedEmployees[1]?.id ?? seedEmployees[0]?.id ?? "");
+  const [powerLeftId, setPowerLeftId] = useState("");
+  const [powerRightId, setPowerRightId] = useState("");
   const [workFilter, setWorkFilter] = useState<"all" | WorkItemRecord["kind"]>("all");
   const [workSearch, setWorkSearch] = useState("");
   const [workDueFilter, setWorkDueFilter] = useState<WorkDueFilter>("all");
@@ -503,28 +498,40 @@ export default function Home() {
   const [portfolioStatus, setPortfolioStatus] = useState<PortfolioStatusFilter>("all");
   const [monthlyPointMonth, setMonthlyPointMonth] = useState(new Date().toISOString().slice(0, 7));
   const [pointHistoryEmployeeId, setPointHistoryEmployeeId] = useState("all");
-  const [peopleOpsEmployeeId, setPeopleOpsEmployeeId] = useState(seedEmployees[0]?.id ?? "");
+  const [peopleOpsEmployeeId, setPeopleOpsEmployeeId] = useState("");
   const [attendanceDate, setAttendanceDate] = useState(bangkokIsoDate());
   const [officeClock, setOfficeClock] = useState("--:--");
   const [employeeForm, setEmployeeForm] = useState({ name: "", email: "", roleId: roles[0].id, manager: "" });
   const [hrForm, setHrForm] = useState({ actionId: "", currentSalary: 0, salaryReviewMonth: "มกราคม 2570", planType: "upskill" as TalentActionRecord["type"], title: "", dueDate: "2026-09-30", targetRoleId: roles[0].id });
-  const [workForm, setWorkForm] = useState({ projectId: seedProjects[0].id, assigneeEmployeeId: seedEmployees[0].id, kind: "task" as WorkItemRecord["kind"], title: "", description: "", priority: "medium" as WorkItemRecord["priority"], status: "todo" as WorkItemRecord["status"], progress: 0, points: 100, dueDate: "2026-09-05" });
+  const [workForm, setWorkForm] = useState({ projectId: "", assigneeEmployeeId: "", kind: "task" as WorkItemRecord["kind"], title: "", description: "", priority: "medium" as WorkItemRecord["priority"], status: "todo" as WorkItemRecord["status"], progress: 0, points: 100, dueDate: "2026-09-05" });
   const [submissionForm, setSubmissionForm] = useState({ submissionType: "document" as WorkSubmissionRecord["submissionType"], title: "", linkUrl: "", note: "" });
-  const [projectForm, setProjectForm] = useState({ name: "", description: "", ownerEmployeeId: seedEmployees[0].id, status: "active" as ProjectRecord["status"], dueDate: "2026-10-30", color: "forest" });
-  const [rewardEmployeeId, setRewardEmployeeId] = useState(seedEmployees[0].id);
+  const [projectForm, setProjectForm] = useState({ name: "", description: "", ownerEmployeeId: "", status: "active" as ProjectRecord["status"], dueDate: "2026-10-30", color: "forest" });
+  const [rewardEmployeeId, setRewardEmployeeId] = useState("");
   const [profileForm, setProfileForm] = useState<Omit<EmployeeProfileRecord, "employeeId" | "updatedAt">>({ personalEmail: "", phone: "", birthDate: "", nationalIdLast4: "", address: "", emergencyName: "", emergencyPhone: "", startDate: "", employmentType: "permanent", education: "", experienceYears: 0, applicationSource: "" });
   const [contractForm, setContractForm] = useState({ title: "สัญญาจ้างพนักงาน", version: "1.0", status: "sent" as "draft" | "sent", effectiveDate: "2026-09-01", expiryDate: "", documentId: "" });
   const [signatureForm, setSignatureForm] = useState({ signedName: "", consent: false });
-  const [pointEventForm, setPointEventForm] = useState({ employeeId: seedEmployees[0]?.id ?? "", eventType: "attendance_on_time" as PointEventType, eventDate: new Date().toISOString().slice(0, 10), note: "", evidenceUrl: "" });
-  const [attendanceForm, setAttendanceForm] = useState({ employeeId: seedEmployees[0]?.id ?? "", workDate: bangkokIsoDate(), status: "present" as AttendanceRecord["status"], clockIn: "09:00", clockOut: "", leaveType: "personal" as NonNullable<AttendanceRecord["leaveType"]>, note: "" });
+  const [pointEventForm, setPointEventForm] = useState({ employeeId: "", eventType: "attendance_on_time" as PointEventType, eventDate: new Date().toISOString().slice(0, 10), note: "", evidenceUrl: "" });
+  const [attendanceForm, setAttendanceForm] = useState({ employeeId: "", workDate: bangkokIsoDate(), status: "present" as AttendanceRecord["status"], clockIn: "09:00", clockOut: "", leaveType: "personal" as NonNullable<AttendanceRecord["leaveType"]>, note: "" });
   const [skillAchievementForm, setSkillAchievementForm] = useState({ skillId: "", level: 2, evidenceUrl: "", note: "" });
+  const [userAccountForm, setUserAccountForm] = useState({ accountId: "", email: "", displayName: "", role: "employee" as UserAccountRecord["role"], employeeId: "", departmentId: "", status: "active" as UserAccountRecord["status"] });
 
   useEffect(() => {
     const controller = new AbortController();
     fetch(`/api/dashboard?period=${encodeURIComponent(period)}`, { signal: controller.signal })
       .then(async (response) => {
-        const body = await response.json() as { employees?: EmployeeRecord[]; evaluations?: EvaluationRecord[]; hrProfiles?: HrProfileRecord[]; attendanceRecords?: AttendanceRecord[]; skillAchievements?: SkillAchievementRecord[]; talentActions?: TalentActionRecord[]; projects?: ProjectRecord[]; workItems?: WorkItemRecord[]; workSubmissions?: WorkSubmissionRecord[]; rewards?: RewardRecord[]; pointLedger?: PointLedgerRecord[]; pointEvents?: PointEventRecord[]; rewardRedemptions?: RewardRedemptionRecord[]; employeeProfiles?: EmployeeProfileRecord[]; applicationDocuments?: ApplicationDocumentRecord[]; employmentContracts?: EmploymentContractRecord[]; error?: string };
+        const body = await response.json() as { currentUser?: CurrentUser; permissions?: AppPermissions; userAccounts?: UserAccountRecord[]; employees?: EmployeeRecord[]; evaluations?: EvaluationRecord[]; hrProfiles?: HrProfileRecord[]; attendanceRecords?: AttendanceRecord[]; skillAchievements?: SkillAchievementRecord[]; talentActions?: TalentActionRecord[]; projects?: ProjectRecord[]; workItems?: WorkItemRecord[]; workSubmissions?: WorkSubmissionRecord[]; rewards?: RewardRecord[]; pointLedger?: PointLedgerRecord[]; pointEvents?: PointEventRecord[]; rewardRedemptions?: RewardRedemptionRecord[]; employeeProfiles?: EmployeeProfileRecord[]; applicationDocuments?: ApplicationDocumentRecord[]; employmentContracts?: EmploymentContractRecord[]; accessDenied?: boolean; identity?: { email: string; name: string } | null; error?: string };
+        if (response.status === 403 && body.accessDenied) {
+          setAccessDenied(body.identity ?? { email: "ไม่พบอีเมล", name: "ผู้ใช้งาน" });
+          setCurrentUser(null);
+          setEmployees([]);
+          setWorkItems([]);
+          return;
+        }
         if (!response.ok) throw new Error(body.error ?? "โหลดข้อมูลไม่สำเร็จ");
+        setCurrentUser(body.currentUser ?? null);
+        setPermissions(body.permissions ?? { canManageAccounts: false, canManagePeople: false, canManageWork: false, canReviewWork: false, canViewTeam: false });
+        setUserAccounts(body.userAccounts ?? []);
+        setAccessDenied(null);
         setEmployees(body.employees ?? []);
         setEvaluations(body.evaluations ?? []);
         setHrProfiles(body.hrProfiles ?? []);
@@ -542,10 +549,30 @@ export default function Home() {
         setApplicationDocuments(body.applicationDocuments ?? []);
         setEmploymentContracts(body.employmentContracts ?? []);
         setDataWarning("");
+        const firstEmployeeId = body.employees?.[0]?.id ?? "";
+        const secondEmployeeId = body.employees?.[1]?.id ?? firstEmployeeId;
+        const firstProjectId = body.projects?.[0]?.id ?? "";
+        if (firstEmployeeId) {
+          setProfileEmployeeId((value) => value || firstEmployeeId);
+          setPowerLeftId((value) => value || firstEmployeeId);
+          setPowerRightId((value) => value || secondEmployeeId);
+          setPeopleOpsEmployeeId((value) => value || firstEmployeeId);
+          setRewardEmployeeId((value) => value || firstEmployeeId);
+          setPointEventForm((form) => ({ ...form, employeeId: form.employeeId || firstEmployeeId }));
+          setAttendanceForm((form) => ({ ...form, employeeId: form.employeeId || firstEmployeeId }));
+          setProjectForm((form) => ({ ...form, ownerEmployeeId: form.ownerEmployeeId || firstEmployeeId }));
+          setWorkForm((form) => ({ ...form, projectId: form.projectId || firstProjectId, assigneeEmployeeId: form.assigneeEmployeeId || firstEmployeeId }));
+        }
+        if (body.currentUser?.role === "employee") {
+          setView("work");
+          setWorkAssigneeFilter(body.currentUser.employeeId ?? "all");
+          setPortfolioEmployeeId(body.currentUser.employeeId ?? "all");
+          setRewardEmployeeId(body.currentUser.employeeId ?? "");
+        }
       })
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === "AbortError") return;
-        setDataWarning("กำลังแสดงข้อมูลสำรอง ระบบจะบันทึกได้เมื่อฐานข้อมูลพร้อม");
+        setDataWarning(error instanceof Error ? error.message : "โหลดข้อมูลไม่สำเร็จ");
       })
       .finally(() => {
         if (!controller.signal.aborted) setIsLoading(false);
@@ -1479,6 +1506,43 @@ export default function Home() {
     }
   };
 
+  const editUserAccount = (account: UserAccountRecord) => {
+    setUserAccountForm({ accountId: account.id, email: account.email, displayName: account.displayName, role: account.role, employeeId: account.employeeId ?? "", departmentId: account.departmentId, status: account.status });
+    document.getElementById("user-access-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  const saveUserAccount = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setIsSaving(true);
+    try {
+      const response = await fetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "saveUserAccount", ...userAccountForm }) });
+      const body = await response.json() as { userAccount?: UserAccountRecord; error?: string };
+      if (!response.ok || !body.userAccount) throw new Error(body.error ?? "บันทึกบัญชีผู้ใช้ไม่สำเร็จ");
+      setUserAccounts((items) => [...items.filter((item) => item.id !== body.userAccount?.id), body.userAccount as UserAccountRecord].sort((a, b) => a.displayName.localeCompare(b.displayName, "th")));
+      setUserAccountForm({ accountId: "", email: "", displayName: "", role: "employee", employeeId: "", departmentId: "", status: "active" });
+      showToast("บันทึกสิทธิ์ของ " + body.userAccount.displayName + " แล้ว");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "บันทึกบัญชีผู้ใช้ไม่สำเร็จ");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const toggleUserAccount = async (account: UserAccountRecord) => {
+    setIsSaving(true);
+    try {
+      const response = await fetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "saveUserAccount", accountId: account.id, email: account.email, displayName: account.displayName, role: account.role, employeeId: account.employeeId ?? "", departmentId: account.departmentId, status: account.status === "active" ? "inactive" : "active" }) });
+      const body = await response.json() as { userAccount?: UserAccountRecord; error?: string };
+      if (!response.ok || !body.userAccount) throw new Error(body.error ?? "อัปเดตบัญชีไม่สำเร็จ");
+      setUserAccounts((items) => items.map((item) => item.id === account.id ? body.userAccount as UserAccountRecord : item));
+      showToast(body.userAccount.status === "active" ? "เปิดสิทธิ์ใช้งานแล้ว" : "พักสิทธิ์ใช้งานแล้ว");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "อัปเดตบัญชีไม่สำเร็จ");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const exportReport = () => {
     const rows = employees.map((employee) => {
       const role = getRole(employee.roleId);
@@ -1559,6 +1623,31 @@ export default function Home() {
     showToast(`ส่งออกแฟ้มผลงาน ${visiblePortfolioEntries.length} รายการแล้ว`);
   };
 
+  const isAdmin = currentUser?.role === "admin";
+  const isEmployeeUser = currentUser?.role === "employee";
+  const currentUserRoleLabel = currentUser?.role === "admin" ? "HR / Admin" : currentUser?.role === "manager" ? "หัวหน้าทีม" : "พนักงาน";
+  const activeViewTitle = isEmployeeUser && view === "work" ? "งานและภารกิจของฉัน" : isEmployeeUser && view === "portfolio" ? "แฟ้มผลงานของฉัน" : viewMeta[view].title;
+  const activeViewDescription = isEmployeeUser && view === "work" ? "ดูงานที่ได้รับมอบหมาย เริ่มงาน ส่งหลักฐาน สะสมแต้ม และแลกรางวัลได้ในหน้าเดียว" : isEmployeeUser && view === "portfolio" ? "ดูงานและหลักฐานที่ส่งไว้ พร้อมสถานะตรวจผลงานของคุณ" : viewMeta[view].description;
+
+  if (accessDenied) {
+    return (
+      <main className="access-denied-page">
+        <section>
+          <span className="access-lock">PP</span>
+          <p className="eyebrow">PEOPLE PULSE ACCESS</p>
+          <h1>บัญชีนี้ยังไม่ได้รับสิทธิ์</h1>
+          <p>ส่งอีเมลด้านล่างให้ HR เพื่อผูกบัญชีกับโปรไฟล์พนักงาน แล้วเปิดหน้านี้อีกครั้ง</p>
+          <div><small>อีเมลที่เข้าสู่ระบบ</small><strong>{accessDenied.email}</strong></div>
+          <a href="/signout-with-chatgpt?return_to=/">เปลี่ยนบัญชี</a>
+        </section>
+      </main>
+    );
+  }
+
+  if (isLoading && !currentUser) {
+    return <main className="access-loading-page"><span /><strong>กำลังตรวจสอบสิทธิ์ใช้งาน...</strong></main>;
+  }
+
   return (
     <main className="app-shell">
       <header className="topbar">
@@ -1569,26 +1658,33 @@ export default function Home() {
         <nav aria-label="เมนูหลัก">
           <span className="nav-section-label">พื้นที่ทำงาน</span>
           <button className={view === "work" ? "active" : ""} onClick={() => setView("work")}><span aria-hidden="true">✓</span><b>ทูดูลิส</b><em>{workItems.filter((item) => item.status !== "done").length}</em></button>
-          <button className={view === "office" ? "active" : ""} onClick={() => setView("office")}><span aria-hidden="true">⌂</span><b>สำนักงานจำลอง</b><em>{officePressureCount}</em></button>
-          <button className={view === "overview" ? "active" : ""} onClick={() => setView("overview")}><span aria-hidden="true">◫</span><b>ภาพรวม</b></button>
-          <span className="nav-section-label">บุคลากร</span>
-          <button className={view === "peopleOps" ? "active" : ""} onClick={() => setView("peopleOps")}><span aria-hidden="true">◷</span><b>เวลา &amp; เติบโต</b><em>{pendingLeaveRecords.length}</em></button>
-          <button className={view === "employees" ? "active" : ""} onClick={() => setView("employees")}><span aria-hidden="true">♙</span><b>พนักงาน</b></button>
-          <button className={view === "profiles" ? "active" : ""} onClick={() => setView("profiles")}><span aria-hidden="true">▣</span><b>แฟ้มพนักงาน</b></button>
-          <button className={view === "skills" ? "active" : ""} onClick={() => setView("skills")}><span aria-hidden="true">✦</span><b>สกิลทีม</b></button>
-          <button className={view === "power" ? "active" : ""} onClick={() => setView("power")}><span aria-hidden="true">◆</span><b>ค่าพลัง</b></button>
-          <button className={view === "hr" ? "active" : ""} onClick={() => setView("hr")}><span aria-hidden="true">⬡</span><b>บริหารบุคลากร</b></button>
           <button className={view === "portfolio" ? "active" : ""} onClick={() => setView("portfolio")}><span aria-hidden="true">◇</span><b>แฟ้มผลงาน</b></button>
+          {!isEmployeeUser && <>
+            <button className={view === "office" ? "active" : ""} onClick={() => setView("office")}><span aria-hidden="true">⌂</span><b>สำนักงานจำลอง</b><em>{officePressureCount}</em></button>
+            <button className={view === "overview" ? "active" : ""} onClick={() => setView("overview")}><span aria-hidden="true">◫</span><b>ภาพรวมทีม</b></button>
+            <span className="nav-section-label">ทีมและผลงาน</span>
+            <button className={view === "employees" ? "active" : ""} onClick={() => setView("employees")}><span aria-hidden="true">♙</span><b>พนักงาน</b></button>
+            <button className={view === "skills" ? "active" : ""} onClick={() => setView("skills")}><span aria-hidden="true">✦</span><b>สกิลทีม</b></button>
+            <button className={view === "power" ? "active" : ""} onClick={() => setView("power")}><span aria-hidden="true">◆</span><b>ค่าพลัง</b></button>
+          </>}
+          {isAdmin && <>
+            <span className="nav-section-label">HR และระบบ</span>
+            <button className={view === "peopleOps" ? "active" : ""} onClick={() => setView("peopleOps")}><span aria-hidden="true">◷</span><b>เวลา &amp; เติบโต</b><em>{pendingLeaveRecords.length}</em></button>
+            <button className={view === "profiles" ? "active" : ""} onClick={() => setView("profiles")}><span aria-hidden="true">▣</span><b>แฟ้มพนักงาน</b></button>
+            <button className={view === "hr" ? "active" : ""} onClick={() => setView("hr")}><span aria-hidden="true">⬡</span><b>บริหารบุคลากร</b></button>
+            <button className={view === "access" ? "active" : ""} onClick={() => setView("access")}><span aria-hidden="true">◎</span><b>ผู้ใช้งานและสิทธิ์</b><em>{userAccounts.filter((account) => account.status === "active").length}</em></button>
+          </>}
         </nav>
         <div className="header-actions">
-          <label className="period-select">
+          {!isEmployeeUser && <label className="period-select">
             <span className="period-label">รอบประเมิน</span>
             <select value={period} onChange={(event) => { setIsLoading(true); setPeriod(event.target.value); }}>{periods.map((item) => <option key={item}>{item}</option>)}</select>
-          </label>
-          <button className="icon-button" onClick={() => pendingEmployees.length ? setView("employees") : showToast("ไม่มีรายการรอประเมิน")} aria-label={`${pendingEmployees.length} รายการรอประเมิน`}>
+          </label>}
+          {!isEmployeeUser && <button className="icon-button" onClick={() => pendingEmployees.length ? setView("employees") : showToast("ไม่มีรายการรอประเมิน")} aria-label={`${pendingEmployees.length} รายการรอประเมิน`}>
             <span aria-hidden="true">●</span>{pendingEmployees.length > 0 && <i />}
-          </button>
-          <button className="profile-button" onClick={() => showToast("ผู้ดูแลระบบ People Pulse")} aria-label="โปรไฟล์ผู้ใช้">วร</button>
+          </button>}
+          <div className="current-user-chip"><span>{currentUser?.displayName ? makeInitials(currentUser.displayName) : "PP"}</span><p><strong>{currentUser?.displayName ?? "ผู้ใช้งาน"}</strong><small>{currentUserRoleLabel}</small></p></div>
+          <a className="profile-button" href="/signout-with-chatgpt?return_to=/" aria-label="ออกจากระบบ">↗</a>
         </div>
       </header>
 
@@ -1597,10 +1693,10 @@ export default function Home() {
         <div className="page-heading">
           <div>
             <p className="eyebrow">{viewMeta[view].eyebrow}</p>
-            <h1>{viewMeta[view].title}</h1>
-            <p>{viewMeta[view].description}</p>
+            <h1>{activeViewTitle}</h1>
+            <p>{activeViewDescription}</p>
           </div>
-          <div className="heading-actions">
+          {!isEmployeeUser && view !== "access" && <div className="heading-actions">
             <button className="secondary-button" onClick={() => view === "work" ? setShowProjectForm(true) : view === "office" ? setView("work") : view === "peopleOps" ? buildGrowthTeam() : view === "profiles" ? showToast(`${requiredDocumentTypes.length - verifiedRequiredDocuments} เอกสารจำเป็นยังตรวจไม่ครบ`) : view === "power" ? showToast("ค่าพลังรวมมาจากค่าสกิล 70% และ KPI 30%") : view === "portfolio" ? exportPortfolioReport() : exportReport()}><span aria-hidden="true">{view === "work" ? "◇" : view === "office" ? "✓" : view === "peopleOps" ? "♙" : view === "profiles" ? "▣" : view === "power" ? "i" : "↓"}</span> {view === "work" ? "สร้างโปรเจกต์" : view === "office" ? "เปิดทูดูลิส" : view === "peopleOps" ? "สร้างทีมจากสกิล" : view === "profiles" ? "เช็กเอกสารที่ขาด" : view === "power" ? "วิธีคำนวณ" : view === "portfolio" ? "ส่งออกแฟ้ม CSV" : "ส่งออกรายงาน"}</button>
             <button className="primary-button" onClick={() => {
               if (view === "work") {
@@ -1638,14 +1734,14 @@ export default function Home() {
               if (pendingEmployees[0]) openEvaluation(pendingEmployees[0]);
               else setView("employees");
             }}><span aria-hidden="true">{view === "power" ? "VS" : view === "office" ? "⌁" : view === "peopleOps" ? "◷" : "＋"}</span> {view === "work" ? "เพิ่มงานหรือภารกิจ" : view === "office" ? "หาคนพร้อมรับงาน" : view === "peopleOps" ? "ลงเวลาตอนนี้" : view === "hr" ? "เพิ่มแผนบุคลากร" : view === "profiles" ? "แก้ไขโปรไฟล์" : view === "power" ? "เปรียบเทียบค่าพลัง" : view === "portfolio" ? "เติมหลักฐานที่ขาด" : "เริ่มประเมิน"}</button>
-          </div>
+          </div>}
         </div>
 
-        <div className="filter-row" aria-label="กรองตามแผนก">
+        {!isEmployeeUser && view !== "access" && <div className="filter-row" aria-label="กรองตามแผนก">
           {departmentFilters.map((filter) => (
             <button key={filter.id} className={activeDepartment === filter.id ? "active" : ""} onClick={() => setActiveDepartment(filter.id)}>{filter.label}</button>
           ))}
-        </div>
+        </div>}
 
         {view === "office" && (
           <section className="office-simulation-layout">
@@ -2228,6 +2324,59 @@ export default function Home() {
           </section>
         )}
 
+        {view === "access" && isAdmin && (
+          <section className="access-layout">
+            <div className="access-summary-grid">
+              <article className="access-hero-card"><span>◎</span><div><p className="eyebrow">SECURE TEAM ACCESS</p><h2>ให้แต่ละคนเห็นเฉพาะสิ่งที่ควรเห็น</h2><p>ผูกอีเมลที่ใช้เข้าสู่ระบบกับโปรไฟล์พนักงานหนึ่งคน จากนั้นระบบจะกรองงาน ภารกิจ แฟ้มผลงาน แต้ม และรางวัลให้อัตโนมัติ</p></div></article>
+              <MetricCard label="บัญชีใช้งาน" value={`${userAccounts.filter((account) => account.status === "active").length} บัญชี`} copy={`${userAccounts.filter((account) => account.status === "inactive").length} บัญชีพักสิทธิ์`} tone="positive" icon="✓" />
+              <MetricCard label="พนักงาน" value={`${userAccounts.filter((account) => account.role === "employee").length} บัญชี`} copy="เห็นข้อมูลของตัวเองเท่านั้น" icon="♙" />
+              <MetricCard label="หัวหน้าทีม" value={`${userAccounts.filter((account) => account.role === "manager").length} บัญชี`} copy="เห็นงานและผลงานของทีม" icon="◇" />
+            </div>
+
+            <div className="access-main-grid">
+              <form className="access-form-card" id="user-access-form" onSubmit={saveUserAccount}>
+                <div className="access-card-heading"><div><p className="eyebrow">ACCOUNT SETUP</p><h2>{userAccountForm.accountId ? "แก้ไขสิทธิ์ผู้ใช้งาน" : "เพิ่มผู้ใช้งาน"}</h2><p>ใช้อีเมลเดียวกับบัญชีที่พนักงานจะใช้เข้าสู่เว็บไซต์</p></div><span>{userAccountForm.accountId ? "แก้ไข" : "ใหม่"}</span></div>
+                <div className="form-grid access-form-grid">
+                  <label className="wide"><span>ชื่อที่แสดง</span><input required value={userAccountForm.displayName} onChange={(event) => setUserAccountForm((form) => ({ ...form, displayName: event.target.value }))} placeholder="ชื่อ–นามสกุล" /></label>
+                  <label className="wide"><span>อีเมลที่ใช้เข้าสู่ระบบ</span><input required type="email" value={userAccountForm.email} onChange={(event) => setUserAccountForm((form) => ({ ...form, email: event.target.value }))} placeholder="name@company.com" /></label>
+                  <label><span>ระดับสิทธิ์</span><select value={userAccountForm.role} onChange={(event) => setUserAccountForm((form) => ({ ...form, role: event.target.value as UserAccountRecord["role"] }))}><option value="employee">พนักงาน</option><option value="manager">หัวหน้าทีม</option><option value="admin">HR / Admin</option></select></label>
+                  <label><span>สถานะ</span><select value={userAccountForm.status} onChange={(event) => setUserAccountForm((form) => ({ ...form, status: event.target.value as UserAccountRecord["status"] }))}><option value="active">ใช้งาน</option><option value="inactive">พักสิทธิ์</option></select></label>
+                  {userAccountForm.role !== "admin" && <label className="wide"><span>ผูกกับโปรไฟล์พนักงาน</span><select required value={userAccountForm.employeeId} onChange={(event) => setUserAccountForm((form) => ({ ...form, employeeId: event.target.value }))}><option value="">เลือกพนักงาน</option>{employees.filter((employee) => employee.status === "active" && (!userAccounts.some((account) => account.employeeId === employee.id && account.id !== userAccountForm.accountId))).map((employee) => <option key={employee.id} value={employee.id}>{employee.name} · {getRole(employee.roleId).name}</option>)}</select></label>}
+                  {userAccountForm.role === "manager" && <label className="wide"><span>ทีมที่ดูแล</span><select value={userAccountForm.departmentId} onChange={(event) => setUserAccountForm((form) => ({ ...form, departmentId: event.target.value }))}><option value="">ใช้แผนกตามโปรไฟล์พนักงาน</option>{Array.from(new Map(roles.map((role) => [role.departmentId, role.department])).entries()).map(([departmentId, department]) => <option key={departmentId} value={departmentId}>{department}</option>)}</select></label>}
+                </div>
+                <div className="access-form-actions">{userAccountForm.accountId && <button type="button" onClick={() => setUserAccountForm({ accountId: "", email: "", displayName: "", role: "employee", employeeId: "", departmentId: "", status: "active" })}>ยกเลิกการแก้ไข</button>}<button className="primary" disabled={isSaving}>{isSaving ? "กำลังบันทึก..." : userAccountForm.accountId ? "บันทึกการแก้ไข" : "เพิ่มผู้ใช้งาน"}</button></div>
+              </form>
+
+              <aside className="access-rights-card">
+                <div className="access-card-heading"><div><p className="eyebrow">ROLE GUIDE</p><h2>แต่ละสิทธิ์ทำอะไรได้</h2></div></div>
+                <article className="admin"><span>01</span><div><strong>HR / Admin</strong><p>จัดการพนักงาน เอกสาร เงินเดือน การประเมิน งาน แต้ม และบัญชีผู้ใช้ทั้งหมด</p></div></article>
+                <article className="manager"><span>02</span><div><strong>หัวหน้าทีม</strong><p>เห็นคนในทีม มอบหมายงาน ติดตามโปรเจกต์ ตรวจผลงาน และประเมินผล โดยไม่เห็นข้อมูลเงินเดือนหรือเอกสารส่วนตัว</p></div></article>
+                <article className="employee"><span>03</span><div><strong>พนักงาน</strong><p>เห็นเฉพาะทูดูลิส ภารกิจ แฟ้มผลงาน แต้ม และของรางวัลของตัวเอง พร้อมส่งหลักฐานงานได้</p></div></article>
+                <div className="access-invite-note"><span>i</span><p><strong>ขั้นสุดท้ายก่อนใช้งานจริง</strong> หลังเพิ่มบัญชีในหน้านี้ ให้เจ้าของเว็บไซต์เชิญอีเมลเดียวกันเข้าถึงเว็บไซต์ด้วย เพื่อให้พนักงานเปิดระบบได้</p></div>
+              </aside>
+            </div>
+
+            <section className="access-account-card">
+              <div className="access-card-heading"><div><p className="eyebrow">TEAM ACCOUNTS</p><h2>บัญชีผู้ใช้งานทั้งหมด</h2><p>บัญชีจะผูกอัตโนมัติเมื่ออีเมลนั้นเข้าสู่ระบบครั้งแรก</p></div><span>{userAccounts.length} บัญชี</span></div>
+              <div className="access-account-list">
+                {userAccounts.map((account) => {
+                  const employee = account.employeeId ? employeesById.get(account.employeeId) : null;
+                  const roleName = account.role === "admin" ? "HR / Admin" : account.role === "manager" ? "หัวหน้าทีม" : "พนักงาน";
+                  return <article key={account.id} className={account.status}>
+                    <span className="access-account-avatar">{makeInitials(account.displayName)}</span>
+                    <div className="access-account-person"><strong>{account.displayName}</strong><small>{account.email}</small></div>
+                    <span className={`access-role-pill ${account.role}`}>{roleName}</span>
+                    <div className="access-account-link"><strong>{employee?.name ?? (account.role === "admin" ? "สิทธิ์ระดับองค์กร" : "ยังไม่ผูกโปรไฟล์")}</strong><small>{employee ? getRole(employee.roleId).name : account.lastLoginAt ? `เข้าใช้ล่าสุด ${formatUpdatedAt(account.lastLoginAt)}` : "ยังไม่เคยเข้าสู่ระบบ"}</small></div>
+                    <b className={`access-status ${account.status}`}>{account.status === "active" ? "ใช้งาน" : "พักสิทธิ์"}</b>
+                    <span className="access-account-actions"><button onClick={() => editUserAccount(account)}>แก้ไข</button><button disabled={isSaving || account.id === currentUser?.id} onClick={() => void toggleUserAccount(account)}>{account.status === "active" ? "พักสิทธิ์" : "เปิดสิทธิ์"}</button></span>
+                  </article>;
+                })}
+                {!userAccounts.length && <div className="empty-state">ยังไม่มีบัญชีผู้ใช้งาน</div>}
+              </div>
+            </section>
+          </section>
+        )}
+
         {view === "portfolio" && (
           <section className="portfolio-layout">
             <div className="portfolio-summary-grid">
@@ -2256,7 +2405,7 @@ export default function Home() {
                   <span><small>ผลงาน</small><strong>{portfolioEntries.filter((entry) => entry.item.assigneeEmployeeId === focusedPortfolioEmployee.id).length}</strong></span>
                   <span><small>KPI</small><strong>{focusedPortfolioEvaluation?.kpiScore.toFixed(0) ?? "—"}</strong></span>
                   <span><small>สกิล</small><strong>{focusedPortfolioEvaluation?.skillScore.toFixed(0) ?? "—"}</strong></span>
-                  <button onClick={() => openEvaluation(focusedPortfolioEmployee)}>{focusedPortfolioEvaluation ? "ทบทวนผลประเมิน" : "เริ่มประเมิน"} →</button>
+                  {!isEmployeeUser && <button onClick={() => openEvaluation(focusedPortfolioEmployee)}>{focusedPortfolioEvaluation ? "ทบทวนผลประเมิน" : "เริ่มประเมิน"} →</button>}
                 </article>
               )}
 
@@ -2294,8 +2443,8 @@ export default function Home() {
 
             <section className="todo-focus-card">
               <div className="todo-focus-heading">
-                <div><p className="eyebrow">TODAY&apos;S FOCUS</p><h2>งานที่ทีมควรลงมือทำต่อ</h2><p>เรียงจากกำหนดส่งและความสำคัญ เพื่อให้เห็นสิ่งที่ต้องทำก่อนโดยไม่ต้องไล่เปิดทุกโปรเจกต์</p></div>
-                <button onClick={() => openWorkItemForm()}><span>＋</span> เพิ่มงานด่วน</button>
+                <div><p className="eyebrow">TODAY&apos;S FOCUS</p><h2>{isEmployeeUser ? "งานที่ฉันควรลงมือทำต่อ" : "งานที่ทีมควรลงมือทำต่อ"}</h2><p>เรียงจากกำหนดส่งและความสำคัญ เพื่อให้เห็นสิ่งที่ต้องทำก่อนโดยไม่ต้องไล่เปิดทุกโปรเจกต์</p></div>
+                {permissions.canManageWork && <button onClick={() => openWorkItemForm()}><span>＋</span> เพิ่มงานด่วน</button>}
               </div>
               <div className="todo-focus-layout">
                 <div className="todo-agenda">
@@ -2303,10 +2452,10 @@ export default function Home() {
                     const project = projectsById.get(item.projectId);
                     const assignee = employeesById.get(item.assigneeEmployeeId);
                     const dueState = item.dueDate < todayDate ? "overdue" : item.dueDate === todayDate ? "today" : "upcoming";
-                    const actionLabel = item.status === "todo" ? "เริ่มงาน" : item.status === "in_progress" ? "ส่งงาน" : "ตรวจงาน";
+                    const actionLabel = item.status === "todo" ? "เริ่มงาน" : item.status === "in_progress" ? "ส่งงาน" : item.status === "review" && isEmployeeUser ? "รอตรวจ" : item.status === "review" ? "ตรวจงาน" : "ดูผลงาน";
                     return (
                       <article key={item.id} className={`todo-agenda-row ${dueState}`}>
-                        <button className={`todo-state-mark ${item.status}`} onClick={() => item.status === "todo" ? void startWorkItem(item) : openWorkItemForm(item)} aria-label={item.status === "todo" ? `เริ่มงาน ${item.title}` : `เปิดงาน ${item.title}`}><span>{item.status === "todo" ? "" : item.status === "review" ? "⌕" : "→"}</span></button>
+                        <button className={`todo-state-mark ${item.status}`} onClick={() => item.status === "todo" ? void startWorkItem(item) : isEmployeeUser ? openSubmissionCenter(item) : openWorkItemForm(item)} aria-label={item.status === "todo" ? `เริ่มงาน ${item.title}` : `เปิดงาน ${item.title}`}><span>{item.status === "todo" ? "" : item.status === "review" ? "⌕" : "→"}</span></button>
                         <div className="todo-agenda-copy"><span><b className={`work-priority ${item.priority}`}>{workPriorityLabel(item.priority)}</b><small>{project?.name ?? "ไม่ระบุโปรเจกต์"}</small></span><strong>{item.title}</strong><p>{item.description || "ยังไม่มีรายละเอียดเพิ่มเติม"}</p></div>
                         <div className="todo-agenda-owner">{assignee ? <EmployeeAvatar employee={assignee} profile={employeeProfilesById.get(assignee.id)} className="avatar-todo-focus" /> : <i className="avatar-media avatar-todo-focus">PP</i>}<span><strong>{assignee?.name ?? "ยังไม่ระบุ"}</strong><small>{item.progress}% · {workStatusLabel(item.status)}</small></span></div>
                         <div className={`todo-agenda-due ${dueState}`}><small>{dueState === "overdue" ? "เกินกำหนด" : dueState === "today" ? "วันนี้" : "กำหนดส่ง"}</small><strong>{formatDueDate(item.dueDate)}</strong></div>
@@ -2345,7 +2494,7 @@ export default function Home() {
               </section>
 
               <aside className="points-leaderboard-card">
-                <div className="section-heading compact"><div><p className="eyebrow">POINTS LEADERBOARD</p><h2>อันดับสะสมแต้ม</h2></div><span className="points-crown">★</span></div>
+                <div className="section-heading compact"><div><p className="eyebrow">POINTS {isEmployeeUser ? "BALANCE" : "LEADERBOARD"}</p><h2>{isEmployeeUser ? "แต้มสะสมของฉัน" : "อันดับสะสมแต้ม"}</h2></div><span className="points-crown">★</span></div>
                 <div className="points-leaderboard-list">
                   {leaderboard.slice(0, 6).map(({ employee, points }, index) => <article key={employee.id} className={index === 0 ? "champion" : ""}><span className="leader-rank">{index + 1}</span><EmployeeAvatar employee={employee} profile={employeeProfilesById.get(employee.id)} className="avatar-leader" /><p><strong>{employee.name}</strong><small>{getRole(employee.roleId).name}</small></p><b>{formatMoney(points)}<small> แต้ม</small></b></article>)}
                 </div>
@@ -2355,12 +2504,12 @@ export default function Home() {
 
             <section className="work-board-card" id="todo-board">
               <div className="work-board-heading">
-                <div><p className="eyebrow">MASTER TO-DO LIST</p><h2>รายการงานทั้งหมดของทีม</h2><p>กรองตามกำหนดส่ง ผู้รับผิดชอบ และประเภทงาน แล้วเริ่มงานหรือส่งหลักฐานได้จากรายการเดียว</p></div>
+                <div><p className="eyebrow">MASTER TO-DO LIST</p><h2>{isEmployeeUser ? "รายการงานและภารกิจของฉัน" : "รายการงานทั้งหมดของทีม"}</h2><p>กรองตามกำหนดส่ง ผู้รับผิดชอบ และประเภทงาน แล้วเริ่มงานหรือส่งหลักฐานได้จากรายการเดียว</p></div>
                 <div className="work-view-switch" aria-label="เลือกรูปแบบการแสดงงาน"><button className={workViewMode === "list" ? "active" : ""} onClick={() => setWorkViewMode("list")}><span>☷</span> รายการ</button><button className={workViewMode === "board" ? "active" : ""} onClick={() => setWorkViewMode("board")}><span>▦</span> บอร์ด</button></div>
               </div>
               <div className="todo-control-bar">
                 <label className="search-field todo-search"><span aria-hidden="true">⌕</span><input value={workSearch} onChange={(event) => setWorkSearch(event.target.value)} placeholder="ค้นหาชื่องาน โปรเจกต์ หรือผู้รับผิดชอบ..." /><span className="sr-only">ค้นหางานและภารกิจ</span></label>
-                <label className="todo-select"><span>ผู้รับผิดชอบ</span><select value={workAssigneeFilter} onChange={(event) => setWorkAssigneeFilter(event.target.value)}><option value="all">ทุกคนในทีม</option>{employees.filter((employee) => employee.status === "active").map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></label>
+                {!isEmployeeUser && <label className="todo-select"><span>ผู้รับผิดชอบ</span><select value={workAssigneeFilter} onChange={(event) => setWorkAssigneeFilter(event.target.value)}><option value="all">ทุกคนในทีม</option>{employees.filter((employee) => employee.status === "active").map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></label>}
                 <div className="work-due-filter" aria-label="กรองตามกำหนดส่ง">{([{ id: "all", label: "ทุกกำหนด" }, { id: "today", label: "วันนี้" }, { id: "overdue", label: "เกินกำหนด" }, { id: "week", label: "7 วัน" }] as const).map((filter) => <button key={filter.id} className={workDueFilter === filter.id ? "active" : ""} onClick={() => setWorkDueFilter(filter.id)}>{filter.label}</button>)}</div>
                 <div className="work-kind-filter" aria-label="กรองประเภทงาน">{([{ id: "all", label: "ทุกประเภท" }, { id: "task", label: "งาน" }, { id: "request", label: "รีเควสต์" }, { id: "mission", label: "เควสต์" }] as const).map((filter) => <button key={filter.id} className={workFilter === filter.id ? "active" : ""} onClick={() => setWorkFilter(filter.id)}>{filter.label}</button>)}</div>
               </div>
@@ -2375,11 +2524,11 @@ export default function Home() {
                     const dueState = item.status === "done" ? "done" : item.dueDate < todayDate ? "overdue" : item.dueDate === todayDate ? "today" : "upcoming";
                     return (
                       <article className={`todo-table-row ${dueState}`} role="row" key={item.id}>
-                        <span className="todo-table-task"><button className={`todo-table-check ${item.status}`} disabled={item.status === "done" || quickUpdatingWorkId === item.id} onClick={() => item.status === "todo" ? void startWorkItem(item) : openWorkItemForm(item)} aria-label={`${workStatusLabel(item.status)}: ${item.title}`}>{item.status === "done" ? "✓" : item.status === "review" ? "⌕" : item.status === "in_progress" ? "→" : ""}</button><span><small><b className={`work-kind ${item.kind}`}>{workKindLabel(item.kind)}</b><i className={`work-priority ${item.priority}`}>{workPriorityLabel(item.priority)}</i>{project?.name ?? "ไม่ระบุโปรเจกต์"}</small><strong>{item.title}</strong><p>{item.description || "ยังไม่มีรายละเอียดเพิ่มเติม"}</p></span></span>
+                        <span className="todo-table-task"><button className={`todo-table-check ${item.status}`} disabled={item.status === "done" || quickUpdatingWorkId === item.id} onClick={() => item.status === "todo" ? void startWorkItem(item) : isEmployeeUser ? openSubmissionCenter(item) : openWorkItemForm(item)} aria-label={`${workStatusLabel(item.status)}: ${item.title}`}>{item.status === "done" ? "✓" : item.status === "review" ? "⌕" : item.status === "in_progress" ? "→" : ""}</button><span><small><b className={`work-kind ${item.kind}`}>{workKindLabel(item.kind)}</b><i className={`work-priority ${item.priority}`}>{workPriorityLabel(item.priority)}</i>{project?.name ?? "ไม่ระบุโปรเจกต์"}</small><strong>{item.title}</strong><p>{item.description || "ยังไม่มีรายละเอียดเพิ่มเติม"}</p></span></span>
                         <span className="todo-table-owner">{assignee ? <EmployeeAvatar employee={assignee} profile={employeeProfilesById.get(assignee.id)} className="avatar-todo-row" /> : <i className="avatar-media avatar-todo-row">PP</i>}<span><strong>{assignee?.name ?? "ยังไม่ระบุ"}</strong><small>{assignee ? getRole(assignee.roleId).shortName : "—"}</small></span></span>
                         <span className={`todo-table-due ${dueState}`}><strong>{dueState === "overdue" ? "เกินกำหนด" : dueState === "today" ? "วันนี้" : dueState === "done" ? "ปิดงานแล้ว" : formatDueDate(item.dueDate)}</strong><small>{dueState === "overdue" || dueState === "today" ? formatDueDate(item.dueDate) : workStatusLabel(item.status)}</small></span>
                         <span className="todo-table-progress"><span><i><b style={{ width: `${item.progress}%` }} /></i><strong>{item.progress}%</strong></span><small>★ {formatMoney(item.points)} แต้ม · {submissions.length} หลักฐาน</small></span>
-                        <span className="todo-table-actions"><button onClick={() => openWorkItemForm(item)}>รายละเอียด</button>{item.status === "todo" ? <button className="primary" disabled={quickUpdatingWorkId === item.id} onClick={() => void startWorkItem(item)}>{quickUpdatingWorkId === item.id ? "กำลังเริ่ม" : "เริ่มงาน"}</button> : <button className="primary" onClick={() => openSubmissionCenter(item)}>{item.status === "review" ? "ตรวจงาน" : item.status === "done" ? "ดูผลงาน" : "ส่งงาน"}</button>}</span>
+                        <span className="todo-table-actions"><button onClick={() => isEmployeeUser ? openSubmissionCenter(item) : openWorkItemForm(item)}>รายละเอียด</button>{item.status === "todo" ? <button className="primary" disabled={quickUpdatingWorkId === item.id} onClick={() => void startWorkItem(item)}>{quickUpdatingWorkId === item.id ? "กำลังเริ่ม" : "เริ่มงาน"}</button> : <button className="primary" onClick={() => openSubmissionCenter(item)}>{item.status === "review" && isEmployeeUser ? "รอตรวจ" : item.status === "review" ? "ตรวจงาน" : item.status === "done" ? "ดูผลงาน" : "ส่งงาน"}</button>}</span>
                       </article>
                     );
                   })}
@@ -2400,8 +2549,8 @@ export default function Home() {
                             const latestSubmission = submissions[0];
                             return (
                               <article key={item.id} className="work-ticket">
-                                <button className="work-ticket-main" onClick={() => openWorkItemForm(item)}><span className="work-ticket-meta"><b className={`work-kind ${item.kind}`}>{workKindLabel(item.kind)}</b><i className={`work-priority ${item.priority}`}>{workPriorityLabel(item.priority)}</i></span><strong>{item.title}</strong><small>{project?.name ?? "ไม่ระบุโปรเจกต์"}</small>{latestSubmission && <span className={`proof-status ${latestSubmission.status}`}>{workSubmissionStatusLabel(latestSubmission.status)} · {submissions.length} รายการ</span>}<span className="ticket-progress"><i><b style={{ width: `${item.progress}%` }} /></i><em>{item.progress}%</em></span><span className="work-ticket-foot">{assignee ? <EmployeeAvatar employee={assignee} profile={employeeProfilesById.get(assignee.id)} className="avatar-ticket" /> : <i className="avatar-media avatar-ticket">PP</i>}<small>{formatDueDate(item.dueDate)}</small><b>★ {item.points}</b></span></button>
-                                <div className="work-ticket-actions"><button onClick={() => openWorkItemForm(item)}>รายละเอียด</button><button className="proof" onClick={() => item.status === "todo" ? void startWorkItem(item) : openSubmissionCenter(item)}>{item.status === "todo" ? "เริ่มงาน" : submissions.length ? `หลักฐาน (${submissions.length})` : "ส่งหลักฐาน"}</button></div>
+                                <button className="work-ticket-main" onClick={() => isEmployeeUser ? openSubmissionCenter(item) : openWorkItemForm(item)}><span className="work-ticket-meta"><b className={`work-kind ${item.kind}`}>{workKindLabel(item.kind)}</b><i className={`work-priority ${item.priority}`}>{workPriorityLabel(item.priority)}</i></span><strong>{item.title}</strong><small>{project?.name ?? "ไม่ระบุโปรเจกต์"}</small>{latestSubmission && <span className={`proof-status ${latestSubmission.status}`}>{workSubmissionStatusLabel(latestSubmission.status)} · {submissions.length} รายการ</span>}<span className="ticket-progress"><i><b style={{ width: `${item.progress}%` }} /></i><em>{item.progress}%</em></span><span className="work-ticket-foot">{assignee ? <EmployeeAvatar employee={assignee} profile={employeeProfilesById.get(assignee.id)} className="avatar-ticket" /> : <i className="avatar-media avatar-ticket">PP</i>}<small>{formatDueDate(item.dueDate)}</small><b>★ {item.points}</b></span></button>
+                                <div className="work-ticket-actions"><button onClick={() => isEmployeeUser ? openSubmissionCenter(item) : openWorkItemForm(item)}>รายละเอียด</button><button className="proof" onClick={() => item.status === "todo" ? void startWorkItem(item) : openSubmissionCenter(item)}>{item.status === "todo" ? "เริ่มงาน" : submissions.length ? `หลักฐาน (${submissions.length})` : "ส่งหลักฐาน"}</button></div>
                               </article>
                             );
                           })}
@@ -2416,18 +2565,18 @@ export default function Home() {
 
             <section className="points-operations-card">
               <div className="points-operations-heading">
-                <div><p className="eyebrow">POINTS OPERATIONS</p><h2>ศูนย์จัดการแต้มพนักงาน</h2><p>ประมวลผลแต้มจากการประเมิน งาน การเข้า–ออกงาน และเหตุการณ์ด้านวินัย พร้อมประวัติผู้บันทึก</p></div>
+                <div><p className="eyebrow">{isEmployeeUser ? "MY POINTS" : "POINTS OPERATIONS"}</p><h2>{isEmployeeUser ? "แต้มและประวัติของฉัน" : "ศูนย์จัดการแต้มพนักงาน"}</h2><p>{isEmployeeUser ? "ดูแต้มที่ได้รับ แต้มที่ใช้ และเหตุผลของแต่ละรายการได้อย่างโปร่งใส" : "ประมวลผลแต้มจากการประเมิน งาน การเข้า–ออกงาน และเหตุการณ์ด้านวินัย พร้อมประวัติผู้บันทึก"}</p></div>
                 <div className="points-flow-summary"><span><small>แต้มที่ได้รับ</small><strong>+{formatMoney(pointsEarned)}</strong></span><span className="negative"><small>แต้มที่หัก/ใช้</small><strong>-{formatMoney(pointsDeducted)}</strong></span></div>
               </div>
 
-              <div className="monthly-points-panel">
+              {!isEmployeeUser && <div className="monthly-points-panel">
                 <div><span>◎</span><p><strong>แต้มประเมินประจำเดือน</strong><small>ใช้คะแนนรวม × 10 สูงสุด 1,000 แต้มต่อคน และบันทึกซ้ำเดือนเดิมไม่ได้</small></p></div>
                 <label><span>เดือนที่ประมวลผล</span><input type="month" value={monthlyPointMonth} onChange={(event) => setMonthlyPointMonth(event.target.value)} /></label>
                 <span className="monthly-run-status"><strong>{monthlyPointRecipients}</strong><small>คนได้รับแต้มแล้ว</small></span>
                 <button disabled={isSaving} onClick={() => void runMonthlyPointCycle()}>{isSaving ? "กำลังประมวลผล..." : "ประมวลผลจากผลประเมิน"}</button>
-              </div>
+              </div>}
 
-              <div className="point-rules-section">
+              {!isEmployeeUser && <div className="point-rules-section">
                 <div className="point-rules-heading"><div><p className="eyebrow">POINT RULES</p><h3>กติกาการได้และเสียแต้ม</h3></div><small>ค่าตั้งต้นขององค์กร</small></div>
                 <div className="point-rule-grid">
                   {(Object.entries(pointEventRules) as [PointEventType, (typeof pointEventRules)[PointEventType]][]).map(([eventType, rule]) => (
@@ -2437,10 +2586,10 @@ export default function Home() {
                     </article>
                   ))}
                 </div>
-              </div>
+              </div>}
 
               <div className="point-admin-grid">
-                <form className="point-event-form" onSubmit={recordPointEvent}>
+                {!isEmployeeUser && <form className="point-event-form" onSubmit={recordPointEvent}>
                   <div><p className="eyebrow">NEW POINT EVENT</p><h3>บันทึกแต้ม หรือบทลงโทษ</h3><small>รายการหักแต้มต้องมีเหตุผลเพื่อให้ตรวจสอบย้อนหลังได้</small></div>
                   <div className={`point-event-preview ${selectedPointEventRule.points !== null && selectedPointEventRule.points < 0 ? "negative" : "positive"}`}><span>{selectedPointEventRule.points === null ? "—" : `${selectedPointEventRule.points >= 0 ? "+" : ""}${selectedPointEventRule.points}`}</span><p><strong>{selectedPointEventRule.label}</strong><small>{selectedPointEventRule.description}</small></p></div>
                   <div className="point-event-form-grid">
@@ -2451,10 +2600,10 @@ export default function Home() {
                     <label className="wide"><span>เหตุผล / รายละเอียด</span><textarea required value={pointEventForm.note} onChange={(event) => setPointEventForm((form) => ({ ...form, note: event.target.value }))} placeholder="ระบุข้อเท็จจริง ผลกระทบ และเอกสารอ้างอิง โดยหลีกเลี่ยงข้อมูลส่วนบุคคลที่ไม่จำเป็น" /></label>
                   </div>
                   <button className={selectedPointEventRule.points !== null && selectedPointEventRule.points < 0 ? "penalty" : ""} disabled={isSaving}>{isSaving ? "กำลังบันทึก..." : selectedPointEventRule.points !== null && selectedPointEventRule.points < 0 ? `ยืนยันหัก ${Math.abs(selectedPointEventRule.points)} แต้ม` : `บันทึก ${selectedPointEventRule.points ?? 0} แต้ม`}</button>
-                </form>
+                </form>}
 
                 <section className="point-ledger-panel">
-                  <div className="point-ledger-heading"><div><p className="eyebrow">AUDIT LEDGER</p><h3>ประวัติแต้มล่าสุด</h3></div><label><span className="sr-only">กรองประวัติแต้มตามพนักงาน</span><select value={pointHistoryEmployeeId} onChange={(event) => setPointHistoryEmployeeId(event.target.value)}><option value="all">พนักงานทั้งหมด</option>{employees.filter((employee) => employee.status === "active").map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></label></div>
+                  <div className="point-ledger-heading"><div><p className="eyebrow">AUDIT LEDGER</p><h3>ประวัติแต้มล่าสุด</h3></div>{!isEmployeeUser && <label><span className="sr-only">กรองประวัติแต้มตามพนักงาน</span><select value={pointHistoryEmployeeId} onChange={(event) => setPointHistoryEmployeeId(event.target.value)}><option value="all">พนักงานทั้งหมด</option>{employees.filter((employee) => employee.status === "active").map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></label>}</div>
                   <div className="point-ledger-list">
                     {visiblePointLedger.slice(0, 12).map((entry) => {
                       const employee = employeesById.get(entry.employeeId);
@@ -2464,7 +2613,7 @@ export default function Home() {
                   </div>
                 </section>
               </div>
-              <div className="points-policy-note"><span>!</span><p><strong>บทลงโทษต้องเป็นธรรมและตรวจสอบได้</strong> การลาที่อนุมัติแล้วไม่หักแต้ม ส่วนการมาสาย ขาดงาน งานผิดพลาด ใบเตือน และการผิดระเบียบควรบันทึกหลังตรวจสอบข้อเท็จจริง เปิดโอกาสให้พนักงานชี้แจง และใช้ตามนโยบายบริษัท</p></div>
+              {!isEmployeeUser && <div className="points-policy-note"><span>!</span><p><strong>บทลงโทษต้องเป็นธรรมและตรวจสอบได้</strong> การลาที่อนุมัติแล้วไม่หักแต้ม ส่วนการมาสาย ขาดงาน งานผิดพลาด ใบเตือน และการผิดระเบียบควรบันทึกหลังตรวจสอบข้อเท็จจริง เปิดโอกาสให้พนักงานชี้แจง และใช้ตามนโยบายบริษัท</p></div>}
             </section>
 
             <section className="reward-center-card">
@@ -2606,7 +2755,7 @@ export default function Home() {
                         <div className="submission-links">{submission.linkUrl && <a href={submission.linkUrl} target="_blank" rel="noreferrer">เปิดลิงก์ผลงาน ↗</a>}{submission.storageKey && <a href={`/api/work-submissions?id=${encodeURIComponent(submission.id)}`}>ดาวน์โหลด {submission.fileName}</a>}</div>
                         <small>ส่งโดย {submission.submittedBy} · {formatUpdatedAt(submission.submittedAt)}</small>
                         {submission.reviewerNote && <em>หมายเหตุผู้ตรวจ: {submission.reviewerNote}</em>}
-                        {submission.status === "submitted" && <div className="submission-review"><input value={reviewerNote} onChange={(event) => setReviewerNote(event.target.value)} placeholder="หมายเหตุจากผู้ตรวจ (ถ้ามี)" /><button disabled={isSaving} onClick={() => void reviewWorkProof(submission, "revision")}>ส่งกลับแก้ไข</button><button className="approve" disabled={isSaving} onClick={() => void reviewWorkProof(submission, "approved")}>อนุมัติและปิดงาน ✓</button></div>}
+                        {submission.status === "submitted" && permissions.canReviewWork && <div className="submission-review"><input value={reviewerNote} onChange={(event) => setReviewerNote(event.target.value)} placeholder="หมายเหตุจากผู้ตรวจ (ถ้ามี)" /><button disabled={isSaving} onClick={() => void reviewWorkProof(submission, "revision")}>ส่งกลับแก้ไข</button><button className="approve" disabled={isSaving} onClick={() => void reviewWorkProof(submission, "approved")}>อนุมัติและปิดงาน ✓</button></div>}
                       </article>
                     ))}
                     {!activeWorkSubmissions.length && <div className="submission-empty"><span>↗</span><strong>ยังไม่มีหลักฐานงาน</strong><p>เพิ่มลิงก์หรือแนบไฟล์ด้วยแบบฟอร์มด้านล่าง</p></div>}

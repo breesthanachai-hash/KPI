@@ -1225,3 +1225,58 @@ button, input, select, textarea { letter-spacing: -.01em; }
 @media (prefers-reduced-motion: reduce) {
   .office-3d-live i { animation: none; }
 }
+
+/* Multi-user access and employee workspace */
+.current-user-chip { min-width: 0; min-height: 40px; border: 1px solid var(--line); border-radius: 12px; padding: 5px 9px 5px 6px; background: rgba(255,255,255,.72); display: flex; align-items: center; gap: 8px; }
+.current-user-chip > span { width: 29px; height: 29px; flex: 0 0 auto; border-radius: 9px; background: var(--mustard); color: var(--forest); display: grid; place-items: center; font-size: 9px; font-weight: 950; }
+.current-user-chip p { min-width: 0; margin: 0; display: grid; gap: 1px; }
+.current-user-chip strong, .current-user-chip small { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.current-user-chip strong { color: var(--forest); font-size: 9px; }.current-user-chip small { color: var(--muted); font-size: 7px; }
+.profile-button { text-decoration: none; }
+
+.access-denied-page, .access-loading-page { min-height: 100vh; padding: 24px; background: radial-gradient(circle at 50% 18%,rgba(185,231,105,.2),transparent 24%),linear-gradient(145deg,#102b24,#173f35); display: grid; place-items: center; }
+.access-denied-page > section { width: min(520px,100%); border: 1px solid rgba(255,255,255,.14); border-radius: 28px; padding: 42px; background: rgba(255,255,255,.96); box-shadow: 0 30px 80px rgba(3,20,14,.24); text-align: center; }
+.access-lock { width: 64px; height: 64px; margin: 0 auto 22px; border-radius: 20px; background: var(--forest); color: var(--mustard); display: grid; place-items: center; font-size: 18px; font-weight: 950; }
+.access-denied-page h1 { margin: 0; color: var(--forest); font-size: 30px; }.access-denied-page section > p:not(.eyebrow) { margin: 12px auto 22px; color: var(--muted); font-size: 12px; line-height: 1.7; }
+.access-denied-page section > div { border: 1px solid var(--line); border-radius: 14px; padding: 13px; background: #f6f8f6; display: grid; gap: 3px; }.access-denied-page section > div small { color: var(--muted); font-size: 8px; }.access-denied-page section > div strong { color: var(--forest); font-size: 12px; }
+.access-denied-page a { min-height: 43px; margin-top: 14px; border-radius: 12px; background: var(--forest); color: white; display: grid; place-items: center; text-decoration: none; font-size: 11px; font-weight: 900; }
+.access-loading-page { color: white; align-content: center; gap: 15px; }.access-loading-page span { width: 42px; height: 42px; border: 4px solid rgba(255,255,255,.15); border-top-color: var(--mustard); border-radius: 50%; animation: office-3d-spin .8s linear infinite; }.access-loading-page strong { font-size: 11px; }
+
+.access-layout { padding-top: 28px; display: grid; gap: 18px; }
+.access-summary-grid { display: grid; grid-template-columns: minmax(420px,1.8fr) repeat(3,minmax(160px,1fr)); gap: 14px; }
+.access-summary-grid .metric-card { min-height: 176px; }
+.access-hero-card { position: relative; min-height: 176px; overflow: hidden; border-radius: 22px; padding: 26px 28px; background: linear-gradient(145deg,#102b24,#173f35); color: white; display: grid; grid-template-columns: 52px 1fr; align-items: start; gap: 17px; box-shadow: 0 16px 36px rgba(16,43,36,.16); }
+.access-hero-card::after { content: ""; position: absolute; right: -70px; bottom: -105px; width: 250px; height: 250px; border: 40px solid rgba(185,231,105,.07); border-radius: 50%; }
+.access-hero-card > span { width: 52px; height: 52px; border-radius: 15px; background: var(--mustard); color: var(--forest); display: grid; place-items: center; font-size: 20px; font-weight: 900; }
+.access-hero-card h2 { margin: 0; font-size: 23px; line-height: 1.3; }.access-hero-card p:not(.eyebrow) { max-width: 620px; margin: 8px 0 0; color: #b9ccc4; font-size: 10px; line-height: 1.65; }
+.access-main-grid { display: grid; grid-template-columns: minmax(0,1.2fr) minmax(340px,.8fr); gap: 18px; }
+.access-form-card, .access-rights-card, .access-account-card { border: 1px solid var(--line); border-radius: 22px; background: white; box-shadow: var(--shadow); }
+.access-form-card { padding: 25px; }.access-rights-card { padding: 25px; }.access-account-card { overflow: hidden; }
+.access-card-heading { min-height: 58px; display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+.access-card-heading h2 { margin: 0; color: var(--forest); font-size: 19px; }.access-card-heading p:not(.eyebrow) { margin: 6px 0 0; color: var(--muted); font-size: 9px; line-height: 1.5; }.access-card-heading > span { flex: 0 0 auto; border-radius: 99px; padding: 6px 9px; background: var(--forest-soft); color: var(--forest); font-size: 8px; font-weight: 900; }
+.access-form-grid { margin-top: 16px; }.access-form-actions { margin-top: 18px; display: flex; justify-content: flex-end; gap: 8px; }.access-form-actions button { min-height: 41px; border: 1px solid var(--line); border-radius: 11px; padding: 0 15px; background: white; cursor: pointer; font-size: 10px; font-weight: 900; }.access-form-actions button.primary { border-color: var(--forest); background: var(--forest); color: white; }
+.access-rights-card > article { border-top: 1px solid var(--line); padding: 16px 0; display: grid; grid-template-columns: 37px 1fr; gap: 12px; }.access-rights-card > article > span { width: 34px; height: 34px; border-radius: 11px; background: #edf4ef; color: var(--forest); display: grid; place-items: center; font-size: 9px; font-weight: 950; }.access-rights-card article.manager > span { background: #eef2fb; color: #4f6fa9; }.access-rights-card article.employee > span { background: #fff4df; color: #ad7621; }.access-rights-card article strong { color: var(--forest); font-size: 11px; }.access-rights-card article p { margin: 4px 0 0; color: var(--muted); font-size: 9px; line-height: 1.55; }
+.access-invite-note { margin-top: 8px; border-radius: 14px; padding: 13px; background: #fff8e9; color: #735b23; display: grid; grid-template-columns: 27px 1fr; gap: 10px; }.access-invite-note > span { width: 27px; height: 27px; border-radius: 9px; background: var(--mustard); color: var(--forest); display: grid; place-items: center; font-size: 10px; font-weight: 950; }.access-invite-note p { margin: 0; font-size: 8px; line-height: 1.55; }.access-invite-note strong { display: block; margin-bottom: 2px; color: #5b4517; font-size: 9px; }
+.access-account-card .access-card-heading { padding: 23px 25px 17px; }.access-account-list { border-top: 1px solid var(--line); }
+.access-account-list > article { min-height: 82px; padding: 13px 20px; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 42px minmax(155px,1fr) 100px minmax(170px,1fr) 70px 130px; align-items: center; gap: 12px; }.access-account-list > article:last-child { border-bottom: 0; }.access-account-list > article.inactive { opacity: .62; background: #f8f9f8; }
+.access-account-avatar { width: 39px; height: 39px; border-radius: 12px; background: var(--forest); color: white; display: grid; place-items: center; font-size: 10px; font-weight: 950; }.access-account-person, .access-account-link { min-width: 0; display: grid; gap: 3px; }.access-account-person strong, .access-account-person small, .access-account-link strong, .access-account-link small { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }.access-account-person strong, .access-account-link strong { color: var(--forest); font-size: 10px; }.access-account-person small, .access-account-link small { color: var(--muted); font-size: 8px; }
+.access-role-pill, .access-status { width: fit-content; border-radius: 99px; padding: 6px 8px; background: #fff3d5; color: #946718; font-size: 8px; font-weight: 900; }.access-role-pill.admin { background: #e3efe9; color: var(--forest); }.access-role-pill.manager { background: #eaf0fb; color: #4b6da8; }.access-status.active { background: #e5f3eb; color: #347558; }.access-status.inactive { background: #ecefee; color: #74817c; }
+.access-account-actions { display: flex; justify-content: flex-end; gap: 6px; }.access-account-actions button { min-height: 33px; border: 1px solid var(--line); border-radius: 9px; padding: 0 9px; background: white; cursor: pointer; font-size: 8px; font-weight: 850; }.access-account-actions button:last-child { color: var(--terra); }.access-account-actions button:disabled { opacity: .42; cursor: not-allowed; }
+
+@media (min-width: 1181px) {
+  .header-actions { grid-template-columns: 38px minmax(0,1fr) 38px; }
+  .header-actions .icon-button { grid-column: 1; }.current-user-chip { grid-column: 2; border-color: rgba(255,255,255,.1); background: rgba(255,255,255,.06); }.current-user-chip strong { color: white; }.current-user-chip small { color: #82a095; }.header-actions .profile-button { grid-column: 3; }
+}
+
+@media (max-width: 1180px) {
+  .current-user-chip { flex: 0 0 auto; }.access-summary-grid { grid-template-columns: repeat(3,1fr); }.access-hero-card { grid-column: 1 / -1; }.access-main-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 860px) {
+  .current-user-chip p { display: none; }.current-user-chip { min-height: 36px; padding: 3px; border: 0; background: transparent; }.current-user-chip > span { width: 34px; height: 34px; border-radius: 50%; }
+  .access-summary-grid { grid-template-columns: 1fr 1fr; }.access-hero-card { grid-column: 1 / -1; }.access-account-list > article { grid-template-columns: 42px minmax(0,1fr) 85px; }.access-account-link { grid-column: 2 / 3; }.access-status { grid-column: 3; grid-row: 2; }.access-account-actions { grid-column: 1 / -1; justify-content: stretch; }.access-account-actions button { flex: 1; }
+}
+
+@media (max-width: 640px) {
+  .access-denied-page { padding: 14px; }.access-denied-page > section { padding: 30px 20px; }.access-summary-grid { grid-template-columns: 1fr; }.access-hero-card { grid-template-columns: 1fr; padding: 23px; }.access-main-grid { gap: 14px; }.access-form-card, .access-rights-card { padding: 19px 15px; }.access-account-card .access-card-heading { padding: 19px 16px 14px; }.access-account-list > article { padding-inline: 13px; }.access-role-pill { justify-self: end; }.header-actions .profile-button { display: grid; }
+}

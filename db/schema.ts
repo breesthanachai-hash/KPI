@@ -19,6 +19,26 @@ export const employees = sqliteTable("employees", {
   index("employees_role_idx").on(table.roleId),
 ]);
 
+export const userAccounts = sqliteTable("user_accounts", {
+  id: text("id").primaryKey(),
+  authUserId: text("auth_user_id").notNull().default(""),
+  email: text("email").notNull(),
+  displayName: text("display_name").notNull(),
+  role: text("role", { enum: ["admin", "manager", "employee"] }).notNull().default("employee"),
+  employeeId: text("employee_id").references(() => employees.id, { onDelete: "set null" }),
+  departmentId: text("department_id").notNull().default(""),
+  status: text("status", { enum: ["active", "inactive"] }).notNull().default("active"),
+  lastLoginAt: text("last_login_at"),
+  createdBy: text("created_by").notNull().default("ระบบ"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("user_accounts_email_unique").on(table.email),
+  uniqueIndex("user_accounts_auth_user_unique").on(table.authUserId).where(sql`${table.authUserId} != ''`),
+  uniqueIndex("user_accounts_employee_unique").on(table.employeeId).where(sql`${table.employeeId} IS NOT NULL`),
+  index("user_accounts_role_status_idx").on(table.role, table.status),
+]);
+
 export const evaluations = sqliteTable("evaluations", {
   id: text("id").primaryKey(),
   employeeId: text("employee_id").notNull().references(() => employees.id, { onDelete: "cascade" }),

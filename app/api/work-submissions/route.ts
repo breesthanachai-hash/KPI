@@ -3,6 +3,7 @@ import { getDb, getFilesBucket } from "../../../db";
 import { ensureDatabase } from "../../../db/initialize";
 import { employees, workItems, workSubmissions } from "../../../db/schema";
 import type { WorkSubmissionRecord } from "../../../lib/kpi-data";
+import { authenticateRequest, canAccessEmployee, ensureBootstrapAccounts } from "../../../lib/access-control";
 
 export const dynamic = "force-dynamic";
 
@@ -52,6 +53,9 @@ function errorResponse(error: unknown) {
 export async function POST(request: Request) {
   try {
     await ensureDatabase();
+    await ensureBootstrapAccounts();
+    const currentUser = await authenticateRequest(request);
+    if (!currentUser) return Response.json({ error: "บัญชีนี้ไม่มีสิทธิ์ใช้งาน" }, { status: 403 });
     const formData = await request.formData();
     const workItemId = String(formData.get("workItemId") ?? "");
     const submissionType = String(formData.get("submissionType") ?? "other") as WorkSubmissionRecord["submissionType"];
@@ -68,6 +72,7 @@ export async function POST(request: Request) {
     const db = getDb();
     const [workItem] = await db.select().from(workItems).where(eq(workItems.id, workItemId)).limit(1);
     if (!workItem) return Response.json({ error: "ไม่พบงานที่เลือก" }, { status: 404 });
+    if (!(await canAccessEmployee(currentUser, workItem.assigneeEmployeeId))) return Response.json({ error: "ส่งหลักฐานได้เฉพาะงานที่อยู่ในสิทธิ์ของคุณ" }, { status: 403 });
     const [employee] = await db.select({ id: employees.id }).from(employees).where(eq(employees.id, workItem.assigneeEmployeeId)).limit(1);
     if (!employee) return Response.json({ error: "ไม่พบพนักงานผู้รับผิดชอบ" }, { status: 404 });
 
@@ -119,10 +124,14 @@ export async function POST(request: Request) {
 export async function GET(request: Request) {
   try {
     await ensureDatabase();
+    await ensureBootstrapAccounts();
+    const currentUser = await authenticateRequest(request);
+    if (!currentUser) return Response.json({ error: "บัญชีนี้ไม่มีสิทธิ์ใช้งาน" }, { status: 403 });
     const submissionId = new URL(request.url).searchParams.get("id") ?? "";
     const db = getDb();
     const [submission] = await db.select().from(workSubmissions).where(eq(workSubmissions.id, submissionId)).limit(1);
     if (!submission?.storageKey) return Response.json({ error: "หลักฐานรายการนี้ไม่มีไฟล์แนบ" }, { status: 404 });
+    if (!(await canAccessEmployee(currentUser, submission.employeeId))) return Response.json({ error: "ไม่มีสิทธิ์ดาวน์โหลดหลักฐานนี้" }, { status: 403 });
     const object = await getFilesBucket().get(submission.storageKey);
     if (!object) return Response.json({ error: "ไม่พบไฟล์หลักฐาน" }, { status: 404 });
     return new Response(object.body, {

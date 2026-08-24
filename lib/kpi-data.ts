@@ -39,6 +39,21 @@ export type EmployeeRecord = {
   updatedAt: string;
 };
 
+export type UserAccountRecord = {
+  id: string;
+  authUserId: string;
+  email: string;
+  displayName: string;
+  role: "admin" | "manager" | "employee";
+  employeeId: string | null;
+  departmentId: string;
+  status: "active" | "inactive";
+  lastLoginAt: string | null;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type HrProfileRecord = {
   employeeId: string;
   currentSalary: number;

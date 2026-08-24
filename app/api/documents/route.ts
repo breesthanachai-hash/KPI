@@ -3,6 +3,7 @@ import { getDb, getFilesBucket } from "../../../db";
 import { ensureDatabase } from "../../../db/initialize";
 import { applicationDocuments, employees } from "../../../db/schema";
 import type { ApplicationDocumentRecord } from "../../../lib/kpi-data";
+import { authenticateRequest, canAccessEmployee, ensureBootstrapAccounts } from "../../../lib/access-control";
 
 export const dynamic = "force-dynamic";
 
@@ -60,6 +61,10 @@ function errorResponse(error: unknown) {
 export async function POST(request: Request) {
   try {
     await ensureDatabase();
+    await ensureBootstrapAccounts();
+    const currentUser = await authenticateRequest(request);
+    if (!currentUser) return Response.json({ error: "บัญชีนี้ไม่มีสิทธิ์ใช้งาน" }, { status: 403 });
+    if (currentUser.role !== "admin") return Response.json({ error: "เฉพาะ HR หรือผู้ดูแลระบบเท่านั้นที่จัดการเอกสารพนักงานได้" }, { status: 403 });
     const formData = await request.formData();
     const employeeId = String(formData.get("employeeId") ?? "");
     const documentType = String(formData.get("documentType") ?? "") as ApplicationDocumentRecord["documentType"];
@@ -73,6 +78,7 @@ export async function POST(request: Request) {
     const db = getDb();
     const [employee] = await db.select({ id: employees.id }).from(employees).where(eq(employees.id, employeeId)).limit(1);
     if (!employee) return Response.json({ error: "ไม่พบพนักงานที่เลือก" }, { status: 404 });
+    if (!(await canAccessEmployee(currentUser, employeeId))) return Response.json({ error: "ไม่มีสิทธิ์อัปโหลดเอกสารของพนักงานคนนี้" }, { status: 403 });
     const allowsMultiple = documentType === "contract" || documentType === "other";
     const [existing] = allowsMultiple ? [] : await db.select().from(applicationDocuments).where(and(eq(applicationDocuments.employeeId, employeeId), eq(applicationDocuments.documentType, documentType))).limit(1);
     const safeName = file.name.normalize("NFKC").replace(/[^\p{L}\p{N}._-]+/gu, "-").slice(-140) || "document";
@@ -127,10 +133,15 @@ export async function POST(request: Request) {
 export async function GET(request: Request) {
   try {
     await ensureDatabase();
+    await ensureBootstrapAccounts();
+    const currentUser = await authenticateRequest(request);
+    if (!currentUser) return Response.json({ error: "บัญชีนี้ไม่มีสิทธิ์ใช้งาน" }, { status: 403 });
+    if (currentUser.role !== "admin") return Response.json({ error: "เฉพาะ HR หรือผู้ดูแลระบบเท่านั้นที่ดาวน์โหลดเอกสารพนักงานได้" }, { status: 403 });
     const documentId = new URL(request.url).searchParams.get("id") ?? "";
     const db = getDb();
     const [document] = await db.select().from(applicationDocuments).where(eq(applicationDocuments.id, documentId)).limit(1);
     if (!document) return Response.json({ error: "ไม่พบเอกสารที่เลือก" }, { status: 404 });
+    if (!(await canAccessEmployee(currentUser, document.employeeId))) return Response.json({ error: "ไม่มีสิทธิ์ดาวน์โหลดเอกสารนี้" }, { status: 403 });
     if (!document.storageKey) return Response.json({ error: "รายการนี้นำเข้าจากแฟ้มเดิมและไม่มีไฟล์ต้นฉบับในระบบ" }, { status: 404 });
     const object = await getFilesBucket().get(document.storageKey);
     if (!object) return Response.json({ error: "ไม่พบไฟล์ต้นฉบับ" }, { status: 404 });

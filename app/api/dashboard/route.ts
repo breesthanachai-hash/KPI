@@ -1,7 +1,8 @@
 import { and, eq } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { ensureDatabase } from "../../../db/initialize";
-import { applicationDocuments, attendanceRecords, employeeProfiles, employees, employmentContracts, evaluations, hrProfiles, pointEvents, pointLedger, projects, rewardRedemptions, rewards, skillAchievements, talentActions, workItems, workSubmissions } from "../../../db/schema";
+import { applicationDocuments, attendanceRecords, employeeProfiles, employees, employmentContracts, evaluations, hrProfiles, pointEvents, pointLedger, projects, rewardRedemptions, rewards, skillAchievements, talentActions, userAccounts, workItems, workSubmissions } from "../../../db/schema";
+import { authenticateRequest, authenticatedIdentity, canAccessEmployee, ensureBootstrapAccounts } from "../../../lib/access-control";
 import {
   clampScore,
   clampSkillLevel,
@@ -28,6 +29,7 @@ import {
   type PointEventRecord,
   type PointEventType,
   type PointLedgerRecord,
+  type UserAccountRecord,
 } from "../../../lib/kpi-data";
 
 export const dynamic = "force-dynamic";
@@ -122,6 +124,7 @@ async function ensureSeedData() {
   if (!existingEmploymentContract) {
     for (const contract of seedEmploymentContracts) await db.insert(employmentContracts).values(contract).onConflictDoNothing();
   }
+  await ensureBootstrapAccounts();
 }
 
 function authenticatedActor(request: Request) {
@@ -156,10 +159,15 @@ function isSafeOptionalUrl(value: string) {
 export async function GET(request: Request) {
   try {
     await ensureSeedData();
+    const currentUser = await authenticateRequest(request);
+    if (!currentUser) {
+      const identity = authenticatedIdentity(request);
+      return Response.json({ error: "บัญชีนี้ยังไม่ได้รับสิทธิ์ใช้งาน", accessDenied: true, identity: identity ? { email: identity.email, name: identity.name } : null }, { status: 403 });
+    }
     const url = new URL(request.url);
     const period = url.searchParams.get("period") ?? periods[0];
     const db = getDb();
-    const [employeeRows, evaluationRows, hrProfileRows, attendanceRows, skillAchievementRows, talentActionRows, projectRows, workItemRows, workSubmissionRows, rewardRows, pointRows, pointEventRows, redemptionRows, employeeProfileRows, applicationDocumentRows, employmentContractRows] = await Promise.all([
+    const [employeeRows, evaluationRows, hrProfileRows, attendanceRows, skillAchievementRows, talentActionRows, projectRows, workItemRows, workSubmissionRows, rewardRows, pointRows, pointEventRows, redemptionRows, employeeProfileRows, applicationDocumentRows, employmentContractRows, userAccountRows] = await Promise.all([
       db.select().from(employees),
       db.select().from(evaluations).where(eq(evaluations.period, period)),
       db.select().from(hrProfiles),
@@ -176,9 +184,49 @@ export async function GET(request: Request) {
       db.select().from(employeeProfiles),
       db.select().from(applicationDocuments),
       db.select().from(employmentContracts),
+      currentUser.role === "admin" ? db.select().from(userAccounts) : Promise.resolve([]),
     ]);
-
-    return Response.json({ employees: employeeRows, evaluations: evaluationRows, hrProfiles: hrProfileRows, attendanceRecords: attendanceRows, skillAchievements: skillAchievementRows, talentActions: talentActionRows, projects: projectRows, workItems: workItemRows, workSubmissions: workSubmissionRows, rewards: rewardRows, pointLedger: pointRows, pointEvents: pointEventRows, rewardRedemptions: redemptionRows, employeeProfiles: employeeProfileRows, applicationDocuments: applicationDocumentRows, employmentContracts: employmentContractRows, period });
+    const visibleEmployeeIds = new Set(employeeRows.filter((employee) => {
+      if (currentUser.role === "admin") return true;
+      if (employee.id === currentUser.employeeId) return true;
+      return currentUser.role === "manager" && Boolean(currentUser.departmentId) && getRole(employee.roleId).departmentId === currentUser.departmentId;
+    }).map((employee) => employee.id));
+    const scopedEmployees = employeeRows.filter((employee) => visibleEmployeeIds.has(employee.id));
+    const scopedWorkItems = workItemRows.filter((item) => visibleEmployeeIds.has(item.assigneeEmployeeId));
+    const visibleProjectIds = new Set(scopedWorkItems.map((item) => item.projectId));
+    projectRows.filter((project) => visibleEmployeeIds.has(project.ownerEmployeeId)).forEach((project) => visibleProjectIds.add(project.id));
+    const permissions = {
+      canManageAccounts: currentUser.role === "admin",
+      canManagePeople: currentUser.role === "admin",
+      canManageWork: currentUser.role !== "employee",
+      canReviewWork: currentUser.role !== "employee",
+      canViewTeam: currentUser.role !== "employee",
+    };
+    const visibleProfileImages = employeeProfileRows
+      .filter((row) => visibleEmployeeIds.has(row.employeeId))
+      .map((row) => ({ employeeId: row.employeeId, profileImageKey: row.profileImageKey, profileImageUpdatedAt: row.profileImageUpdatedAt, updatedAt: row.updatedAt }));
+    return Response.json({
+      currentUser,
+      permissions,
+      employees: scopedEmployees,
+      evaluations: evaluationRows.filter((row) => visibleEmployeeIds.has(row.employeeId)),
+      hrProfiles: currentUser.role === "admin" ? hrProfileRows.filter((row) => visibleEmployeeIds.has(row.employeeId)) : [],
+      attendanceRecords: currentUser.role === "admin" ? attendanceRows.filter((row) => visibleEmployeeIds.has(row.employeeId)) : [],
+      skillAchievements: currentUser.role === "admin" ? skillAchievementRows.filter((row) => visibleEmployeeIds.has(row.employeeId)) : [],
+      talentActions: currentUser.role === "admin" ? talentActionRows.filter((row) => visibleEmployeeIds.has(row.employeeId)) : [],
+      projects: projectRows.filter((row) => visibleProjectIds.has(row.id)),
+      workItems: scopedWorkItems,
+      workSubmissions: workSubmissionRows.filter((row) => visibleEmployeeIds.has(row.employeeId)),
+      rewards: rewardRows,
+      pointLedger: pointRows.filter((row) => visibleEmployeeIds.has(row.employeeId)),
+      pointEvents: pointEventRows.filter((row) => visibleEmployeeIds.has(row.employeeId)),
+      rewardRedemptions: redemptionRows.filter((row) => visibleEmployeeIds.has(row.employeeId)),
+      employeeProfiles: currentUser.role === "admin" ? employeeProfileRows.filter((row) => visibleEmployeeIds.has(row.employeeId)) : visibleProfileImages,
+      applicationDocuments: currentUser.role === "admin" ? applicationDocumentRows.filter((row) => visibleEmployeeIds.has(row.employeeId)) : [],
+      employmentContracts: currentUser.role === "admin" ? employmentContractRows.filter((row) => visibleEmployeeIds.has(row.employeeId)) : [],
+      userAccounts: userAccountRows,
+      period,
+    });
   } catch (error) {
     return apiError(error);
   }
@@ -347,11 +395,61 @@ type SendContractPayload = {
   contractId?: string;
 };
 
+type UserAccountPayload = {
+  action: "saveUserAccount";
+  accountId?: string;
+  email?: string;
+  displayName?: string;
+  role?: "admin" | "manager" | "employee";
+  employeeId?: string;
+  departmentId?: string;
+  status?: "active" | "inactive";
+};
+
 export async function POST(request: Request) {
   try {
     await ensureSeedData();
-    const payload = await request.json() as EmployeePayload | EvaluationPayload | HrPlanPayload | CompleteTalentActionPayload | AttendancePayload | AttendanceApprovalPayload | SkillAchievementPayload | ProjectPayload | WorkItemPayload | ReviewWorkSubmissionPayload | RecordPointEventPayload | RunMonthlyPointCyclePayload | RedeemRewardPayload | EmployeeProfilePayload | DocumentStatusPayload | ContractPayload | SignContractPayload | SendContractPayload;
+    const payload = await request.json() as EmployeePayload | EvaluationPayload | HrPlanPayload | CompleteTalentActionPayload | AttendancePayload | AttendanceApprovalPayload | SkillAchievementPayload | ProjectPayload | WorkItemPayload | ReviewWorkSubmissionPayload | RecordPointEventPayload | RunMonthlyPointCyclePayload | RedeemRewardPayload | EmployeeProfilePayload | DocumentStatusPayload | ContractPayload | SignContractPayload | SendContractPayload | UserAccountPayload;
     const db = getDb();
+    const currentUser = await authenticateRequest(request);
+    if (!currentUser) return Response.json({ error: "บัญชีนี้ไม่มีสิทธิ์ดำเนินการ" }, { status: 403 });
+    const adminOnlyActions = new Set(["createEmployee", "saveHrPlan", "verifySkillAchievement", "runMonthlyPointCycle", "saveEmployeeProfile", "updateDocumentStatus", "createContract", "sendContract", "saveUserAccount"]);
+    const teamActions = new Set(["saveEvaluation", "completeTalentAction", "approveAttendance", "saveProject", "reviewWorkSubmission", "recordPointEvent"]);
+    if (adminOnlyActions.has(payload.action) && currentUser.role !== "admin") return Response.json({ error: "เฉพาะ HR หรือผู้ดูแลระบบเท่านั้น" }, { status: 403 });
+    if (teamActions.has(payload.action) && currentUser.role === "employee") return Response.json({ error: "รายการนี้ต้องดำเนินการโดยหัวหน้าทีมหรือ HR" }, { status: 403 });
+
+    if (payload.action === "saveUserAccount") {
+      const email = payload.email?.trim().toLowerCase() ?? "";
+      const displayName = payload.displayName?.trim().slice(0, 120) ?? "";
+      const role = payload.role ?? "employee";
+      const status = payload.status ?? "active";
+      const employeeId = role === "admin" ? null : payload.employeeId?.trim() || null;
+      if (!email || !email.includes("@") || !displayName) return Response.json({ error: "กรุณากรอกชื่อและอีเมลสำหรับเข้าสู่ระบบ" }, { status: 400 });
+      if (role !== "admin" && !employeeId) return Response.json({ error: "บัญชีพนักงานและหัวหน้าทีมต้องผูกกับโปรไฟล์พนักงาน" }, { status: 400 });
+      const [linkedEmployee] = employeeId ? await db.select().from(employees).where(eq(employees.id, employeeId)).limit(1) : [];
+      if (employeeId && !linkedEmployee) return Response.json({ error: "ไม่พบโปรไฟล์พนักงานที่เลือก" }, { status: 404 });
+      const accountId = payload.accountId?.trim() || `user-${crypto.randomUUID()}`;
+      const [existing] = payload.accountId ? await db.select().from(userAccounts).where(eq(userAccounts.id, accountId)).limit(1) : [];
+      if (existing?.id === currentUser.id && (status !== "active" || role !== "admin")) return Response.json({ error: "ไม่สามารถปิดหรือเปลี่ยนสิทธิ์บัญชีที่กำลังใช้งานอยู่" }, { status: 409 });
+      const now = new Date().toISOString();
+      const departmentId = role === "manager" ? payload.departmentId?.trim() || (linkedEmployee ? getRole(linkedEmployee.roleId).departmentId : "") : "";
+      const userAccount: UserAccountRecord = {
+        id: existing?.id ?? accountId,
+        authUserId: existing && existing.email === email ? existing.authUserId : "",
+        email,
+        displayName,
+        role,
+        employeeId,
+        departmentId,
+        status,
+        lastLoginAt: existing?.lastLoginAt ?? null,
+        createdBy: existing?.createdBy ?? currentUser.authenticatedName,
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+      };
+      await db.insert(userAccounts).values(userAccount).onConflictDoUpdate({ target: userAccounts.id, set: { authUserId: userAccount.authUserId, email, displayName, role, employeeId, departmentId, status, updatedAt: now } });
+      return Response.json({ userAccount }, { status: existing ? 200 : 201 });
+    }
 
     if (payload.action === "createEmployee") {
       const name = payload.name?.trim() ?? "";
@@ -407,6 +505,7 @@ export async function POST(request: Request) {
 
     if (payload.action === "saveEvaluation") {
       const employeeId = payload.employeeId ?? "";
+      if (!(await canAccessEmployee(currentUser, employeeId))) return Response.json({ error: "ไม่มีสิทธิ์ประเมินพนักงานคนนี้" }, { status: 403 });
       const period = payload.period ?? periods[0];
       const [employee] = await db.select().from(employees).where(eq(employees.id, employeeId)).limit(1);
       if (!employee) return Response.json({ error: "ไม่พบพนักงานที่เลือก" }, { status: 404 });
@@ -494,6 +593,7 @@ export async function POST(request: Request) {
 
     if (payload.action === "saveHrPlan") {
       const employeeId = payload.employeeId ?? "";
+      if (!(await canAccessEmployee(currentUser, employeeId))) return Response.json({ error: "ไม่มีสิทธิ์เข้าถึงข้อมูลพนักงานคนนี้" }, { status: 403 });
       const [employee] = await db.select().from(employees).where(eq(employees.id, employeeId)).limit(1);
       if (!employee) return Response.json({ error: "ไม่พบพนักงานที่เลือก" }, { status: 404 });
       const salary = Math.min(1000000, Math.max(0, Math.round(Number(payload.currentSalary) || 0)));
@@ -537,6 +637,9 @@ export async function POST(request: Request) {
 
     if (payload.action === "completeTalentAction") {
       const actionId = payload.actionId ?? "";
+      const [existingTalentAction] = await db.select().from(talentActions).where(eq(talentActions.id, actionId)).limit(1);
+      if (!existingTalentAction) return Response.json({ error: "ไม่พบแผนที่เลือก" }, { status: 404 });
+      if (!(await canAccessEmployee(currentUser, existingTalentAction.employeeId))) return Response.json({ error: "ไม่มีสิทธิ์จัดการแผนนี้" }, { status: 403 });
       const score = payload.score === undefined ? null : Math.min(100, Math.max(0, Math.round(Number(payload.score) || 0)));
       const now = new Date().toISOString();
       await db.update(talentActions).set({ status: "completed", score, updatedAt: now }).where(eq(talentActions.id, actionId));
@@ -547,6 +650,7 @@ export async function POST(request: Request) {
 
     if (payload.action === "saveAttendance") {
       const employeeId = payload.employeeId ?? "";
+      if (!(await canAccessEmployee(currentUser, employeeId))) return Response.json({ error: "ลงเวลาได้เฉพาะบัญชีของตนเองหรือทีมที่ได้รับสิทธิ์" }, { status: 403 });
       const [employee] = await db.select().from(employees).where(eq(employees.id, employeeId)).limit(1);
       if (!employee) return Response.json({ error: "ไม่พบพนักงานที่เลือก" }, { status: 404 });
       const workDate = /^\d{4}-\d{2}-\d{2}$/.test(payload.workDate ?? "") ? payload.workDate as string : "";
@@ -592,6 +696,7 @@ export async function POST(request: Request) {
       if (!approvalStatus) return Response.json({ error: "กรุณาเลือกผลการอนุมัติ" }, { status: 400 });
       const [existing] = await db.select().from(attendanceRecords).where(eq(attendanceRecords.id, attendanceId)).limit(1);
       if (!existing || existing.status !== "leave") return Response.json({ error: "ไม่พบคำขอลาที่เลือก" }, { status: 404 });
+      if (!(await canAccessEmployee(currentUser, existing.employeeId))) return Response.json({ error: "ไม่มีสิทธิ์อนุมัติคำขอนี้" }, { status: 403 });
       const now = new Date().toISOString();
       await db.update(attendanceRecords).set({ approvalStatus, approvedBy: evaluatorName(request), approvedAt: now, updatedAt: now }).where(eq(attendanceRecords.id, attendanceId));
       const [attendanceRecord] = await db.select().from(attendanceRecords).where(eq(attendanceRecords.id, attendanceId)).limit(1);
@@ -661,9 +766,11 @@ export async function POST(request: Request) {
       const ownerEmployeeId = payload.ownerEmployeeId ?? "";
       const [owner] = await db.select().from(employees).where(eq(employees.id, ownerEmployeeId)).limit(1);
       if (!name || !owner) return Response.json({ error: "กรุณาระบุชื่อโปรเจกต์และเจ้าของโปรเจกต์" }, { status: 400 });
+      if (!(await canAccessEmployee(currentUser, ownerEmployeeId))) return Response.json({ error: "ไม่มีสิทธิ์สร้างโปรเจกต์ให้พนักงานคนนี้" }, { status: 403 });
       const now = new Date().toISOString();
       const projectId = payload.projectId?.trim() || `project-${crypto.randomUUID()}`;
       const [existingProject] = payload.projectId ? await db.select().from(projects).where(eq(projects.id, projectId)).limit(1) : [];
+      if (existingProject && !(await canAccessEmployee(currentUser, existingProject.ownerEmployeeId))) return Response.json({ error: "ไม่มีสิทธิ์แก้ไขโปรเจกต์นี้" }, { status: 403 });
       const project = {
         id: existingProject?.id ?? projectId,
         name,
@@ -684,6 +791,16 @@ export async function POST(request: Request) {
     }
 
     if (payload.action === "saveWorkItem") {
+      if (currentUser.role === "employee") {
+        const workItemId = payload.workItemId?.trim() ?? "";
+        const [assignedWorkItem] = workItemId ? await db.select().from(workItems).where(eq(workItems.id, workItemId)).limit(1) : [];
+        if (!assignedWorkItem || assignedWorkItem.assigneeEmployeeId !== currentUser.employeeId) return Response.json({ error: "แก้ไขได้เฉพาะงานที่มอบหมายให้คุณ" }, { status: 403 });
+        const status = payload.status === "in_progress" || payload.status === "todo" ? payload.status : assignedWorkItem.status;
+        const progress = Math.min(90, Math.max(0, Math.round(Number(payload.progress) || assignedWorkItem.progress)));
+        const now = new Date().toISOString();
+        await db.update(workItems).set({ status, progress, updatedAt: now }).where(eq(workItems.id, workItemId));
+        return Response.json({ workItem: { ...assignedWorkItem, status, progress, updatedAt: now }, pointEntry: null });
+      }
       const projectId = payload.projectId ?? "";
       const assigneeEmployeeId = payload.assigneeEmployeeId ?? "";
       const title = payload.title?.trim().slice(0, 180) ?? "";
@@ -692,9 +809,11 @@ export async function POST(request: Request) {
         db.select({ id: employees.id }).from(employees).where(eq(employees.id, assigneeEmployeeId)).limit(1),
       ]);
       if (!title || !project || !assignee) return Response.json({ error: "กรุณาระบุชื่องาน โปรเจกต์ และผู้รับผิดชอบ" }, { status: 400 });
+      if (!(await canAccessEmployee(currentUser, assigneeEmployeeId))) return Response.json({ error: "ไม่มีสิทธิ์มอบหมายงานให้พนักงานคนนี้" }, { status: 403 });
       const now = new Date().toISOString();
       const workItemId = payload.workItemId?.trim() || `work-${crypto.randomUUID()}`;
       const [existingWorkItem] = payload.workItemId ? await db.select().from(workItems).where(eq(workItems.id, workItemId)).limit(1) : [];
+      if (existingWorkItem && !(await canAccessEmployee(currentUser, existingWorkItem.assigneeEmployeeId))) return Response.json({ error: "ไม่มีสิทธิ์แก้ไขงานนี้" }, { status: 403 });
       const status = payload.status ?? existingWorkItem?.status ?? "todo";
       const progress = status === "done" ? 100 : Math.min(99, Math.max(0, Math.round(Number(payload.progress) || 0)));
       const workItem = {
@@ -735,6 +854,7 @@ export async function POST(request: Request) {
       if (!submission) return Response.json({ error: "ไม่พบหลักฐานงานที่เลือก" }, { status: 404 });
       const [workItem] = await db.select().from(workItems).where(eq(workItems.id, submission.workItemId)).limit(1);
       if (!workItem) return Response.json({ error: "ไม่พบงานของหลักฐานรายการนี้" }, { status: 404 });
+      if (!(await canAccessEmployee(currentUser, workItem.assigneeEmployeeId))) return Response.json({ error: "ไม่มีสิทธิ์ตรวจผลงานนี้" }, { status: 403 });
       const now = new Date().toISOString();
       const actor = authenticatedActor(request);
       const reviewerNote = payload.reviewerNote?.trim().slice(0, 1000) ?? "";
@@ -772,6 +892,7 @@ export async function POST(request: Request) {
 
     if (payload.action === "recordPointEvent") {
       const employeeId = payload.employeeId ?? "";
+      if (!(await canAccessEmployee(currentUser, employeeId))) return Response.json({ error: "ไม่มีสิทธิ์บันทึกแต้มให้พนักงานคนนี้" }, { status: 403 });
       const eventType = payload.eventType;
       const eventDate = /^\d{4}-\d{2}-\d{2}$/.test(payload.eventDate ?? "") ? payload.eventDate as string : "";
       const note = payload.note?.trim().slice(0, 1000) ?? "";
@@ -840,6 +961,8 @@ export async function POST(request: Request) {
 
     if (payload.action === "redeemReward") {
       const employeeId = payload.employeeId ?? "";
+      if (currentUser.role === "employee" && employeeId !== currentUser.employeeId) return Response.json({ error: "ใช้แต้มได้เฉพาะบัญชีของตนเอง" }, { status: 403 });
+      if (!(await canAccessEmployee(currentUser, employeeId))) return Response.json({ error: "ไม่มีสิทธิ์ใช้แต้มของพนักงานคนนี้" }, { status: 403 });
       const rewardId = payload.rewardId ?? "";
       const [[employee], [reward], ledgerRows] = await Promise.all([
         db.select({ id: employees.id }).from(employees).where(eq(employees.id, employeeId)).limit(1),
@@ -943,6 +1066,7 @@ export async function POST(request: Request) {
       const contractId = payload.contractId ?? "";
       const [contract] = await db.select().from(employmentContracts).where(eq(employmentContracts.id, contractId)).limit(1);
       if (!contract) return Response.json({ error: "ไม่พบสัญญาที่เลือก" }, { status: 404 });
+      if (!(await canAccessEmployee(currentUser, contract.employeeId)) || (currentUser.role === "employee" && currentUser.employeeId !== contract.employeeId)) return Response.json({ error: "ไม่มีสิทธิ์ลงนามสัญญานี้" }, { status: 403 });
       const [employee] = await db.select().from(employees).where(eq(employees.id, contract.employeeId)).limit(1);
       if (!employee) return Response.json({ error: "ไม่พบข้อมูลพนักงานของสัญญา" }, { status: 404 });
       if (contract.status === "signed") return Response.json({ employmentContract: contract });
