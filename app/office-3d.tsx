@@ -140,7 +140,7 @@ const roomLabels: Record<OfficeRoom, string> = {
   meeting: "WAR ROOM",
   manager: "MANAGER POD",
   ceo: "CEO ROOM",
-  lounge: "HERO LOUNGE",
+  lounge: "TEAM LOUNGE",
   cafe: "POWER CAFE",
 };
 
@@ -412,13 +412,13 @@ function addNeonCity(scene: THREE.Scene) {
   heights.forEach((height, index) => {
     const x = -18.5 + index * 3.35;
     const width = 1.35 + index % 3 * .35;
-    box(city, [width, height, 1.8], [x, height / 2 - .2, 0], index % 2 ? 0x111b3b : 0x0b2740, { castShadow: false });
-    const windowColor = index % 3 === 0 ? 0xff72c8 : index % 3 === 1 ? 0x63f6ff : 0xb9ff45;
+    box(city, [width, height, 1.8], [x, height / 2 - .2, 0], index % 2 ? 0xa9bdb4 : 0xc5d3cc, { castShadow: false });
+    const windowColor = index % 3 === 0 ? 0xe8b86b : index % 3 === 1 ? 0x8fb6aa : 0xd4a887;
     for (let row = 0; row < Math.floor(height / 1.35); row += 1) {
       const windowStrip = box(city, [width * .68, .08, .035], [x, .65 + row * 1.18, .92], windowColor, {
         castShadow: false,
         receiveShadow: false,
-        material: new THREE.MeshStandardMaterial({ color: windowColor, emissive: windowColor, emissiveIntensity: .7 }),
+        material: new THREE.MeshStandardMaterial({ color: windowColor, emissive: windowColor, emissiveIntensity: .08 }),
       });
       windowStrip.renderOrder = 4;
     }
@@ -430,16 +430,14 @@ function addCampusPortal(scene: THREE.Scene) {
   const portal = new THREE.Group();
   portal.position.set(3.6, .12, 2.1);
   scene.add(portal);
-  const ringMaterial = new THREE.MeshStandardMaterial({ color: 0x63f6ff, emissive: 0x63f6ff, emissiveIntensity: .78, metalness: .5, roughness: .25 });
+  const ringMaterial = new THREE.MeshStandardMaterial({ color: 0xb78254, emissive: 0xb78254, emissiveIntensity: .04, metalness: .28, roughness: .46 });
   const ring = new THREE.Mesh(new THREE.TorusGeometry(1.52, .085, 10, 60), ringMaterial);
   ring.rotation.x = Math.PI / 2;
   portal.add(ring);
-  const innerRing = new THREE.Mesh(new THREE.TorusGeometry(.92, .035, 8, 48), new THREE.MeshStandardMaterial({ color: 0xb9ff45, emissive: 0xb9ff45, emissiveIntensity: .62 }));
+  const innerRing = new THREE.Mesh(new THREE.TorusGeometry(.92, .035, 8, 48), new THREE.MeshStandardMaterial({ color: 0x6f9b79, emissive: 0x6f9b79, emissiveIntensity: .03 }));
   innerRing.rotation.x = Math.PI / 2;
   portal.add(innerRing);
-  const beam = cylinder(portal, .1, .32, 3.2, [0, 1.55, 0], 0x63f6ff, 20);
-  (beam.material as THREE.MeshStandardMaterial).transparent = true;
-  (beam.material as THREE.MeshStandardMaterial).opacity = .24;
+  const beam = cylinder(portal, .12, .3, 2.2, [0, 1.05, 0], 0x8a6b4d, 20);
   beam.userData.campusBeam = true;
   ring.userData.campusRing = true;
   innerRing.userData.campusRing = true;
@@ -695,7 +693,7 @@ function funnyConversation(person: Office3DPerson, costume: HeroCostume, gag: Of
     `${person.name} รายงานตัวในชุด${costume.name} วันนี้${task} ถ้ากาแฟไม่หมดก่อนนะ`,
     `${person.name} บอกว่า ภาระงาน ${person.loadPercent} เปอร์เซ็นต์ แต่พลังผ้าคลุมเต็มหนึ่งร้อย`,
     `${person.name} กำลัง${gagLabels[gag]} และยืนยันว่าจะส่งงานก่อนโลกต้องการฮีโร่`,
-    `${person.name} จาก${person.role} ขอเวลาสองนาทีไปกู้จักรวาล เอ๊ะ หมายถึงกู้ไฟล์งาน`,
+    `${person.name} จาก${person.role} ขอเวลาสองนาทีไปช่วยทีม เอ๊ะ หมายถึงกู้ไฟล์งาน`,
   ];
   return lines[index % lines.length];
 }
@@ -907,7 +905,7 @@ function CinematicCampus({
       <div className="cinematic-scan" aria-hidden="true" />
       <div className="cinematic-room-map" aria-hidden="true">
         <span className="room-open">OPEN OFFICE</span><span className="room-ceo">CEO ROOM</span><span className="room-manager">MANAGER</span>
-        <span className="room-creative">CREATIVE LAB</span><span className="room-meeting">WAR ROOM</span><span className="room-cafe">POWER CAFE</span><span className="room-lounge">HERO LOUNGE</span>
+        <span className="room-creative">CREATIVE ROOM</span><span className="room-meeting">MEETING ROOM</span><span className="room-cafe">TEAM CAFE</span><span className="room-lounge">TEAM LOUNGE</span>
       </div>
       <div className="autonomous-hero-layer">
         {people.map((person, index) => (
@@ -922,7 +920,7 @@ function CinematicCampus({
           />
         ))}
       </div>
-      <div className="cinematic-campus-hud"><span><i /> AUTONOMOUS OFFICE</span><b>{people.length} HEROES ONLINE</b><small>ตัวละครทุกคนเลือกเส้นทาง ห้อง และกิจกรรมเอง · กดที่ตัวละครเพื่อเปิดงาน</small></div>
+      <div className="cinematic-campus-hud"><span><i /> สำนักงานทำงานอัตโนมัติ</span><b>พนักงาน {people.length} คน</b><small>ตัวละครทุกคนเลือกเส้นทาง ห้อง และกิจกรรมเอง · กดที่ตัวละครเพื่อเปิดงาน</small></div>
     </div>
   );
 }
@@ -1037,7 +1035,7 @@ export default function Office3D({ people, onSelect }: { people: Office3DPerson[
     renderer.setSize(host.clientWidth, host.clientHeight, false);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.32;
+    renderer.toneMappingExposure = 1.08;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFShadowMap;
     renderer.domElement.setAttribute("aria-label", "ออฟฟิศสามมิติแบบโต้ตอบ หมุนกล้องด้วยการลากและซูมด้วยล้อเมาส์");
@@ -1045,8 +1043,8 @@ export default function Office3D({ people, onSelect }: { people: Office3DPerson[
     host.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x030817);
-    scene.fog = new THREE.Fog(0x071126, 38, 72);
+    scene.background = new THREE.Color(0xeaf2ee);
+    scene.fog = new THREE.Fog(0xdfe9e3, 38, 72);
     const minViewHeight = 30;
     const fittedWorldWidth = 40;
     const initialAspect = host.clientWidth / host.clientHeight;
@@ -1070,8 +1068,8 @@ export default function Office3D({ people, onSelect }: { people: Office3DPerson[
       controls.update();
     };
 
-    scene.add(new THREE.HemisphereLight(0xd8fbff, 0x1e1738, 3.1));
-    const sun = new THREE.DirectionalLight(0xf1fbff, 4.9);
+    scene.add(new THREE.HemisphereLight(0xf8fbf7, 0x789488, 2.9));
+    const sun = new THREE.DirectionalLight(0xfff8e8, 4.2);
     sun.position.set(-10, 21, 13);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
@@ -1080,43 +1078,43 @@ export default function Office3D({ people, onSelect }: { people: Office3DPerson[
     sun.shadow.camera.top = 17;
     sun.shadow.camera.bottom = -17;
     scene.add(sun);
-    const fill = new THREE.DirectionalLight(0x626dff, 1.55);
+    const fill = new THREE.DirectionalLight(0xb9d6c9, 1.3);
     fill.position.set(14, 9, -10);
     scene.add(fill);
-    const cyanGlow = new THREE.PointLight(0x63f6ff, 18, 25, 1.8);
+    const cyanGlow = new THREE.PointLight(0x8fc5ae, 6, 25, 1.8);
     cyanGlow.position.set(-10, 7, 3);
     scene.add(cyanGlow);
-    const limeGlow = new THREE.PointLight(0xb9ff45, 11, 20, 2);
+    const limeGlow = new THREE.PointLight(0xf0c77d, 5, 20, 2);
     limeGlow.position.set(11, 6, 5);
     scene.add(limeGlow);
 
-    box(scene, [35.2, .62, 25.2], [0, -.34, 0], 0x061027, { receiveShadow: true });
-    box(scene, [34.7, .12, 24.7], [0, -.01, 0], 0x155277, {
+    box(scene, [35.2, .62, 25.2], [0, -.34, 0], 0xcbd8d1, { receiveShadow: true });
+    box(scene, [34.7, .12, 24.7], [0, -.01, 0], 0xe8eee9, {
       receiveShadow: true,
-      material: new THREE.MeshStandardMaterial({ color: 0x155277, emissive: 0x3ae5ff, emissiveIntensity: .22, metalness: .32, roughness: .5 }),
+      material: new THREE.MeshStandardMaterial({ color: 0xe8eee9, metalness: .04, roughness: .72 }),
     });
-    const floor = new THREE.Mesh(new THREE.PlaneGeometry(34, 24), standardMaterial(0x101a31, .92, .12));
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(34, 24), standardMaterial(0xf4f6f2, .92, .04));
     floor.rotation.x = -Math.PI / 2;
     floor.receiveShadow = true;
     scene.add(floor);
-    const grid = new THREE.GridHelper(34, 34, 0x63f6ff, 0x273753);
+    const grid = new THREE.GridHelper(34, 34, 0x9bb4a8, 0xd8e1dc);
     grid.scale.z = 24 / 34;
     grid.position.y = .005;
     (grid.material as THREE.Material).transparent = true;
-    (grid.material as THREE.Material).opacity = .24;
+    (grid.material as THREE.Material).opacity = .16;
     scene.add(grid);
     addNeonCity(scene);
-    box(scene, [34, 6.3, .25], [0, 3.15, -11.88], 0x101b32, { receiveShadow: true });
-    box(scene, [.25, 1.15, 24], [-16.88, .58, 0], 0x12324d, { receiveShadow: true });
-    box(scene, [.25, 1.15, 24], [16.88, .58, 0], 0x12324d, { receiveShadow: true });
+    box(scene, [34, 6.3, .25], [0, 3.15, -11.88], 0xd5e1da, { receiveShadow: true });
+    box(scene, [.25, 1.15, 24], [-16.88, .58, 0], 0xb9cbc2, { receiveShadow: true });
+    box(scene, [.25, 1.15, 24], [16.88, .58, 0], 0xb9cbc2, { receiveShadow: true });
 
-    addRoomZone(scene, "creative", [-11.7, -7.4], [9.2, 7.7], 0x351946, 0xff72c8, "ห้องตัดต่อและครีเอทีฟ");
-    addRoomZone(scene, "meeting", [9.9, -7.4], [12.5, 7.7], 0x183b58, 0x63f6ff, "ห้องประชุมวางแผนภารกิจ");
-    addRoomZone(scene, "open", [-3.3, .9], [17, 8.2], 0x17294d, 0x4f7cff, "พื้นที่ทำงานรวมของทุกทีม");
-    addRoomZone(scene, "manager", [10.6, .7], [6.9, 6.3], 0x2b214e, 0x9f7cff, "ห้องผู้จัดการและหัวหน้าทีม");
-    addRoomZone(scene, "lounge", [-11.2, 8.2], [10.2, 5.3], 0x1d463e, 0xb9ff45, "พัก เติมพลัง และปล่อยมุก");
-    addRoomZone(scene, "cafe", [-1.1, 8.2], [8.8, 5.3], 0x472b35, 0xffb45b, "กาแฟ เพลง และบทสนทนา AI");
-    addRoomZone(scene, "ceo", [11.1, 8.2], [9.8, 5.3], 0x232b58, 0x6ef7ff, "ห้อง CEO วิวเดดไลน์ทั่วจักรวาล");
+    addRoomZone(scene, "creative", [-11.7, -7.4], [9.2, 7.7], 0xeadfea, 0xa06aa3, "ห้องตัดต่อและครีเอทีฟ");
+    addRoomZone(scene, "meeting", [9.9, -7.4], [12.5, 7.7], 0xdce9e3, 0x4f8e7c, "ห้องประชุมวางแผนภารกิจ");
+    addRoomZone(scene, "open", [-3.3, .9], [17, 8.2], 0xe8eee9, 0x5b8f7d, "พื้นที่ทำงานรวมของทุกทีม");
+    addRoomZone(scene, "manager", [10.6, .7], [6.9, 6.3], 0xe7e1d7, 0x9b7b56, "ห้องผู้จัดการและหัวหน้าทีม");
+    addRoomZone(scene, "lounge", [-11.2, 8.2], [10.2, 5.3], 0xddebdc, 0x6d9c75, "พัก เติมพลัง และพูดคุย");
+    addRoomZone(scene, "cafe", [-1.1, 8.2], [8.8, 5.3], 0xf1e4d6, 0xc98956, "กาแฟ เพลง และบทสนทนาในทีม");
+    addRoomZone(scene, "ceo", [11.1, 8.2], [9.8, 5.3], 0xe1e7ef, 0x52758f, "ห้อง CEO มองเห็นภาพรวมขององค์กร");
 
     addGlassWall(scene, [.12, 4.2, 6.3], [7.18, 2.1, .7]);
     addGlassWall(scene, [6.9, 4.2, .12], [10.6, 2.1, -2.42]);
@@ -1384,7 +1382,7 @@ export default function Office3D({ people, onSelect }: { people: Office3DPerson[
   return (
     <section ref={shellRef} className={`office-3d-shell ${visualMode === "cinematic" ? "cinematic-mode" : "interactive-mode"} ${motionEnabled ? "" : "motion-paused"}`}>
       <div className="office-3d-toolbar">
-        <div><span className="office-3d-live"><i /> 3D WORLD LIVE</span><p><strong>People Pulse 3D Hero Campus</strong><small>ฉาก 3D สร้างใหม่ทั้งหมด · ตัวละครโมเดล 3D เดินและเลือกกิจกรรมเอง</small></p></div>
+        <div><span className="office-3d-live"><i /> สำนักงาน 3D สด</span><p><strong>People Pulse Team Campus</strong><small>สำนักงานสมัยใหม่โทนธรรมชาติ · ตัวละคร 3D เดินและเลือกกิจกรรมเอง</small></p></div>
         <div className="office-3d-actions">
           <span className="office-native-3d-badge">◆ REAL-TIME 3D</span>
           <button className={ambienceEnabled ? "active" : ""} onClick={() => void toggleAmbience()} aria-pressed={ambienceEnabled}>{ambienceEnabled ? "🔊 เสียงทำงาน" : "🔈 เปิดบรรยากาศ"}</button>
@@ -1397,7 +1395,7 @@ export default function Office3D({ people, onSelect }: { people: Office3DPerson[
         </div>
       </div>
       <div className="office-3d-story-strip">
-        <div><span>DAILY HERO CAST</span><strong>{officeDateKey}</strong><small>ชุดจะสลับอัตโนมัติทุกวัน</small></div>
+        <div><span>ทีมประจำวันนี้</span><strong>{officeDateKey}</strong><small>ชุดจะสลับอัตโนมัติทุกวัน</small></div>
         <div className="office-costume-roster">
           {dailyCast.map(({ person, costume, gag }) => <span key={person.id}><i style={{ background: `#${costume.primary.toString(16).padStart(6, "0")}` }} /> <b>{person.name.split(" ")[0]}</b><small>{costume.name} · {gagLabels[gag]}</small></span>)}
         </div>
@@ -1406,7 +1404,7 @@ export default function Office3D({ people, onSelect }: { people: Office3DPerson[
         <CinematicCampus people={people} dateKey={officeDateKey} funCycle={funCycle} motionEnabled={motionEnabled} onSelect={(employeeId) => onSelectRef.current(employeeId)} />
       ) : (
         <div ref={hostRef} className="office-3d-canvas">
-          <div className="office-3d-world-hud" aria-hidden="true"><span><i /> AUTONOMOUS 3D WORLD</span><b>{people.length} HEROES</b><small>ลากเพื่อหมุน · เลื่อนเพื่อซูม · กดโมเดลเพื่อเปิดงาน</small></div>
+          <div className="office-3d-world-hud" aria-hidden="true"><span><i /> สำนักงาน 3D อัตโนมัติ</span><b>พนักงาน {people.length} คน</b><small>ลากเพื่อหมุน · เลื่อนเพื่อซูม · กดโมเดลเพื่อเปิดงาน</small></div>
           {error && <div className="office-3d-error"><span>!</span><strong>เปิดฉาก 3D ไม่สำเร็จ</strong><p>{error}</p></div>}
         </div>
       )}

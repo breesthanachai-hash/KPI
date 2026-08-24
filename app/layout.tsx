@@ -7,8 +7,8 @@ export async function generateMetadata(): Promise<Metadata> {
   const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host") ?? "localhost:3000";
   const protocol = requestHeaders.get("x-forwarded-proto") ?? (host.includes("localhost") ? "http" : "https");
   const origin = `${protocol}://${host}`;
-  const title = "People Pulse 3000 — ศูนย์บัญชาการบุคลากรแห่งอนาคต";
-  const description = "ระบบ HR แห่งอนาคตที่รวมทูดูลิส KPI สกิล แฟ้มผลงาน แต้ม รางวัล และ Hero Office Campus 3D หลายห้องไว้ในศูนย์บัญชาการเดียว";
+  const title = "People Pulse — ระบบจัดการคนและงานที่ใช้ง่าย";
+  const description = "ระบบ HR ที่รวมงาน KPI สกิล แฟ้มผลงาน เวลาเข้างาน แต้ม รางวัล และสำนักงานจำลอง 3D ไว้ในที่เดียว";
 
   return {
     metadataBase: new URL(origin),
@@ -19,13 +19,11 @@ export async function generateMetadata(): Promise<Metadata> {
       description,
       type: "website",
       locale: "th_TH",
-      images: [{ url: new URL("/og-hero-campus.png", origin).toString(), width: 1536, height: 1024, alt: "People Pulse 3000 Hero Office Campus" }],
     },
     twitter: {
       card: "summary_large_image",
       title,
       description,
-      images: [new URL("/og-hero-campus.png", origin).toString()],
     },
   };
 }
