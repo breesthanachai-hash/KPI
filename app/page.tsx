@@ -2,6 +2,7 @@
 
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import type { Office3DPerson } from "./office-3d";
+import AiAssistant, { type PeopleAiActionId, type PeopleAiContext } from "./ai-assistant";
 import {
   type ApplicationDocumentRecord,
   type AttendanceRecord,
@@ -464,6 +465,7 @@ export default function Home() {
   const [note, setNote] = useState("");
   const [search, setSearch] = useState("");
   const [toast, setToast] = useState("");
+  const [showAiAssistant, setShowAiAssistant] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [dataWarning, setDataWarning] = useState("");
@@ -1626,6 +1628,61 @@ export default function Home() {
   const currentUserRoleLabel = currentUser?.role === "admin" ? "HR / Admin" : currentUser?.role === "manager" ? "หัวหน้าทีม" : "พนักงาน";
   const activeViewTitle = isEmployeeUser && view === "work" ? "งานของฉัน" : isEmployeeUser && view === "portfolio" ? "แฟ้มผลงานของฉัน" : viewMeta[view].title;
   const activeViewDescription = isEmployeeUser && view === "work" ? "ดูสิ่งที่ต้องทำ เริ่มงาน และส่งหลักฐานได้ในไม่กี่ขั้นตอน" : isEmployeeUser && view === "portfolio" ? "ดูงานและหลักฐานที่ส่งไว้ พร้อมสถานะตรวจผลงานของคุณ" : viewMeta[view].description;
+  const peopleAiContext: PeopleAiContext = {
+    userKey: currentUser?.id ?? currentUser?.email ?? "guest",
+    userName: currentUser?.displayName ?? currentUser?.authenticatedName ?? "ผู้ใช้งาน",
+    userRole: currentUserRoleLabel,
+    period,
+    currentView: activeViewTitle,
+    canManagePeople: permissions.canManagePeople,
+    canManageWork: permissions.canManageWork,
+    employees: workforceInsights.map(({ employee, role, evaluation, bestFit }) => ({
+      id: employee.id,
+      name: employee.name,
+      roleId: role.id,
+      roleName: role.name,
+      department: role.department,
+      kpiScore: evaluation?.kpiScore ?? null,
+      skillScore: evaluation?.skillScore ?? null,
+      totalScore: evaluation?.totalScore ?? null,
+      bestFitRole: bestFit?.role.name ?? "",
+      bestFitScore: bestFit?.score ?? null,
+      skills: role.skills.map((skill) => ({ name: skill.name, current: evaluation?.skillScores[skill.id] ?? null, target: skill.targetLevel })),
+    })),
+    tasks: workItems.map((item) => ({
+      id: item.id,
+      title: item.title,
+      assigneeEmployeeId: item.assigneeEmployeeId,
+      assigneeName: employeesById.get(item.assigneeEmployeeId)?.name ?? "ไม่ระบุผู้รับผิดชอบ",
+      projectName: projectsById.get(item.projectId)?.name ?? "งานทั่วไป",
+      status: item.status,
+      priority: item.priority,
+      progress: item.progress,
+      dueDate: item.dueDate,
+    })),
+  };
+
+  const handlePeopleAiAction = (action: PeopleAiActionId) => {
+    if (action === "open_today") {
+      setView("work");
+      setWorkDueFilter("today");
+    } else if (action === "open_overdue") {
+      setView("work");
+      setWorkDueFilter("overdue");
+    } else if (action === "create_task" && permissions.canManageWork) {
+      setView("work");
+      openWorkItemForm();
+    } else if (action === "open_evaluations" && permissions.canManagePeople) {
+      setView("employees");
+    } else if (action === "open_skills" && permissions.canManagePeople) {
+      setView("skills");
+    } else if (action === "open_hr" && permissions.canManagePeople) {
+      setView("hr");
+    } else if (action === "open_portfolio") {
+      setView("portfolio");
+    }
+    setShowAiAssistant(false);
+  };
 
   if (accessDenied) {
     return (
@@ -1657,6 +1714,7 @@ export default function Home() {
           <span className="nav-section-label">พื้นที่ทำงาน</span>
           <button className={view === "work" ? "active" : ""} onClick={() => { setActiveDepartment("all"); setView("work"); }}><span aria-hidden="true">✓</span><b>งาน</b><em>{workItems.filter((item) => item.status !== "done").length}</em></button>
           <button className={view === "portfolio" ? "active" : ""} onClick={() => setView("portfolio")}><span aria-hidden="true">◇</span><b>แฟ้มผลงาน</b></button>
+          <button className={showAiAssistant ? "active" : ""} onClick={() => setShowAiAssistant(true)}><span aria-hidden="true">AI</span><b>ผู้ช่วย AI</b><em>ใหม่</em></button>
           {!isEmployeeUser && <>
             <button className={view === "office" ? "active" : ""} onClick={() => setView("office")}><span aria-hidden="true">⌂</span><b>สำนักงานจำลอง</b><em>{officePressureCount}</em></button>
             <button className={view === "overview" ? "active" : ""} onClick={() => setView("overview")}><span aria-hidden="true">◫</span><b>ภาพรวมทีม</b></button>
@@ -2943,6 +3001,7 @@ export default function Home() {
         </div>
       )}
 
+      <AiAssistant open={showAiAssistant} context={peopleAiContext} onOpen={() => setShowAiAssistant(true)} onClose={() => setShowAiAssistant(false)} onSystemAction={handlePeopleAiAction} />
       <div className={`toast ${toast ? "show" : ""}`} role="status"><span>✓</span>{toast}</div>
     </main>
   );

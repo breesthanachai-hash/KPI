@@ -10,11 +10,12 @@ test("builds the People Pulse KPI product bundle", async () => {
   const pageAssetName = assetNames.find((name) => /^page-.*\.js$/.test(name));
   assert.ok(pageAssetName, "expected a built page asset");
 
-  const [pageAsset, layout, styles, office3D, packageJson] = await Promise.all([
+  const [pageAsset, layout, styles, office3D, aiAssistant, packageJson] = await Promise.all([
     readFile(new URL(pageAssetName, assetRoot), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../app/office-3d.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/ai-assistant.tsx", import.meta.url), "utf8"),
     readFile(new URL("../package.json", import.meta.url), "utf8"),
   ]);
   assert.match(pageAsset, /PEOPLE PULSE/);
@@ -124,6 +125,13 @@ test("builds the People Pulse KPI product bundle", async () => {
   assert.match(pageAsset, /ให้แต่ละคนเห็นเฉพาะสิ่งที่ควรเห็น/);
   assert.match(pageAsset, /งานของฉัน/);
   assert.match(pageAsset, /saveUserAccount/);
+  assert.match(pageAsset, /ผู้ช่วย AI/);
+  assert.match(pageAsset, /People AI/);
+  assert.match(aiAssistant, /จัดลำดับงานวันนี้/);
+  assert.match(aiAssistant, /ช่วยวิเคราะห์ KPI/);
+  assert.match(aiAssistant, /AI-assisted Editing/);
+  assert.match(aiAssistant, /วิเคราะห์จากข้อมูลที่คุณมีสิทธิ์เห็นเท่านั้น/);
+  assert.match(aiAssistant, /people-pulse-ai-chat/);
   assert.match(pageAsset, /PEOPLE &amp; WORK OS|PEOPLE & WORK OS/);
   assert.doesNotMatch(pageAsset, /NEURAL CORE|LIVE DATA STREAM|ERA 3000/);
   assert.match(pageAsset, /รายละเอียดสกิล \(ปัจจุบัน\/เป้าหมาย\)/);
@@ -147,6 +155,8 @@ test("builds the People Pulse KPI product bundle", async () => {
   assert.match(styles, /hero-leg-walk/);
   assert.match(styles, /Modern Nature theme/);
   assert.match(styles, /Contrast balance/);
+  assert.match(styles, /People AI/);
+  assert.match(styles, /ai-assistant-panel/);
   assert.match(styles, /calm-shell/);
   assert.match(styles, /prefers-reduced-motion/);
   assert.doesNotMatch(pageAsset, /Your site is taking shape|Building your site|codex-preview/i);
