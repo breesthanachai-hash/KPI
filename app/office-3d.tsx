@@ -41,6 +41,10 @@ type OfficeRoom = "open" | "creative" | "meeting" | "manager" | "ceo" | "lounge"
 
 type OfficeVisualMode = "cinematic" | "interactive";
 
+type CampusActivity = "walking" | "working" | "talking" | "coffee" | "resting" | "hero";
+
+type CampusWaypoint = { x: number; y: number; room: OfficeRoom; activity: Exclude<CampusActivity, "walking"> };
+
 type OfficeGag = "air-guitar" | "coffee-toast" | "robot-glitch" | "hero-pose" | "tiny-dance" | "cape-drama";
 
 type HeroCostume = {
@@ -75,16 +79,39 @@ const originalHeroCostumes: HeroCostume[] = [
 
 const officeGags: OfficeGag[] = ["air-guitar", "coffee-toast", "robot-glitch", "hero-pose", "tiny-dance", "cape-drama"];
 
-const cinematicWorkerSlots = [
-  { left: 20, top: 40, room: "open" },
-  { left: 34, top: 48, room: "open" },
-  { left: 59, top: 25, room: "manager" },
-  { left: 72, top: 16, room: "ceo" },
-  { left: 66, top: 48, room: "creative" },
-  { left: 49, top: 73, room: "cafe" },
-  { left: 82, top: 72, room: "lounge" },
-  { left: 18, top: 68, room: "meeting" },
-] satisfies { left: number; top: number; room: OfficeRoom }[];
+const campusWaypoints: Record<OfficeRoom, CampusWaypoint[]> = {
+  open: [
+    { x: 13, y: 42, room: "open", activity: "working" }, { x: 26, y: 35, room: "open", activity: "working" },
+    { x: 36, y: 48, room: "open", activity: "working" }, { x: 31, y: 53, room: "open", activity: "talking" },
+  ],
+  ceo: [
+    { x: 61, y: 23, room: "ceo", activity: "working" }, { x: 55, y: 30, room: "ceo", activity: "hero" },
+  ],
+  manager: [
+    { x: 80, y: 27, room: "manager", activity: "working" }, { x: 88, y: 30, room: "manager", activity: "talking" },
+  ],
+  creative: [
+    { x: 66, y: 48, room: "creative", activity: "working" }, { x: 79, y: 51, room: "creative", activity: "working" },
+    { x: 90, y: 48, room: "creative", activity: "hero" }, { x: 74, y: 59, room: "creative", activity: "talking" },
+  ],
+  meeting: [
+    { x: 16, y: 78, room: "meeting", activity: "talking" }, { x: 27, y: 82, room: "meeting", activity: "talking" },
+    { x: 23, y: 70, room: "meeting", activity: "hero" },
+  ],
+  cafe: [
+    { x: 43, y: 84, room: "cafe", activity: "coffee" }, { x: 55, y: 83, room: "cafe", activity: "coffee" },
+    { x: 61, y: 73, room: "cafe", activity: "talking" },
+  ],
+  lounge: [
+    { x: 76, y: 82, room: "lounge", activity: "resting" }, { x: 88, y: 83, room: "lounge", activity: "resting" },
+    { x: 83, y: 72, room: "lounge", activity: "talking" },
+  ],
+};
+
+const campusCorridors: CampusWaypoint[] = [
+  { x: 46, y: 50, room: "open", activity: "hero" }, { x: 51, y: 58, room: "open", activity: "talking" },
+  { x: 43, y: 63, room: "cafe", activity: "coffee" }, { x: 60, y: 64, room: "creative", activity: "hero" },
+];
 
 const gagLabels: Record<OfficeGag, string> = {
   "air-guitar": "โซโล่กีตาร์ล่องหน",
@@ -645,6 +672,233 @@ function funnyConversation(person: Office3DPerson, costume: HeroCostume, gag: Of
   return lines[index % lines.length];
 }
 
+type CampusAgent = {
+  person: Office3DPerson;
+  x: number;
+  y: number;
+  target: CampusWaypoint;
+  pauseUntil: number;
+  speed: number;
+  seed: number;
+};
+
+function colorHex(color: number) {
+  return `#${color.toString(16).padStart(6, "0")}`;
+}
+
+function activityLabel(activity: CampusActivity) {
+  return {
+    walking: "กำลังเดินไปภารกิจใหม่",
+    working: "กำลังทำงาน",
+    talking: "กำลังคุยกับทีม",
+    coffee: "กำลังเติมพลัง",
+    resting: "กำลังพัก",
+    hero: "กำลังกู้เดดไลน์",
+  }[activity];
+}
+
+function CampusHero({
+  person,
+  costume,
+  gag,
+  index,
+  setRef,
+  onSelect,
+}: {
+  person: Office3DPerson;
+  costume: HeroCostume;
+  gag: OfficeGag;
+  index: number;
+  setRef: (element: HTMLButtonElement | null) => void;
+  onSelect: () => void;
+}) {
+  const heroStyle = {
+    "--hero-primary": colorHex(costume.primary),
+    "--hero-secondary": colorHex(costume.secondary),
+    "--hero-accent": colorHex(costume.accent),
+    "--hero-delay": `${index * -.17}s`,
+  } as React.CSSProperties;
+
+  return (
+    <button
+      ref={setRef}
+      type="button"
+      className="autonomous-hero"
+      data-activity="walking"
+      data-level={person.level}
+      data-facing={index % 2 ? "left" : "right"}
+      data-employee-id={person.id}
+      style={heroStyle}
+      onClick={onSelect}
+      aria-label={`เปิดโปรไฟล์ ${person.name} ${person.role} ภาระงาน ${person.loadPercent} เปอร์เซ็นต์`}
+    >
+      <span className="hero-ground-shadow" aria-hidden="true" />
+      <span className="hero-bubble" aria-hidden="true">
+        <i className="bubble-walking">ไปภารกิจใหม่!</i>
+        <i className="bubble-working">ปั่นงานอยู่!</i>
+        <i className="bubble-talking">ขอคุยแป๊บ!</i>
+        <i className="bubble-coffee">เติมพลัง!</i>
+        <i className="bubble-resting">พักสมอง...</i>
+        <i className="bubble-hero">เดดไลน์จงถอยไป!</i>
+      </span>
+      <span className="hero-avatar" aria-hidden="true">
+        {costume.cape && <span className="hero-cape" />}
+        <span className="hero-headgear" data-gear={costume.headgear}><i /><b /><em /></span>
+        <span className="hero-head"><i className="hero-hair" />{costume.mask && <i className="hero-mask" />}<i className="hero-eye eye-left" /><i className="hero-eye eye-right" /><i className="hero-mouth" /></span>
+        <span className="hero-neck" />
+        <span className="hero-body"><i className="hero-chest-mark">✦</i><i className="hero-belt" /></span>
+        <span className="hero-arm arm-left"><i className="hero-glove" /></span>
+        <span className="hero-arm arm-right"><i className="hero-glove" /><i className="hero-action-prop" /></span>
+        <span className="hero-leg leg-left"><i className="hero-boot" /></span>
+        <span className="hero-leg leg-right"><i className="hero-boot" /></span>
+      </span>
+      <span className="hero-nameplate">
+        <b>{person.name.split(" ")[0]}</b>
+        <small>{person.role}</small>
+        <em><i />{person.loadPercent}% · {gagLabels[gag]}</em>
+      </span>
+    </button>
+  );
+}
+
+function CinematicCampus({
+  people,
+  dateKey,
+  funCycle,
+  motionEnabled,
+  onSelect,
+}: {
+  people: Office3DPerson[];
+  dateKey: string;
+  funCycle: number;
+  motionEnabled: boolean;
+  onSelect: (employeeId: string) => void;
+}) {
+  const heroRefs = useRef(new Map<string, HTMLButtonElement>());
+  const motionEnabledRef = useRef(motionEnabled);
+
+  useEffect(() => { motionEnabledRef.current = motionEnabled; }, [motionEnabled]);
+
+  useEffect(() => {
+    const allWaypoints = Object.values(campusWaypoints).flat();
+    const agents: CampusAgent[] = people.map((person, index) => {
+      const homeRoom = roomFor(person, index);
+      const homePoints = campusWaypoints[homeRoom];
+      const start = homePoints[index % homePoints.length];
+      const next = homePoints[(index + 1) % homePoints.length];
+      return {
+        person,
+        x: start.x + ((index % 3) - 1) * .75,
+        y: start.y + (index % 2 ? .45 : -.45),
+        target: next,
+        pauseUntil: 0,
+        speed: person.level === "overloaded" ? 4.2 : person.level === "busy" ? 3.5 : person.level === "steady" ? 2.8 : 2.2,
+        seed: stableHash(`${person.id}:${dateKey}:${funCycle}:route`),
+      };
+    });
+
+    const nextRandom = (agent: CampusAgent) => {
+      agent.seed = Math.imul(agent.seed ^ (agent.seed >>> 16), 2246822507) + 3266489909;
+      return (agent.seed >>> 0) / 4294967295;
+    };
+    const chooseTarget = (agent: CampusAgent, index: number) => {
+      const homeRoom = roomFor(agent.person, index);
+      const home = campusWaypoints[homeRoom];
+      let pool: CampusWaypoint[];
+      if (agent.person.level === "overloaded") pool = [...home, ...home, ...home, ...campusCorridors.slice(0, 2)];
+      else if (agent.person.level === "busy") pool = [...home, ...home, ...campusCorridors, ...campusWaypoints.meeting];
+      else if (agent.person.level === "steady") pool = [...home, ...campusCorridors, ...campusWaypoints.meeting, ...campusWaypoints.cafe];
+      else pool = [...allWaypoints, ...campusWaypoints.lounge, ...campusWaypoints.cafe, ...campusCorridors];
+      const waypoint = pool[Math.floor(nextRandom(agent) * pool.length) % pool.length];
+      agent.target = {
+        ...waypoint,
+        x: waypoint.x + (nextRandom(agent) - .5) * 2.2,
+        y: waypoint.y + (nextRandom(agent) - .5) * 1.4,
+      };
+      const element = heroRefs.current.get(agent.person.id);
+      if (element) {
+        element.dataset.activity = "walking";
+        element.title = `${agent.person.name} · ${activityLabel("walking")}`;
+      }
+    };
+
+    agents.forEach((agent, index) => {
+      const element = heroRefs.current.get(agent.person.id);
+      if (!element) return;
+      element.style.left = `${agent.x}%`;
+      element.style.top = `${agent.y}%`;
+      element.style.zIndex = `${20 + Math.round(agent.y)}`;
+      chooseTarget(agent, index);
+    });
+
+    let frame = 0;
+    let previous = performance.now();
+    const tick = (time: number) => {
+      const delta = Math.min((time - previous) / 1000, .05);
+      previous = time;
+      if (motionEnabledRef.current) {
+        agents.forEach((agent, index) => {
+          const element = heroRefs.current.get(agent.person.id);
+          if (!element) return;
+          if (agent.pauseUntil > time) return;
+          if (agent.pauseUntil > 0) {
+            agent.pauseUntil = 0;
+            chooseTarget(agent, index);
+          }
+          const dx = agent.target.x - agent.x;
+          const dy = agent.target.y - agent.y;
+          const distance = Math.hypot(dx, dy);
+          if (distance < .22) {
+            agent.x = agent.target.x;
+            agent.y = agent.target.y;
+            element.dataset.activity = agent.target.activity;
+            element.title = `${agent.person.name} · ${activityLabel(agent.target.activity)}`;
+            const basePause = agent.person.level === "overloaded" ? 2800 : agent.person.level === "available" ? 6200 : 4300;
+            agent.pauseUntil = time + basePause + nextRandom(agent) * 4200;
+          } else {
+            const step = Math.min(distance, agent.speed * delta);
+            agent.x += dx / distance * step;
+            agent.y += dy / distance * step;
+            element.dataset.facing = dx < 0 ? "left" : "right";
+          }
+          element.style.left = `${agent.x.toFixed(3)}%`;
+          element.style.top = `${agent.y.toFixed(3)}%`;
+          element.style.zIndex = `${20 + Math.round(agent.y)}`;
+          element.style.setProperty("--hero-scale", `${(.68 + agent.y * .0044).toFixed(3)}`);
+        });
+      }
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [people, dateKey, funCycle]);
+
+  return (
+    <div className="cinematic-campus" role="group" aria-label="สำนักงานจำลองที่มีตัวละครพนักงานเต็มตัวเดินและทำกิจกรรมอย่างอิสระ">
+      <div className="cinematic-campus-image" />
+      <div className="cinematic-scan" aria-hidden="true" />
+      <div className="cinematic-room-map" aria-hidden="true">
+        <span className="room-open">OPEN OFFICE</span><span className="room-ceo">CEO ROOM</span><span className="room-manager">MANAGER</span>
+        <span className="room-creative">CREATIVE LAB</span><span className="room-meeting">WAR ROOM</span><span className="room-cafe">POWER CAFE</span><span className="room-lounge">HERO LOUNGE</span>
+      </div>
+      <div className="autonomous-hero-layer">
+        {people.map((person, index) => (
+          <CampusHero
+            key={person.id}
+            person={person}
+            costume={costumeFor(person, dateKey, funCycle)}
+            gag={gagFor(person, dateKey, funCycle)}
+            index={index}
+            setRef={(element) => { if (element) heroRefs.current.set(person.id, element); else heroRefs.current.delete(person.id); }}
+            onSelect={() => onSelect(person.id)}
+          />
+        ))}
+      </div>
+      <div className="cinematic-campus-hud"><span><i /> AUTONOMOUS OFFICE</span><b>{people.length} HEROES ONLINE</b><small>ตัวละครทุกคนเลือกเส้นทาง ห้อง และกิจกรรมเอง · กดที่ตัวละครเพื่อเปิดงาน</small></div>
+    </div>
+  );
+}
+
 export default function Office3D({ people, onSelect }: { people: Office3DPerson[]; onSelect: (employeeId: string) => void }) {
   const shellRef = useRef<HTMLElement>(null);
   const hostRef = useRef<HTMLDivElement>(null);
@@ -1014,20 +1268,14 @@ export default function Office3D({ people, onSelect }: { people: Office3DPerson[
     costume: costumeFor(person, officeDateKey, funCycle),
     gag: gagFor(person, officeDateKey, funCycle),
   }));
-  const cinematicCast = people.slice(0, cinematicWorkerSlots.length).map((person, index) => ({
-    person,
-    slot: cinematicWorkerSlots[index],
-    costume: costumeFor(person, officeDateKey, funCycle),
-    gag: gagFor(person, officeDateKey, funCycle),
-  }));
 
   return (
     <section ref={shellRef} className={`office-3d-shell ${visualMode === "cinematic" ? "cinematic-mode" : "interactive-mode"} ${motionEnabled ? "" : "motion-paused"}`}>
       <div className="office-3d-toolbar">
-        <div><span className="office-3d-live"><i /> HERO OFFICE LIVE</span><p><strong>People Pulse Hero Campus</strong><small>7 ห้อง · ชุดใหม่ทุกวัน · พฤติกรรมอิสระตามภาระงานจริง</small></p></div>
+        <div><span className="office-3d-live"><i /> HERO OFFICE LIVE</span><p><strong>People Pulse Hero Campus</strong><small>ตัวละครเต็มตัว · เดินอิสระ · เลือกห้องและกิจกรรมตามภาระงาน</small></p></div>
         <div className="office-3d-actions">
           <div className="office-view-switch" aria-label="เลือกรูปแบบสำนักงาน">
-            <button className={visualMode === "cinematic" ? "active" : ""} onClick={() => setVisualMode("cinematic")} aria-pressed={visualMode === "cinematic"}>▦ ภาพแบบตัวอย่าง</button>
+            <button className={visualMode === "cinematic" ? "active" : ""} onClick={() => setVisualMode("cinematic")} aria-pressed={visualMode === "cinematic"}>▦ ตัวละครอิสระ</button>
             <button className={visualMode === "interactive" ? "active" : ""} onClick={() => setVisualMode("interactive")} aria-pressed={visualMode === "interactive"}>◇ 3D หมุนได้</button>
           </div>
           <button className={ambienceEnabled ? "active" : ""} onClick={() => void toggleAmbience()} aria-pressed={ambienceEnabled}>{ambienceEnabled ? "🔊 เสียงทำงาน" : "🔈 เปิดบรรยากาศ"}</button>
@@ -1046,34 +1294,7 @@ export default function Office3D({ people, onSelect }: { people: Office3DPerson[
         </div>
       </div>
       {visualMode === "cinematic" ? (
-        <div className="cinematic-campus" role="img" aria-label="People Pulse Hero Office Campus แบบภาพมุมสูง แบ่งเป็นสำนักงานหลายห้อง">
-          <div className="cinematic-campus-image" />
-          <div className="cinematic-scan" aria-hidden="true" />
-          <div className="cinematic-room-map" aria-hidden="true">
-            <span className="room-open">OPEN OFFICE</span>
-            <span className="room-ceo">CEO ROOM</span>
-            <span className="room-manager">MANAGER</span>
-            <span className="room-creative">CREATIVE LAB</span>
-            <span className="room-meeting">WAR ROOM</span>
-            <span className="room-cafe">POWER CAFE</span>
-            <span className="room-lounge">HERO LOUNGE</span>
-          </div>
-          <div className="cinematic-worker-layer">
-            {cinematicCast.map(({ person, slot, costume, gag }, index) => (
-              <button
-                key={person.id}
-                className={`cinematic-worker worker-${person.level} behavior-${person.behavior}`}
-                style={{ left: `${slot.left}%`, top: `${slot.top}%`, "--worker-color": `#${costume.primary.toString(16).padStart(6, "0")}`, "--worker-delay": `${index * -.34}s` } as React.CSSProperties}
-                onClick={() => onSelectRef.current(person.id)}
-                aria-label={`เปิดงานของ ${person.name} ${person.role}`}
-              >
-                <i>{person.initials}</i>
-                <span><b>{person.name.split(" ")[0]}</b><small>{person.currentTask}</small><em>{person.loadPercent}% · {gagLabels[gag]}</em></span>
-              </button>
-            ))}
-          </div>
-          <div className="cinematic-campus-hud"><span><i /> LIVE WORKLOAD</span><b>{people.length} HEROES ONLINE</b><small>กดตัวละครเพื่อเปิดงาน · ชุดและมุกเปลี่ยนทุกวัน</small></div>
-        </div>
+        <CinematicCampus people={people} dateKey={officeDateKey} funCycle={funCycle} motionEnabled={motionEnabled} onSelect={(employeeId) => onSelectRef.current(employeeId)} />
       ) : (
         <div ref={hostRef} className="office-3d-canvas">{error && <div className="office-3d-error"><span>!</span><strong>เปิดฉาก 3D ไม่สำเร็จ</strong><p>{error}</p></div>}</div>
       )}
