@@ -1973,3 +1973,160 @@ footer { border-top-color: var(--line); color: var(--muted); letter-spacing: 0; 
   .topbar nav button.active { background: var(--forest); color: white; }
   .brand strong { color: var(--forest); }
 }
+
+/* Contrast balance · WCAG-friendly text hierarchy */
+:root {
+  --forest: #255a4e;
+  --forest-light: #39786b;
+  --terra: #a9433a;
+  --ink: #1f2f2a;
+  --muted: #52645d;
+  --line: #d3dfd9;
+}
+
+.dashboard { color: var(--ink); }
+.dashboard :is(h1,h2,h3,h4) { color: var(--ink) !important; }
+.dashboard :is(strong,b) { color: var(--ink); }
+.dashboard p:not(.eyebrow),
+.dashboard small,
+.dashboard label,
+.modal-backdrop p:not(.eyebrow),
+.modal-backdrop small,
+.modal-backdrop label { color: var(--muted) !important; }
+
+.metric-card,
+.simple-todo-card,.todo-focus-card,.project-pulse-card,.points-leaderboard-card,.work-board-card,.points-operations-card,.reward-center-card,
+.role-card,.spotlight-card,.directory-card,.skill-summary-card,.skill-matrix-card,.development-card,
+.workforce-board,.talent-action-center,.salary-band-card,.individual-skills-card,.portfolio-finder-card,.power-roster-card,.power-arena,
+.access-form-card,.access-rights-card,.access-account-card,.dossier-main,.dossier-roster,.people-ops-shell,.office-role-demo,
+.todo-agenda,.todo-table,.project-pulse,.point-event-form,.point-ledger-panel,.reward-catalog > article,.profile-detail-card,.application-documents-card,.contracts-card,
+.dossier-metrics article,.individual-skill-card,.radar-card,.talent-action-list article,.salary-band-grid article,.matchup-person,.submission-history,.submission-form,
+.submission-list > article,.portfolio-assets a,.portfolio-assets button,.attendance-roster article,.growth-summary-grid article,.growth-team-list article {
+  color: var(--ink);
+}
+
+.dashboard :is(input,select,textarea) { color: var(--ink) !important; }
+.dashboard :is(input,textarea)::placeholder { color: #75877f; opacity: 1; }
+.dashboard a { color: var(--forest); text-decoration-color: #8daf9f; text-underline-offset: 3px; }
+.dashboard a:hover { color: #173f35; text-decoration-color: currentColor; }
+.secondary-button,
+.simple-task-actions button,
+.work-ticket-actions button,
+.contract-actions :is(a,button),
+.access-account-actions button { color: var(--forest) !important; }
+
+.primary-button,
+.simple-task-actions button.primary,
+.todo-focus-heading > button,
+.reward-cost button,
+.portfolio-state button,
+.team-builder-card > button,
+.point-event-form > button,
+.work-ticket-actions button.proof,
+.contract-actions button,
+.access-form-actions button.primary {
+  background: var(--forest) !important;
+  border-color: var(--forest) !important;
+  color: #fff !important;
+}
+.primary-button :is(span,strong,small,b),
+.simple-task-actions button.primary :is(span,strong,small,b),
+.todo-focus-heading > button :is(span,strong,small,b),
+.reward-cost button :is(span,strong,small,b),
+.portfolio-state button :is(span,strong,small,b),
+.team-builder-card > button :is(span,strong,small,b),
+.point-event-form > button :is(span,strong,small,b),
+.work-ticket-actions button.proof :is(span,strong,small,b),
+.contract-actions button :is(span,strong,small,b),
+.access-form-actions button.primary :is(span,strong,small,b) { color: #fff !important; }
+
+.work-kind,.work-priority,.proof-status,.contract-status,.access-role-pill,.access-status,.simple-task-status {
+  border: 1px solid transparent;
+  font-weight: 900;
+}
+.work-kind.task { border-color: #bfd8cc; background: #e4f1eb; color: #25594d; }
+.work-kind.request { border-color: #c9d4e9; background: #eaf0f9; color: #34547d; }
+.work-kind.mission { border-color: #e8d29b; background: #fbefd3; color: #77500c; }
+.work-priority { border-color: #d6ded9; background: #eef1ef; color: #53645d; }
+.work-priority.high { border-color: #e5cb8d; background: #faecc8; color: #76500f; }
+.work-priority.urgent { border-color: #e8bdb7; background: #fae8e4; color: #963d34; }
+.proof-status,.contract-status.sent,.contract-status.viewed,.simple-task-status.in_progress {
+  border-color: #e5cb8d; background: #faedcf; color: #76500f;
+}
+.proof-status.approved,.contract-status.signed,.access-status.active,.simple-task-status.done {
+  border-color: #bfd7c7; background: #e7f1e9; color: #356044;
+}
+.proof-status.revision,.simple-task-status.review {
+  border-color: #e8bdb7; background: #fae8e4; color: #963d34;
+}
+.access-role-pill { border-color: #e4cf9d; background: #fbefd2; color: #74500f; }
+.access-role-pill.admin { border-color: #b9d4c8; background: #e3f0ea; color: #285c4e; }
+.access-role-pill.manager { border-color: #c7d5ea; background: #e8eef8; color: #3a5982; }
+.access-status.inactive { border-color: #d5ddda; background: #edf0ef; color: #5e6e68; }
+.simple-task-status { border-color: #bdd5ca; background: #e5f0eb; color: #285b4f; }
+
+.monthly-points-panel,.redemption-history,.portfolio-owner-banner,.power-hero-card,.portfolio-hero-card,.access-hero-card,.office-command-center,.todo-priority-panel {
+  color: #fff;
+}
+.monthly-points-panel :is(h1,h2,h3,h4,strong,b),
+.redemption-history :is(h1,h2,h3,h4,strong,b),
+.portfolio-owner-banner :is(h1,h2,h3,h4,strong,b),
+.power-hero-card :is(h1,h2,h3,h4,strong,b),
+.portfolio-hero-card :is(h1,h2,h3,h4,strong,b),
+.access-hero-card :is(h1,h2,h3,h4,strong,b),
+.office-command-center :is(h1,h2,h3,h4,strong,b),
+.todo-priority-panel :is(h1,h2,h3,h4,strong,b) { color: #fff !important; }
+.monthly-points-panel :is(p,small),
+.redemption-history :is(p,small),
+.portfolio-owner-banner :is(p,small),
+.power-hero-card :is(p,small),
+.portfolio-hero-card :is(p,small),
+.access-hero-card :is(p,small),
+.office-command-center :is(p,small),
+.todo-priority-panel :is(p,small) { color: #dce9e4 !important; }
+.todo-priority-panel .eyebrow,
+.todo-priority-panel button > b { color: #f5d58c !important; }
+.todo-priority-panel button > span { color: #ffe3a5; }
+.todo-priority-panel .clear { color: #dce9e4; }
+
+.modal-header :is(h1,h2,h3,h4,strong,b,span),
+.submission-hero :is(h1,h2,h3,h4,strong,b,span),
+.profile-editor-hero :is(h1,h2,h3,h4,strong,b,span),
+.contract-form-hero :is(h1,h2,h3,h4,strong,b,span),
+.signature-hero :is(h1,h2,h3,h4,strong,b,span),
+.reward-modal-hero :is(h1,h2,h3,h4,strong,b,span),
+.work-form-hero :is(h1,h2,h3,h4,strong,b,span) { color: #fff !important; }
+.modal-header :is(p,small),
+.submission-hero :is(p,small),
+.profile-editor-hero :is(p,small),
+.contract-form-hero :is(p,small),
+.signature-hero :is(p,small),
+.reward-modal-hero :is(p,small),
+.work-form-hero :is(p,small) { color: #dce9e4 !important; }
+
+.office-native-3d-badge {
+  border-color: #9dc0b1;
+  background: #e7f1ec;
+  color: var(--forest);
+  box-shadow: none;
+}
+.office-3d-world-hud {
+  border-color: rgba(61,101,87,.24);
+  background: rgba(255,255,255,.93);
+  color: var(--ink);
+  box-shadow: 0 8px 24px rgba(31,47,42,.15);
+}
+.office-3d-world-hud span { color: var(--forest); }
+.office-3d-world-hud span i { background: #3b806f; box-shadow: 0 0 0 4px rgba(59,128,111,.13); }
+.office-3d-world-hud b { color: var(--ink); }
+.office-3d-world-hud small { color: var(--muted) !important; text-shadow: none; }
+
+.toast { border-color: #1d493f; background: #214f45; color: #fff; }
+.toast :is(strong,b,p,small) { color: #fff !important; }
+
+@media (min-width: 1181px) {
+  .topbar nav button { color: #dce9e4; }
+  .topbar nav button > :is(span,em) { color: #dce9e4; }
+  .topbar .brand small,.topbar .nav-section-label,.topbar .period-label,.topbar .current-user-chip small { color: #c8dbd4; }
+  .topbar nav button.active,.topbar nav button.active > :is(span,em) { color: #214f45; }
+}

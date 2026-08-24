@@ -146,6 +146,7 @@ test("builds the People Pulse KPI product bundle", async () => {
   assert.match(styles, /office-3d-world-hud/);
   assert.match(styles, /hero-leg-walk/);
   assert.match(styles, /Modern Nature theme/);
+  assert.match(styles, /Contrast balance/);
   assert.match(styles, /calm-shell/);
   assert.match(styles, /prefers-reduced-motion/);
   assert.doesNotMatch(pageAsset, /Your site is taking shape|Building your site|codex-preview/i);
