@@ -19,7 +19,7 @@ test("builds the People Pulse KPI product bundle", async () => {
   ]);
   assert.match(pageAsset, /PEOPLE PULSE/);
   assert.match(pageAsset, /ภาพรวม KPI พนักงาน/);
-  assert.match(pageAsset, /TO-DO &amp; PEOPLE SYSTEM|TO-DO & PEOPLE SYSTEM/);
+  assert.match(pageAsset, /QUANTUM PEOPLE OS/);
   assert.match(pageAsset, /saveEvaluation/);
   assert.match(pageAsset, /สกิลรายบุคคล/);
   assert.match(pageAsset, /INDIVIDUAL SKILL PROFILE/);
@@ -103,9 +103,13 @@ test("builds the People Pulse KPI product bundle", async () => {
   assert.match(pageAsset, /ให้แต่ละคนเห็นเฉพาะสิ่งที่ควรเห็น/);
   assert.match(pageAsset, /งานและภารกิจของฉัน/);
   assert.match(pageAsset, /saveUserAccount/);
+  assert.match(pageAsset, /QUANTUM PEOPLE OS/);
+  assert.match(pageAsset, /NEURAL CORE/);
+  assert.match(pageAsset, /LIVE DATA STREAM/);
+  assert.match(pageAsset, /ERA 3000/);
   assert.match(pageAsset, /รายละเอียดสกิล \(ปัจจุบัน\/เป้าหมาย\)/);
-  assert.match(layout, /People Pulse — HR OS จัดการคน งาน เวลา และการเติบโต/);
-  assert.match(layout, /\/og\.png/);
+  assert.match(layout, /People Pulse 3000 — ศูนย์บัญชาการบุคลากรแห่งอนาคต/);
+  assert.match(layout, /\/og-3000\.png/);
   assert.match(styles, /Modern workspace refresh/);
   assert.match(styles, /app-shell \{ padding-left: 248px/);
   assert.match(styles, /nav-section-label/);
@@ -113,6 +117,9 @@ test("builds the People Pulse KPI product bundle", async () => {
   assert.match(styles, /office-timeline-play/);
   assert.match(styles, /Interactive 3D office world/);
   assert.match(styles, /office-3d-canvas/);
+  assert.match(styles, /PEOPLE PULSE 3000/);
+  assert.match(styles, /future-grid-plane/);
+  assert.match(styles, /future-scan-beam/);
   assert.match(styles, /prefers-reduced-motion/);
   assert.doesNotMatch(pageAsset, /Your site is taking shape|Building your site|codex-preview/i);
 });

@@ -1649,12 +1649,14 @@ export default function Home() {
   }
 
   return (
-    <main className="app-shell">
+    <main className="app-shell future-shell">
+      <div className="future-ambient" aria-hidden="true"><i className="future-orb orb-one" /><i className="future-orb orb-two" /><i className="future-grid-plane" /><i className="future-scan-beam" /></div>
       <header className="topbar">
         <button className="brand" onClick={() => setView("work")} aria-label="ไปที่ทูดูลิส">
           <span className="brand-mark" aria-hidden="true"><i /><i /><i /></span>
-          <span><strong>PEOPLE PULSE</strong><small>TO-DO &amp; PEOPLE SYSTEM</small></span>
+          <span><strong>PEOPLE PULSE</strong><small>QUANTUM PEOPLE OS · 3000</small></span>
         </button>
+        <div className="future-core-status"><i /><span>NEURAL CORE</span><b>ONLINE</b></div>
         <nav aria-label="เมนูหลัก">
           <span className="nav-section-label">พื้นที่ทำงาน</span>
           <button className={view === "work" ? "active" : ""} onClick={() => setView("work")}><span aria-hidden="true">✓</span><b>ทูดูลิส</b><em>{workItems.filter((item) => item.status !== "done").length}</em></button>
@@ -1695,6 +1697,7 @@ export default function Home() {
             <p className="eyebrow">{viewMeta[view].eyebrow}</p>
             <h1>{activeViewTitle}</h1>
             <p>{activeViewDescription}</p>
+            <div className="future-heading-meta"><span><i /> LIVE DATA STREAM</span><span>SECTOR / {view.toUpperCase()}</span><span>ERA 3000</span></div>
           </div>
           {!isEmployeeUser && view !== "access" && <div className="heading-actions">
             <button className="secondary-button" onClick={() => view === "work" ? setShowProjectForm(true) : view === "office" ? setView("work") : view === "peopleOps" ? buildGrowthTeam() : view === "profiles" ? showToast(`${requiredDocumentTypes.length - verifiedRequiredDocuments} เอกสารจำเป็นยังตรวจไม่ครบ`) : view === "power" ? showToast("ค่าพลังรวมมาจากค่าสกิล 70% และ KPI 30%") : view === "portfolio" ? exportPortfolioReport() : exportReport()}><span aria-hidden="true">{view === "work" ? "◇" : view === "office" ? "✓" : view === "peopleOps" ? "♙" : view === "profiles" ? "▣" : view === "power" ? "i" : "↓"}</span> {view === "work" ? "สร้างโปรเจกต์" : view === "office" ? "เปิดทูดูลิส" : view === "peopleOps" ? "สร้างทีมจากสกิล" : view === "profiles" ? "เช็กเอกสารที่ขาด" : view === "power" ? "วิธีคำนวณ" : view === "portfolio" ? "ส่งออกแฟ้ม CSV" : "ส่งออกรายงาน"}</button>
@@ -2637,7 +2640,7 @@ export default function Home() {
         )}
       </section>
 
-      <footer><span>PEOPLE PULSE</span><p>Smart To-do · 3D Office World · Profile · KPI · Skill · Work Portfolio · Reward</p></footer>
+      <footer><span>PEOPLE PULSE // 3000</span><p>NEURAL WORKFORCE CORE · SMART TO-DO · KPI · SKILL MATRIX · REWARD GRID</p></footer>
 
       {showProfileEditor && profileEmployee && (
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setShowProfileEditor(false)}>
