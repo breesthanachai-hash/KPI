@@ -1039,7 +1039,7 @@ export default function Office3D({ people, onSelect }: { people: Office3DPerson[
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.32;
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
     renderer.domElement.setAttribute("aria-label", "ออฟฟิศสามมิติแบบโต้ตอบ หมุนกล้องด้วยการลากและซูมด้วยล้อเมาส์");
     renderer.domElement.setAttribute("role", "img");
     host.appendChild(renderer.domElement);
@@ -1260,10 +1260,11 @@ export default function Office3D({ people, onSelect }: { people: Office3DPerson[
     });
     resizeObserver.observe(host);
 
-    const clock = new THREE.Clock();
+    let previousFrame = performance.now();
     let elapsed = 0;
-    renderer.setAnimationLoop(() => {
-      const delta = Math.min(clock.getDelta(), .04);
+    renderer.setAnimationLoop((time) => {
+      const delta = Math.min(Math.max((time - previousFrame) / 1000, 0), .04);
+      previousFrame = time;
       if (motionRef.current) elapsed += delta;
       rigs.forEach((rig, index) => {
         if (!motionRef.current) return;
