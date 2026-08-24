@@ -136,6 +136,7 @@ test("builds the People Pulse KPI product bundle", async () => {
   assert.doesNotMatch(pageAsset, /NEURAL CORE|LIVE DATA STREAM|ERA 3000/);
   assert.match(pageAsset, /รายละเอียดสกิล \(ปัจจุบัน\/เป้าหมาย\)/);
   assert.match(layout, /People Pulse — ระบบจัดการคนและงานที่ใช้ง่าย/);
+  assert.match(layout, /@fontsource-variable\/noto-sans-thai\/wght\.css/);
   assert.doesNotMatch(layout, /\/og-hero-campus\.png/);
   assert.match(styles, /Modern workspace refresh/);
   assert.match(styles, /app-shell \{ padding-left: 248px/);
@@ -157,6 +158,9 @@ test("builds the People Pulse KPI product bundle", async () => {
   assert.match(styles, /Contrast balance/);
   assert.match(styles, /People AI/);
   assert.match(styles, /ai-assistant-panel/);
+  assert.match(styles, /Unified Thai typography/);
+  assert.match(styles, /Noto Sans Thai Variable/);
+  assert.match(office3D, /Noto Sans Thai Variable/);
   assert.match(styles, /calm-shell/);
   assert.match(styles, /prefers-reduced-motion/);
   assert.doesNotMatch(pageAsset, /Your site is taking shape|Building your site|codex-preview/i);

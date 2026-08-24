@@ -2385,3 +2385,83 @@ footer { border-top-color: var(--line); color: var(--muted); letter-spacing: 0; 
 @media (prefers-reduced-motion: reduce) {
   .ai-assistant-layer.open :is(.ai-assistant-backdrop,.ai-assistant-panel),.ai-thinking-dots i { animation: none; }
 }
+
+/* Unified Thai typography · elegant and easy to read */
+:root {
+  --font-ui: "Noto Sans Thai Variable", "Noto Sans Thai", "Leelawadee UI", Thonburi, Tahoma, sans-serif;
+}
+
+html { font-size: 16px; }
+body,
+body :where(*) {
+  font-family: var(--font-ui) !important;
+  font-kerning: normal;
+}
+body {
+  font-size: 17px;
+  font-weight: 430;
+  line-height: 1.62;
+  letter-spacing: 0;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+:where(h1,h2,h3,h4,h5,h6) {
+  font-weight: 760 !important;
+  line-height: 1.28 !important;
+  letter-spacing: -.018em !important;
+}
+:where(strong,b) { font-weight: 700; }
+:where(p,li,dd,dt,label,small,em) { letter-spacing: 0; }
+:where(button,input,select,textarea) {
+  font-weight: 540;
+  letter-spacing: 0;
+}
+
+.page-heading h1 { font-weight: 780 !important; line-height: 1.2 !important; letter-spacing: -.025em !important; }
+.page-heading p:not(.eyebrow) { line-height: 1.72 !important; }
+.dashboard :is(h2,h3,h4) { font-weight: 730 !important; }
+.dashboard :is(p,small,label) { font-weight: 430; }
+.dashboard :is(input,select,textarea) { font-weight: 500; }
+.dashboard :is(strong,b) { font-weight: 690; }
+
+.brand strong { font-weight: 780; letter-spacing: .055em; }
+.brand small { font-weight: 520; letter-spacing: .08em; }
+.nav-section-label { font-weight: 650; letter-spacing: .06em; }
+.topbar nav button,
+.current-user-chip strong { font-weight: 620; }
+.topbar nav button > em,
+.current-user-chip small { font-weight: 520; }
+
+.eyebrow,
+.dashboard .eyebrow {
+  font-weight: 720 !important;
+  letter-spacing: .055em !important;
+}
+.metric-card > strong,
+.modal-score-summary strong,
+.power-hero-score strong,
+.power-card-rating strong,
+.power-stat-grid b,
+.table-score strong { font-weight: 760 !important; letter-spacing: -.02em; }
+
+.matrix-period,.work-priority,.work-kind,.proof-status,.contract-status,.access-role-pill,.access-status,.simple-task-status {
+  font-weight: 650 !important;
+  letter-spacing: .005em !important;
+}
+.primary-button,.secondary-button,
+.simple-task-actions button,
+.ai-quick-prompts button,
+.ai-message-actions button { font-weight: 650 !important; }
+
+.ai-assistant-brand h2 { font-weight: 760 !important; letter-spacing: -.015em !important; }
+.ai-message-body p { font-weight: 440; line-height: 1.72; }
+.ai-assistant-composer textarea { font-weight: 450; line-height: 1.58; }
+
+.signature-name-field em { font-style: normal; font-weight: 520; letter-spacing: .01em; }
+
+@media (max-width: 760px) {
+  body { font-size: 16px; line-height: 1.6; }
+  .page-heading h1 { line-height: 1.24 !important; }
+}

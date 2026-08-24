@@ -188,10 +188,10 @@ function createTextSprite(title: string, subtitle: string, accent = 0x63f6ff, wi
   context.lineWidth = 4;
   context.stroke();
   context.fillStyle = `#${accent.toString(16).padStart(6, "0")}`;
-  context.font = "800 35px sans-serif";
+  context.font = '800 35px "Noto Sans Thai Variable", sans-serif';
   context.fillText(title, 34, 65, canvas.width - 68);
   context.fillStyle = "#a9c6d7";
-  context.font = "600 23px sans-serif";
+  context.font = '600 23px "Noto Sans Thai Variable", sans-serif';
   context.fillText(subtitle, 34, 112, canvas.width - 68);
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -459,13 +459,13 @@ function createLabelSprite(person: Office3DPerson, costume: HeroCostume, gag: Of
   context.arc(47, 53, 14, 0, Math.PI * 2);
   context.fill();
   context.fillStyle = "#15372e";
-  context.font = "700 34px sans-serif";
+  context.font = '700 34px "Noto Sans Thai Variable", sans-serif';
   context.fillText(person.name, 78, 65, 520);
   context.fillStyle = "#708079";
-  context.font = "600 23px sans-serif";
+  context.font = '600 23px "Noto Sans Thai Variable", sans-serif';
   context.fillText(`${person.role} · ${costume.name}`, 30, 105, 570);
   context.fillStyle = "#315c4d";
-  context.font = "700 18px sans-serif";
+  context.font = '700 18px "Noto Sans Thai Variable", sans-serif';
   context.fillText(`${roomLabels[room]} · ${behaviorLabels[person.behavior]} · ${gagLabels[gag]}`, 30, 138, 575);
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -542,7 +542,7 @@ function createCharacter(person: Office3DPerson, costume: HeroCostume, gag: Offi
     badgeContext.roundRect(14, 23, 100, 82, 19);
     badgeContext.fill();
     badgeContext.fillStyle = "#23443a";
-    badgeContext.font = "700 43px sans-serif";
+    badgeContext.font = '700 43px "Noto Sans Thai Variable", sans-serif';
     badgeContext.textAlign = "center";
     badgeContext.fillText(person.initials, 64, 78, 92);
   }
