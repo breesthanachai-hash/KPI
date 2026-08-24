@@ -430,7 +430,7 @@ const viewMeta: Record<View, { eyebrow: string; title: string; description: stri
   hr: { eyebrow: "WORKFORCE MANAGEMENT", title: "บริหารทรัพยากรบุคคล", description: "เชื่อมผลงาน สกิล การทดสอบ แผนพัฒนา ตำแหน่งที่เหมาะสม และค่าตอบแทน เพื่อการตัดสินใจที่รอบด้าน" },
   portfolio: { eyebrow: "EMPLOYEE WORK PORTFOLIO", title: "แฟ้มผลงานพนักงาน", description: "ค้นหางานที่ส่งมอบแล้ว ไฟล์ ลิงก์ ผู้ตรวจ และผลประเมินของแต่ละคนได้จากที่เดียว" },
   work: { eyebrow: "SMART TO-DO WORKSPACE", title: "ทูดูลิสงานและโปรเจกต์", description: "เห็นงานที่ต้องทำวันนี้ งานค้าง ผู้รับผิดชอบ กำหนดส่ง และความคืบหน้าของทีมเป็นอันดับแรก" },
-  office: { eyebrow: "INTERACTIVE 3D OFFICE WORLD", title: "ออฟฟิศ 3D แบบเกม", description: "หมุนและซูมฉากได้ ตัวละครทำงานหรือเลือกเส้นทางเดินเองตามภาระงานจากทูดูลิส" },
+  office: { eyebrow: "INTERACTIVE HERO OFFICE CAMPUS", title: "สำนักงานฮีโร่ 3D หลายห้อง", description: "ดูตัวละครคอสเพลย์สายฮาทำงานอิสระตามภาระจริง พร้อมห้อง CEO ห้องผู้จัดการ เพลง เสียงพูด และบรรยากาศสำนักงาน" },
   access: { eyebrow: "ACCESS & PERMISSIONS", title: "ผู้ใช้งานและสิทธิ์เข้าถึง", description: "ผูกอีเมลเข้าสู่ระบบกับพนักงาน และกำหนดว่าใครเป็น HR หัวหน้าทีม หรือพนักงาน" },
 };
 
@@ -1750,9 +1750,9 @@ export default function Home() {
           <section className="office-simulation-layout">
             <section className="office-command-center">
               <div className="office-command-copy">
-                <span className="office-live-label"><i /> 3D OFFICE WORLD</span>
-                <h2>ออฟฟิศจำลอง 3D<br />ที่ขยับได้เหมือนในเกม</h2>
-                <p>ตัวละครเลือกเส้นทางเดินในออฟฟิศได้อย่างอิสระ ส่วนคนที่มีงานจะทำงานประจำโต๊ะด้วยความเร็วตามภาระ พร้อมกล้องที่หมุน ซูม และเลื่อนได้</p>
+                <span className="office-live-label"><i /> 3D HERO OFFICE CAMPUS</span>
+                <h2>สำนักงานใหญ่ของทีมฮีโร่<br />ที่งานจริงกับความฮาอยู่ด้วยกัน</h2>
+                <p>ออฟฟิศขนาดใหญ่ 7 โซน มีห้อง CEO ห้องผู้จัดการ ห้องประชุม ห้องครีเอทีฟ พื้นที่ทำงานรวม คาเฟ่ และห้องพัก ตัวละครใส่ชุดฮีโร่ต้นฉบับสลับทุกวัน พร้อมเสียงและบทสนทนาที่ผู้ใช้เลือกเปิดได้</p>
                 <div className="office-legend" aria-label="คำอธิบายสีภาระงาน">
                   {(Object.entries(officeLevelMeta) as [OfficeLoadLevel, (typeof officeLevelMeta)[OfficeLoadLevel]][]).map(([level, meta]) => <span key={level} className={level}><i />{meta.label}</span>)}
                 </div>
@@ -1770,7 +1770,7 @@ export default function Home() {
             </section>
 
             <div className="office-floor-toolbar" id="office-team-floor">
-              <div><p className="eyebrow">INTERACTIVE 3D WORLD</p><h2>ทุกคนอยู่ในออฟฟิศ 3D เดียวกัน</h2><small>ลากเพื่อหมุนกล้อง ซูมเข้าออก และกดตัวละครเพื่อเปิดทูดูลิสของคนนั้น</small></div>
+              <div><p className="eyebrow">INTERACTIVE 3D HERO CAMPUS</p><h2>ทุกคนอยู่ในสำนักงานใหญ่หลายห้องเดียวกัน</h2><small>ลากเพื่อหมุน ซูมเข้าออก กดตัวละครเพื่อดูงาน หรือเปิด Office Radio เพื่อผ่อนคลาย</small></div>
               <div className="office-load-filters" aria-label="กรองตามภาระงาน">
                 {([
                   ["all", "ทั้งหมด"],
@@ -1782,7 +1782,7 @@ export default function Home() {
               </div>
             </div>
 
-            {office3DPeople.length ? <Suspense fallback={<div className="office-3d-loading"><span /><strong>กำลังสร้างโลกออฟฟิศ 3D...</strong><small>จัดโต๊ะ เฟอร์นิเจอร์ และตัวละครตามภาระงาน</small></div>}><Office3D people={office3DPeople} onSelect={(employeeId) => {
+            {office3DPeople.length ? <Suspense fallback={<div className="office-3d-loading"><span /><strong>กำลังเปิด Hero Office Campus...</strong><small>จัด 7 ห้อง ชุดคอสเพลย์ และตัวละครตามภาระงาน</small></div>}><Office3D people={office3DPeople} onSelect={(employeeId) => {
               setWorkAssigneeFilter(employeeId);
               setWorkDueFilter("all");
               setWorkSearch("");

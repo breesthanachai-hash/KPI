@@ -1415,3 +1415,46 @@ footer { border-top: 1px solid rgba(99,246,255,.08); padding-top: 22px; color: #
 @media (prefers-reduced-motion: reduce) {
   .future-orb,.future-scan-beam,.future-core-status i,.future-heading-meta i,.brand-mark::after,.topbar::after { animation: none!important; }
 }
+
+/* Hero Office Campus · multi-room 3D workplace */
+.office-3d-shell { border-radius: 28px; }
+.office-3d-toolbar { min-height: 92px; align-items: flex-start; padding: 17px 18px; background: radial-gradient(circle at 12% 0,rgba(99,246,255,.12),transparent 28%),linear-gradient(130deg,#071731,#030817); }
+.office-3d-toolbar > div:first-child { padding-top: 3px; }
+.office-3d-live { border-color: rgba(185,255,69,.38); background: rgba(185,255,69,.09); color: var(--mustard); box-shadow: inset 0 0 18px rgba(185,255,69,.05),0 0 18px rgba(185,255,69,.05); }
+.office-3d-actions { max-width: 720px; justify-content: flex-end; flex-wrap: wrap; }
+.office-3d-toolbar .office-3d-actions button { min-height: 35px; border-color: rgba(99,246,255,.16); background: rgba(99,246,255,.045); color: #b8d2e3; }
+.office-3d-toolbar .office-3d-actions button:hover { transform: translateY(-1px); border-color: rgba(99,246,255,.55); color: white; box-shadow: 0 0 18px rgba(99,246,255,.09); }
+.office-3d-toolbar .office-3d-actions button.active { border-color: rgba(185,255,69,.55); background: rgba(185,255,69,.1); color: var(--mustard); box-shadow: inset 0 0 15px rgba(185,255,69,.05),0 0 16px rgba(185,255,69,.08); }
+.office-3d-story-strip { min-height: 92px; border-bottom: 1px solid rgba(99,246,255,.1); padding: 12px 18px; background: linear-gradient(90deg,rgba(7,19,42,.98),rgba(4,10,23,.98)); color: white; display: grid; grid-template-columns: 150px minmax(0,1fr); align-items: center; gap: 15px; }
+.office-3d-story-strip > div:first-child { border-right: 1px solid rgba(99,246,255,.12); display: grid; gap: 2px; }
+.office-3d-story-strip > div:first-child span { color: var(--forest); font-size: 7px; font-weight: 950; letter-spacing: .12em; }
+.office-3d-story-strip > div:first-child strong { font-size: 12px; letter-spacing: .03em; }
+.office-3d-story-strip > div:first-child small { color: #68849b; font-size: 6px; }
+.office-costume-roster { min-width: 0; overflow-x: auto; display: flex; gap: 8px; scrollbar-width: thin; }
+.office-costume-roster > span { min-width: 168px; border: 1px solid rgba(99,246,255,.1); border-radius: 12px; padding: 8px 10px; background: rgba(99,246,255,.035); display: grid; grid-template-columns: 9px 1fr; align-items: center; gap: 2px 7px; }
+.office-costume-roster > span > i { grid-row: 1 / 3; width: 8px; height: 28px; border-radius: 99px; box-shadow: 0 0 12px currentColor; }
+.office-costume-roster b { overflow: hidden; font-size: 8px; white-space: nowrap; text-overflow: ellipsis; }
+.office-costume-roster small { overflow: hidden; color: #708ca3; font-size: 6px; white-space: nowrap; text-overflow: ellipsis; }
+.office-3d-canvas { height: clamp(730px,78vh,960px); min-height: 730px; background: radial-gradient(circle at 50% 35%,#12274b,#050b1d 68%); }
+.office-ai-conversation { min-height: 66px; border-top: 1px solid rgba(99,246,255,.12); border-bottom: 1px solid rgba(99,246,255,.08); padding: 12px 18px; background: radial-gradient(circle at 8% 50%,rgba(185,255,69,.08),transparent 20%),#040b1b; color: white; display: grid; grid-template-columns: 130px minmax(0,1fr); align-items: center; gap: 16px; }
+.office-ai-conversation span { color: var(--mustard); font-size: 7px; font-weight: 950; letter-spacing: .13em; }
+.office-ai-conversation p { margin: 0; color: #a9c3d5; font-size: 8px; line-height: 1.6; }
+.office-3d-footer { min-height: 62px; padding: 13px 18px; }
+.office-3d-shell:fullscreen { grid-template-rows: auto auto 1fr auto auto; }
+.office-3d-shell:fullscreen .office-3d-canvas { height: auto; min-height: 0; }
+
+@media (max-width: 980px) {
+  .office-3d-toolbar { align-items: flex-start; flex-direction: column; }
+  .office-3d-actions { width: 100%; max-width: none; justify-content: flex-start; overflow-x: auto; flex-wrap: nowrap; }
+  .office-3d-actions button { flex: 0 0 auto; }
+  .office-3d-canvas { height: 720px; min-height: 720px; }
+}
+
+@media (max-width: 640px) {
+  .office-3d-shell { border-radius: 21px; }
+  .office-3d-story-strip { grid-template-columns: 1fr; padding: 11px 12px; }
+  .office-3d-story-strip > div:first-child { border-right: 0; border-bottom: 1px solid rgba(99,246,255,.1); padding-bottom: 8px; }
+  .office-costume-roster > span { min-width: 150px; }
+  .office-3d-canvas { height: 620px; min-height: 620px; }
+  .office-ai-conversation { grid-template-columns: 1fr; gap: 4px; padding: 11px 13px; }
+}
