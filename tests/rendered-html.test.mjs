@@ -65,6 +65,10 @@ test("builds the People Pulse KPI product bundle", async () => {
   assert.match(office3D, /requestFullscreen/);
   assert.match(office3D, /Raycaster/);
   assert.match(office3D, /HERO OFFICE LIVE/);
+  assert.match(office3D, /ภาพแบบตัวอย่าง/);
+  assert.match(office3D, /3D หมุนได้/);
+  assert.match(office3D, /cinematic-campus/);
+  assert.match(office3D, /LIVE WORKLOAD/);
   assert.match(office3D, /CEO ROOM/);
   assert.match(office3D, /MANAGER POD/);
   assert.match(office3D, /CREATIVE LAB/);
@@ -130,6 +134,9 @@ test("builds the People Pulse KPI product bundle", async () => {
   assert.match(styles, /Hero Office Campus/);
   assert.match(styles, /office-3d-story-strip/);
   assert.match(styles, /office-ai-conversation/);
+  assert.match(styles, /Cinematic campus view/);
+  assert.match(styles, /cinematic-worker-layer/);
+  assert.match(styles, /og-hero-campus\.png/);
   assert.match(styles, /PEOPLE PULSE 3000/);
   assert.match(styles, /future-grid-plane/);
   assert.match(styles, /future-scan-beam/);

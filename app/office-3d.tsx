@@ -39,6 +39,8 @@ type CharacterRig = {
 
 type OfficeRoom = "open" | "creative" | "meeting" | "manager" | "ceo" | "lounge" | "cafe";
 
+type OfficeVisualMode = "cinematic" | "interactive";
+
 type OfficeGag = "air-guitar" | "coffee-toast" | "robot-glitch" | "hero-pose" | "tiny-dance" | "cape-drama";
 
 type HeroCostume = {
@@ -72,6 +74,17 @@ const originalHeroCostumes: HeroCostume[] = [
 ];
 
 const officeGags: OfficeGag[] = ["air-guitar", "coffee-toast", "robot-glitch", "hero-pose", "tiny-dance", "cape-drama"];
+
+const cinematicWorkerSlots = [
+  { left: 20, top: 40, room: "open" },
+  { left: 34, top: 48, room: "open" },
+  { left: 59, top: 25, room: "manager" },
+  { left: 72, top: 16, room: "ceo" },
+  { left: 66, top: 48, room: "creative" },
+  { left: 49, top: 73, room: "cafe" },
+  { left: 82, top: 72, room: "lounge" },
+  { left: 18, top: 68, room: "meeting" },
+] satisfies { left: number; top: number; room: OfficeRoom }[];
 
 const gagLabels: Record<OfficeGag, string> = {
   "air-guitar": "โซโล่กีตาร์ล่องหน",
@@ -633,6 +646,7 @@ function funnyConversation(person: Office3DPerson, costume: HeroCostume, gag: Of
 }
 
 export default function Office3D({ people, onSelect }: { people: Office3DPerson[]; onSelect: (employeeId: string) => void }) {
+  const shellRef = useRef<HTMLElement>(null);
   const hostRef = useRef<HTMLDivElement>(null);
   const resetCameraRef = useRef<() => void>(() => undefined);
   const motionRef = useRef(true);
@@ -640,6 +654,7 @@ export default function Office3D({ people, onSelect }: { people: Office3DPerson[
   const onSelectRef = useRef(onSelect);
   const peopleRef = useRef(people);
   const [motionEnabled, setMotionEnabled] = useState(true);
+  const [visualMode, setVisualMode] = useState<OfficeVisualMode>("cinematic");
   const [ambienceEnabled, setAmbienceEnabled] = useState(false);
   const [musicEnabled, setMusicEnabled] = useState(false);
   const [funCycle, setFunCycle] = useState(0);
@@ -725,6 +740,7 @@ export default function Office3D({ people, onSelect }: { people: Office3DPerson[
   };
 
   useEffect(() => {
+    if (visualMode !== "interactive") return;
     const host = hostRef.current;
     if (!host) return;
     const activePeople = peopleRef.current;
@@ -984,10 +1000,10 @@ export default function Office3D({ people, onSelect }: { people: Office3DPerson[
       renderer.domElement.remove();
       resetCameraRef.current = () => undefined;
     };
-  }, [sceneKey, officeDateKey, funCycle]);
+  }, [sceneKey, officeDateKey, funCycle, visualMode]);
 
   const toggleFullscreen = () => {
-    const element = hostRef.current?.parentElement;
+    const element = shellRef.current;
     if (!element) return;
     if (document.fullscreenElement) void document.exitFullscreen();
     else void element.requestFullscreen();
@@ -998,18 +1014,28 @@ export default function Office3D({ people, onSelect }: { people: Office3DPerson[
     costume: costumeFor(person, officeDateKey, funCycle),
     gag: gagFor(person, officeDateKey, funCycle),
   }));
+  const cinematicCast = people.slice(0, cinematicWorkerSlots.length).map((person, index) => ({
+    person,
+    slot: cinematicWorkerSlots[index],
+    costume: costumeFor(person, officeDateKey, funCycle),
+    gag: gagFor(person, officeDateKey, funCycle),
+  }));
 
   return (
-    <section className="office-3d-shell">
+    <section ref={shellRef} className={`office-3d-shell ${visualMode === "cinematic" ? "cinematic-mode" : "interactive-mode"} ${motionEnabled ? "" : "motion-paused"}`}>
       <div className="office-3d-toolbar">
         <div><span className="office-3d-live"><i /> HERO OFFICE LIVE</span><p><strong>People Pulse Hero Campus</strong><small>7 ห้อง · ชุดใหม่ทุกวัน · พฤติกรรมอิสระตามภาระงานจริง</small></p></div>
         <div className="office-3d-actions">
+          <div className="office-view-switch" aria-label="เลือกรูปแบบสำนักงาน">
+            <button className={visualMode === "cinematic" ? "active" : ""} onClick={() => setVisualMode("cinematic")} aria-pressed={visualMode === "cinematic"}>▦ ภาพแบบตัวอย่าง</button>
+            <button className={visualMode === "interactive" ? "active" : ""} onClick={() => setVisualMode("interactive")} aria-pressed={visualMode === "interactive"}>◇ 3D หมุนได้</button>
+          </div>
           <button className={ambienceEnabled ? "active" : ""} onClick={() => void toggleAmbience()} aria-pressed={ambienceEnabled}>{ambienceEnabled ? "🔊 เสียงทำงาน" : "🔈 เปิดบรรยากาศ"}</button>
           <button className={musicEnabled ? "active" : ""} onClick={() => void toggleMusic()} aria-pressed={musicEnabled}>{musicEnabled ? "♫ เพลงกำลังเล่น" : "♪ เพลง Focus"}</button>
           <button onClick={playAiConversation}>◖ ฟัง AI คุยกัน</button>
           <button onClick={() => { window.speechSynthesis?.cancel(); setFunCycle((cycle) => cycle + 1); setConversation("สุ่มชุดและเหตุการณ์ฮารอบใหม่แล้ว"); }}>✦ สุ่มเหตุการณ์ฮา</button>
-          <button onClick={() => setMotionEnabled((enabled) => !enabled)}>{motionEnabled ? "Ⅱ หยุดการเคลื่อนไหว" : "▶ เล่นต่อ"}</button>
-          <button onClick={() => resetCameraRef.current()}>⌂ มุมเริ่มต้น</button>
+          <button onClick={() => setMotionEnabled((enabled) => !enabled)}>{motionEnabled ? "Ⅱ หยุดฉาก" : "▶ เล่นต่อ"}</button>
+          {visualMode === "interactive" && <button onClick={() => resetCameraRef.current()}>⌂ มุมเริ่มต้น</button>}
           <button onClick={toggleFullscreen}>⛶ เต็มจอ</button>
         </div>
       </div>
@@ -1019,7 +1045,38 @@ export default function Office3D({ people, onSelect }: { people: Office3DPerson[
           {dailyCast.map(({ person, costume, gag }) => <span key={person.id}><i style={{ background: `#${costume.primary.toString(16).padStart(6, "0")}` }} /> <b>{person.name.split(" ")[0]}</b><small>{costume.name} · {gagLabels[gag]}</small></span>)}
         </div>
       </div>
-      <div ref={hostRef} className="office-3d-canvas">{error && <div className="office-3d-error"><span>!</span><strong>เปิดฉาก 3D ไม่สำเร็จ</strong><p>{error}</p></div>}</div>
+      {visualMode === "cinematic" ? (
+        <div className="cinematic-campus" role="img" aria-label="People Pulse Hero Office Campus แบบภาพมุมสูง แบ่งเป็นสำนักงานหลายห้อง">
+          <div className="cinematic-campus-image" />
+          <div className="cinematic-scan" aria-hidden="true" />
+          <div className="cinematic-room-map" aria-hidden="true">
+            <span className="room-open">OPEN OFFICE</span>
+            <span className="room-ceo">CEO ROOM</span>
+            <span className="room-manager">MANAGER</span>
+            <span className="room-creative">CREATIVE LAB</span>
+            <span className="room-meeting">WAR ROOM</span>
+            <span className="room-cafe">POWER CAFE</span>
+            <span className="room-lounge">HERO LOUNGE</span>
+          </div>
+          <div className="cinematic-worker-layer">
+            {cinematicCast.map(({ person, slot, costume, gag }, index) => (
+              <button
+                key={person.id}
+                className={`cinematic-worker worker-${person.level} behavior-${person.behavior}`}
+                style={{ left: `${slot.left}%`, top: `${slot.top}%`, "--worker-color": `#${costume.primary.toString(16).padStart(6, "0")}`, "--worker-delay": `${index * -.34}s` } as React.CSSProperties}
+                onClick={() => onSelectRef.current(person.id)}
+                aria-label={`เปิดงานของ ${person.name} ${person.role}`}
+              >
+                <i>{person.initials}</i>
+                <span><b>{person.name.split(" ")[0]}</b><small>{person.currentTask}</small><em>{person.loadPercent}% · {gagLabels[gag]}</em></span>
+              </button>
+            ))}
+          </div>
+          <div className="cinematic-campus-hud"><span><i /> LIVE WORKLOAD</span><b>{people.length} HEROES ONLINE</b><small>กดตัวละครเพื่อเปิดงาน · ชุดและมุกเปลี่ยนทุกวัน</small></div>
+        </div>
+      ) : (
+        <div ref={hostRef} className="office-3d-canvas">{error && <div className="office-3d-error"><span>!</span><strong>เปิดฉาก 3D ไม่สำเร็จ</strong><p>{error}</p></div>}</div>
+      )}
       <div className="office-ai-conversation" aria-live="polite"><span>AI OFFICE RADIO</span><p>{conversation}</p></div>
       <div className="office-3d-footer"><span><i className="overloaded" />งานล้น: เร่งกู้เดดไลน์</span><span><i className="steady" />สมดุล: ทำงานพร้อมปล่อยมุก</span><span><i className="available" />ว่าง: เดิน คุย พัก หรือเล่นเกม</span><small>เสียงเป็นบรรยากาศจำลองและเปิดเมื่อผู้ใช้กดเท่านั้น · สถานะมาจากทูดูลิส ไม่ใช่การติดตามหน้าจอจริง</small></div>
     </section>
