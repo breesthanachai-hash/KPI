@@ -430,7 +430,7 @@ const viewMeta: Record<View, { eyebrow: string; title: string; description: stri
   hr: { eyebrow: "WORKFORCE MANAGEMENT", title: "บริหารทรัพยากรบุคคล", description: "เชื่อมผลงาน สกิล การทดสอบ แผนพัฒนา ตำแหน่งที่เหมาะสม และค่าตอบแทน เพื่อการตัดสินใจที่รอบด้าน" },
   portfolio: { eyebrow: "EMPLOYEE WORK PORTFOLIO", title: "แฟ้มผลงานพนักงาน", description: "ค้นหางานที่ส่งมอบแล้ว ไฟล์ ลิงก์ ผู้ตรวจ และผลประเมินของแต่ละคนได้จากที่เดียว" },
   work: { eyebrow: "SMART TO-DO WORKSPACE", title: "ทูดูลิสงานและโปรเจกต์", description: "เห็นงานที่ต้องทำวันนี้ งานค้าง ผู้รับผิดชอบ กำหนดส่ง และความคืบหน้าของทีมเป็นอันดับแรก" },
-  office: { eyebrow: "AUTONOMOUS HERO OFFICE CAMPUS", title: "สำนักงานตัวละครอิสระ", description: "ดูตัวละครพนักงานเต็มตัวเดิน เลือกห้อง และทำกิจกรรมตามภาระงานจริง พร้อมฉาก 7 ห้อง เพลง เสียงพูด และบรรยากาศสำนักงาน" },
+  office: { eyebrow: "REAL-TIME 3D HERO OFFICE", title: "สำนักงานจำลอง 3D", description: "เข้าสู่โลกสำนักงาน 3D แบบไอโซเมตริก ตัวละครโมเดล 3D เดิน เลือกห้อง และทำกิจกรรมตามภาระงานจริง" },
   access: { eyebrow: "ACCESS & PERMISSIONS", title: "ผู้ใช้งานและสิทธิ์เข้าถึง", description: "ผูกอีเมลเข้าสู่ระบบกับพนักงาน และกำหนดว่าใครเป็น HR หัวหน้าทีม หรือพนักงาน" },
 };
 
@@ -1750,9 +1750,9 @@ export default function Home() {
           <section className="office-simulation-layout">
             <section className="office-command-center">
               <div className="office-command-copy">
-                <span className="office-live-label"><i /> AUTONOMOUS HERO OFFICE CAMPUS</span>
-                <h2>ตัวละครพนักงานเต็มตัว<br />เดินและใช้ชีวิตในออฟฟิศเดียวกัน</h2>
-                <p>พนักงานแต่ละคนมีเส้นทาง ความเร็ว ห้อง และกิจกรรมอิสระของตัวเอง ทั้งเดิน ทำงาน คุย ดื่มกาแฟ พัก และกู้เดดไลน์ โดยภาระงานจริงเป็นตัวกำหนดพฤติกรรม</p>
+                <span className="office-live-label"><i /> REAL-TIME 3D HERO OFFICE</span>
+                <h2>โลกสำนักงาน 3D สร้างใหม่<br />หมุนดูได้และมีชีวิตจริง</h2>
+                <p>ทุกห้อง เฟอร์นิเจอร์ แสง เมืองอนาคต และตัวละครถูกสร้างเป็นวัตถุ 3D จริง ไม่มีภาพออฟฟิศเป็นพื้นหลัง พนักงานแต่ละคนเลือกเส้นทางและกิจกรรมตามภาระงาน</p>
                 <div className="office-legend" aria-label="คำอธิบายสีภาระงาน">
                   {(Object.entries(officeLevelMeta) as [OfficeLoadLevel, (typeof officeLevelMeta)[OfficeLoadLevel]][]).map(([level, meta]) => <span key={level} className={level}><i />{meta.label}</span>)}
                 </div>
@@ -1770,7 +1770,7 @@ export default function Home() {
             </section>
 
             <div className="office-floor-toolbar" id="office-team-floor">
-              <div><p className="eyebrow">LIVE AUTONOMOUS OFFICE</p><h2>ทุกคนเคลื่อนไหวอิสระในสำนักงานใหญ่เดียวกัน</h2><small>ดูคนเต็มตัวเดินข้ามห้องและทำกิจกรรม กดตัวละครเพื่อดูงาน หรือสลับไปฉาก 3D ที่หมุนได้</small></div>
+              <div><p className="eyebrow">ISOMETRIC 3D OFFICE WORLD</p><h2>สำนักงานใหญ่ 3D หลายห้องในโลกเดียวกัน</h2><small>ลากเพื่อหมุน เลื่อนเพื่อซูม ดูโมเดลเดินข้ามห้อง และกดตัวละครเพื่อเปิดงานของคนนั้น</small></div>
               <div className="office-load-filters" aria-label="กรองตามภาระงาน">
                 {([
                   ["all", "ทั้งหมด"],
@@ -1782,7 +1782,7 @@ export default function Home() {
               </div>
             </div>
 
-            {office3DPeople.length ? <Suspense fallback={<div className="office-3d-loading"><span /><strong>กำลังเปิด Hero Office Campus...</strong><small>จัด 7 ห้อง ชุดคอสเพลย์ และตัวละครตามภาระงาน</small></div>}><Office3D people={office3DPeople} onSelect={(employeeId) => {
+            {office3DPeople.length ? <Suspense fallback={<div className="office-3d-loading"><span /><strong>กำลังสร้างโลกสำนักงาน 3D...</strong><small>ประกอบ 7 ห้อง เมืองอนาคต และโมเดลตัวละครตามภาระงาน</small></div>}><Office3D people={office3DPeople} onSelect={(employeeId) => {
               setWorkAssigneeFilter(employeeId);
               setWorkDueFilter("all");
               setWorkSearch("");

@@ -22,7 +22,12 @@ export type Office3DPerson = {
 
 type CharacterRig = {
   id: string;
-  behavior: Office3DBehavior;
+  person: Office3DPerson;
+  homeRoom: OfficeRoom;
+  activity: CampusActivity;
+  targetActivity: Exclude<CampusActivity, "walking">;
+  pauseUntil: number;
+  seed: number;
   gag: OfficeGag;
   root: THREE.Group;
   model: THREE.Group;
@@ -33,6 +38,7 @@ type CharacterRig = {
   cape: THREE.Object3D | null;
   prop: THREE.Object3D | null;
   basePosition: THREE.Vector3;
+  targetPosition: THREE.Vector3;
   targetIndex: number;
   speed: number;
 };
@@ -80,32 +86,13 @@ const originalHeroCostumes: HeroCostume[] = [
 const officeGags: OfficeGag[] = ["air-guitar", "coffee-toast", "robot-glitch", "hero-pose", "tiny-dance", "cape-drama"];
 
 const campusWaypoints: Record<OfficeRoom, CampusWaypoint[]> = {
-  open: [
-    { x: 13, y: 42, room: "open", activity: "working" }, { x: 26, y: 35, room: "open", activity: "working" },
-    { x: 36, y: 48, room: "open", activity: "working" }, { x: 31, y: 53, room: "open", activity: "talking" },
-  ],
-  ceo: [
-    { x: 61, y: 23, room: "ceo", activity: "working" }, { x: 55, y: 30, room: "ceo", activity: "hero" },
-  ],
-  manager: [
-    { x: 80, y: 27, room: "manager", activity: "working" }, { x: 88, y: 30, room: "manager", activity: "talking" },
-  ],
-  creative: [
-    { x: 66, y: 48, room: "creative", activity: "working" }, { x: 79, y: 51, room: "creative", activity: "working" },
-    { x: 90, y: 48, room: "creative", activity: "hero" }, { x: 74, y: 59, room: "creative", activity: "talking" },
-  ],
-  meeting: [
-    { x: 16, y: 78, room: "meeting", activity: "talking" }, { x: 27, y: 82, room: "meeting", activity: "talking" },
-    { x: 23, y: 70, room: "meeting", activity: "hero" },
-  ],
-  cafe: [
-    { x: 43, y: 84, room: "cafe", activity: "coffee" }, { x: 55, y: 83, room: "cafe", activity: "coffee" },
-    { x: 61, y: 73, room: "cafe", activity: "talking" },
-  ],
-  lounge: [
-    { x: 76, y: 82, room: "lounge", activity: "resting" }, { x: 88, y: 83, room: "lounge", activity: "resting" },
-    { x: 83, y: 72, room: "lounge", activity: "talking" },
-  ],
+  open: [{ x: 13, y: 42, room: "open", activity: "working" }, { x: 26, y: 35, room: "open", activity: "working" }, { x: 36, y: 48, room: "open", activity: "talking" }],
+  ceo: [{ x: 61, y: 23, room: "ceo", activity: "working" }, { x: 55, y: 30, room: "ceo", activity: "hero" }],
+  manager: [{ x: 80, y: 27, room: "manager", activity: "working" }, { x: 88, y: 30, room: "manager", activity: "talking" }],
+  creative: [{ x: 66, y: 48, room: "creative", activity: "working" }, { x: 79, y: 51, room: "creative", activity: "working" }, { x: 90, y: 48, room: "creative", activity: "hero" }],
+  meeting: [{ x: 16, y: 78, room: "meeting", activity: "talking" }, { x: 27, y: 82, room: "meeting", activity: "talking" }],
+  cafe: [{ x: 43, y: 84, room: "cafe", activity: "coffee" }, { x: 55, y: 83, room: "cafe", activity: "coffee" }],
+  lounge: [{ x: 76, y: 82, room: "lounge", activity: "resting" }, { x: 88, y: 83, room: "lounge", activity: "resting" }],
 };
 
 const campusCorridors: CampusWaypoint[] = [
@@ -331,12 +318,12 @@ function addRoomZone(
 ) {
   const [x, z] = center;
   const [width, depth] = size;
-  box(scene, [width, .045, depth], [x, .025, z], floorColor, { receiveShadow: true });
+  box(scene, [width, .1, depth], [x, .05, z], floorColor, { receiveShadow: true });
   const borderMaterial = new THREE.MeshStandardMaterial({ color: accent, emissive: accent, emissiveIntensity: .18, roughness: .55 });
-  box(scene, [width, .025, .05], [x, .055, z - depth / 2], accent, { material: borderMaterial });
-  box(scene, [width, .025, .05], [x, .055, z + depth / 2], accent, { material: borderMaterial });
-  box(scene, [.05, .025, depth], [x - width / 2, .055, z], accent, { material: borderMaterial });
-  box(scene, [.05, .025, depth], [x + width / 2, .055, z], accent, { material: borderMaterial });
+  box(scene, [width, .16, .07], [x, .13, z - depth / 2], accent, { material: borderMaterial });
+  box(scene, [width, .16, .07], [x, .13, z + depth / 2], accent, { material: borderMaterial });
+  box(scene, [.07, .16, depth], [x - width / 2, .13, z], accent, { material: borderMaterial });
+  box(scene, [.07, .16, depth], [x + width / 2, .13, z], accent, { material: borderMaterial });
   const sign = createTextSprite(roomLabels[room], subtitle, accent);
   sign.position.set(x, 3.8, z - depth / 2 + .18);
   scene.add(sign);
@@ -417,6 +404,47 @@ function addArcade(scene: THREE.Scene, x: number, z: number) {
   });
 }
 
+function addNeonCity(scene: THREE.Scene) {
+  const city = new THREE.Group();
+  city.position.set(0, 0, -15.8);
+  scene.add(city);
+  const heights = [7.2, 10.5, 6.4, 12.8, 8.7, 14.2, 7.7, 11.4, 9.2, 13.1, 6.8, 10.1];
+  heights.forEach((height, index) => {
+    const x = -18.5 + index * 3.35;
+    const width = 1.35 + index % 3 * .35;
+    box(city, [width, height, 1.8], [x, height / 2 - .2, 0], index % 2 ? 0x111b3b : 0x0b2740, { castShadow: false });
+    const windowColor = index % 3 === 0 ? 0xff72c8 : index % 3 === 1 ? 0x63f6ff : 0xb9ff45;
+    for (let row = 0; row < Math.floor(height / 1.35); row += 1) {
+      const windowStrip = box(city, [width * .68, .08, .035], [x, .65 + row * 1.18, .92], windowColor, {
+        castShadow: false,
+        receiveShadow: false,
+        material: new THREE.MeshStandardMaterial({ color: windowColor, emissive: windowColor, emissiveIntensity: .7 }),
+      });
+      windowStrip.renderOrder = 4;
+    }
+    if (index % 3 === 1) cylinder(city, .035, .035, 2.2, [x, height + .9, 0], windowColor, 8);
+  });
+}
+
+function addCampusPortal(scene: THREE.Scene) {
+  const portal = new THREE.Group();
+  portal.position.set(3.6, .12, 2.1);
+  scene.add(portal);
+  const ringMaterial = new THREE.MeshStandardMaterial({ color: 0x63f6ff, emissive: 0x63f6ff, emissiveIntensity: .78, metalness: .5, roughness: .25 });
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(1.52, .085, 10, 60), ringMaterial);
+  ring.rotation.x = Math.PI / 2;
+  portal.add(ring);
+  const innerRing = new THREE.Mesh(new THREE.TorusGeometry(.92, .035, 8, 48), new THREE.MeshStandardMaterial({ color: 0xb9ff45, emissive: 0xb9ff45, emissiveIntensity: .62 }));
+  innerRing.rotation.x = Math.PI / 2;
+  portal.add(innerRing);
+  const beam = cylinder(portal, .1, .32, 3.2, [0, 1.55, 0], 0x63f6ff, 20);
+  (beam.material as THREE.MeshStandardMaterial).transparent = true;
+  (beam.material as THREE.MeshStandardMaterial).opacity = .24;
+  beam.userData.campusBeam = true;
+  ring.userData.campusRing = true;
+  innerRing.userData.campusRing = true;
+}
+
 function createLabelSprite(person: Office3DPerson, costume: HeroCostume, gag: OfficeGag, room: OfficeRoom) {
   const canvas = document.createElement("canvas");
   canvas.width = 640;
@@ -445,7 +473,7 @@ function createLabelSprite(person: Office3DPerson, costume: HeroCostume, gag: Of
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.minFilter = THREE.LinearFilter;
   const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false }));
-  sprite.scale.set(3.35, .94, 1);
+  sprite.scale.set(2.7, .76, 1);
   sprite.position.set(0, 2.75, 0);
   sprite.renderOrder = 100;
   return sprite;
@@ -908,7 +936,7 @@ export default function Office3D({ people, onSelect }: { people: Office3DPerson[
   const onSelectRef = useRef(onSelect);
   const peopleRef = useRef(people);
   const [motionEnabled, setMotionEnabled] = useState(true);
-  const [visualMode, setVisualMode] = useState<OfficeVisualMode>("cinematic");
+  const [visualMode] = useState<OfficeVisualMode>("interactive");
   const [ambienceEnabled, setAmbienceEnabled] = useState(false);
   const [musicEnabled, setMusicEnabled] = useState(false);
   const [funCycle, setFunCycle] = useState(0);
@@ -1009,7 +1037,7 @@ export default function Office3D({ people, onSelect }: { people: Office3DPerson[
     renderer.setSize(host.clientWidth, host.clientHeight, false);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.05;
+    renderer.toneMappingExposure = 1.32;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.domElement.setAttribute("aria-label", "ออฟฟิศสามมิติแบบโต้ตอบ หมุนกล้องด้วยการลากและซูมด้วยล้อเมาส์");
@@ -1017,17 +1045,21 @@ export default function Office3D({ people, onSelect }: { people: Office3DPerson[
     host.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x050b1d);
-    scene.fog = new THREE.Fog(0x071126, 34, 66);
-    const camera = new THREE.PerspectiveCamera(40, host.clientWidth / host.clientHeight, .1, 110);
-    const defaultCamera = new THREE.Vector3(28, 25, 31);
+    scene.background = new THREE.Color(0x030817);
+    scene.fog = new THREE.Fog(0x071126, 38, 72);
+    const minViewHeight = 30;
+    const fittedWorldWidth = 40;
+    const initialAspect = host.clientWidth / host.clientHeight;
+    const initialViewHeight = Math.max(minViewHeight, fittedWorldWidth / initialAspect);
+    const camera = new THREE.OrthographicCamera(-initialViewHeight * initialAspect / 2, initialViewHeight * initialAspect / 2, initialViewHeight / 2, -initialViewHeight / 2, .1, 120);
+    const defaultCamera = new THREE.Vector3(31, 28, 35);
     camera.position.copy(defaultCamera);
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.target.set(0, 1.25, .5);
     controls.enableDamping = true;
     controls.dampingFactor = .07;
-    controls.minDistance = 12;
-    controls.maxDistance = 52;
+    controls.minZoom = .72;
+    controls.maxZoom = 2.15;
     controls.minPolarAngle = .26;
     controls.maxPolarAngle = Math.PI * .49;
     controls.maxTargetRadius = 14;
@@ -1038,8 +1070,8 @@ export default function Office3D({ people, onSelect }: { people: Office3DPerson[
       controls.update();
     };
 
-    scene.add(new THREE.HemisphereLight(0xc6f8ff, 0x17142a, 2.25));
-    const sun = new THREE.DirectionalLight(0xe7f8ff, 3.8);
+    scene.add(new THREE.HemisphereLight(0xd8fbff, 0x1e1738, 3.1));
+    const sun = new THREE.DirectionalLight(0xf1fbff, 4.9);
     sun.position.set(-10, 21, 13);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
@@ -1058,6 +1090,11 @@ export default function Office3D({ people, onSelect }: { people: Office3DPerson[
     limeGlow.position.set(11, 6, 5);
     scene.add(limeGlow);
 
+    box(scene, [35.2, .62, 25.2], [0, -.34, 0], 0x061027, { receiveShadow: true });
+    box(scene, [34.7, .12, 24.7], [0, -.01, 0], 0x155277, {
+      receiveShadow: true,
+      material: new THREE.MeshStandardMaterial({ color: 0x155277, emissive: 0x3ae5ff, emissiveIntensity: .22, metalness: .32, roughness: .5 }),
+    });
     const floor = new THREE.Mesh(new THREE.PlaneGeometry(34, 24), standardMaterial(0x101a31, .92, .12));
     floor.rotation.x = -Math.PI / 2;
     floor.receiveShadow = true;
@@ -1068,22 +1105,29 @@ export default function Office3D({ people, onSelect }: { people: Office3DPerson[
     (grid.material as THREE.Material).transparent = true;
     (grid.material as THREE.Material).opacity = .24;
     scene.add(grid);
+    addNeonCity(scene);
     box(scene, [34, 6.3, .25], [0, 3.15, -11.88], 0x101b32, { receiveShadow: true });
-    box(scene, [.25, 6.3, 24], [-16.88, 3.15, 0], 0x0d182e, { receiveShadow: true });
-    box(scene, [.25, 6.3, 24], [16.88, 3.15, 0], 0x0d182e, { receiveShadow: true });
+    box(scene, [.25, 1.15, 24], [-16.88, .58, 0], 0x12324d, { receiveShadow: true });
+    box(scene, [.25, 1.15, 24], [16.88, .58, 0], 0x12324d, { receiveShadow: true });
 
-    addRoomZone(scene, "creative", [-11.7, -7.4], [9.2, 7.7], 0x20142f, 0xff72c8, "ห้องตัดต่อและครีเอทีฟ");
-    addRoomZone(scene, "meeting", [9.9, -7.4], [12.5, 7.7], 0x13233a, 0x63f6ff, "ห้องประชุมวางแผนภารกิจ");
-    addRoomZone(scene, "open", [-3.3, .9], [17, 8.2], 0x101c31, 0x4f7cff, "พื้นที่ทำงานรวมของทุกทีม");
-    addRoomZone(scene, "manager", [10.6, .7], [6.9, 6.3], 0x1b1831, 0x9f7cff, "ห้องผู้จัดการและหัวหน้าทีม");
-    addRoomZone(scene, "lounge", [-11.2, 8.2], [10.2, 5.3], 0x152c31, 0xb9ff45, "พัก เติมพลัง และปล่อยมุก");
-    addRoomZone(scene, "cafe", [-1.1, 8.2], [8.8, 5.3], 0x2a1d30, 0xffb45b, "กาแฟ เพลง และบทสนทนา AI");
-    addRoomZone(scene, "ceo", [11.1, 8.2], [9.8, 5.3], 0x171c38, 0x6ef7ff, "ห้อง CEO วิวเดดไลน์ทั่วจักรวาล");
+    addRoomZone(scene, "creative", [-11.7, -7.4], [9.2, 7.7], 0x351946, 0xff72c8, "ห้องตัดต่อและครีเอทีฟ");
+    addRoomZone(scene, "meeting", [9.9, -7.4], [12.5, 7.7], 0x183b58, 0x63f6ff, "ห้องประชุมวางแผนภารกิจ");
+    addRoomZone(scene, "open", [-3.3, .9], [17, 8.2], 0x17294d, 0x4f7cff, "พื้นที่ทำงานรวมของทุกทีม");
+    addRoomZone(scene, "manager", [10.6, .7], [6.9, 6.3], 0x2b214e, 0x9f7cff, "ห้องผู้จัดการและหัวหน้าทีม");
+    addRoomZone(scene, "lounge", [-11.2, 8.2], [10.2, 5.3], 0x1d463e, 0xb9ff45, "พัก เติมพลัง และปล่อยมุก");
+    addRoomZone(scene, "cafe", [-1.1, 8.2], [8.8, 5.3], 0x472b35, 0xffb45b, "กาแฟ เพลง และบทสนทนา AI");
+    addRoomZone(scene, "ceo", [11.1, 8.2], [9.8, 5.3], 0x232b58, 0x6ef7ff, "ห้อง CEO วิวเดดไลน์ทั่วจักรวาล");
 
     addGlassWall(scene, [.12, 4.2, 6.3], [7.18, 2.1, .7]);
     addGlassWall(scene, [6.9, 4.2, .12], [10.6, 2.1, -2.42]);
     addGlassWall(scene, [.12, 4.2, 5.25], [6.15, 2.1, 8.2]);
     addGlassWall(scene, [9.8, 4.2, .12], [11.1, 2.1, 5.58]);
+    addGlassWall(scene, [.12, 3.1, 7.7], [-7.08, 1.55, -7.4]);
+    addGlassWall(scene, [5.4, 3.1, .12], [-11.9, 1.55, -3.58]);
+    addGlassWall(scene, [.12, 3.1, 7.7], [3.62, 1.55, -7.4]);
+    addGlassWall(scene, [7.2, 3.1, .12], [10.2, 1.55, -3.58]);
+    addGlassWall(scene, [.12, 2.2, 5.3], [-6.02, 1.1, 8.2]);
+    addGlassWall(scene, [.12, 2.2, 5.3], [3.32, 1.1, 8.2]);
 
     const deskPositions: [number, number][] = [[-9.4, -.65], [-6.1, -.65], [-2.8, -.65], [.5, -.65], [-9.4, 2.55], [-6.1, 2.55], [-2.8, 2.55], [.5, 2.55]];
     deskPositions.forEach(([x, z], index) => addDesk(scene, x, z, Object.values(sceneColors)[index % Object.values(sceneColors).length]));
@@ -1106,6 +1150,7 @@ export default function Office3D({ people, onSelect }: { people: Office3DPerson[
     addMeetingArea(scene);
     const quickMeeting = scene.children[scene.children.length - 1];
     quickMeeting.position.set(3.6, 0, 2.1);
+    addCampusPortal(scene);
 
     const roomAnchors: Record<OfficeRoom, THREE.Vector3[]> = {
       open: deskPositions.map(([x, z]) => new THREE.Vector3(x, 0, z + .95)),
@@ -1113,7 +1158,7 @@ export default function Office3D({ people, onSelect }: { people: Office3DPerson[
       meeting: [new THREE.Vector3(8.4, 0, -5.65), new THREE.Vector3(9.9, 0, -5.65), new THREE.Vector3(11.4, 0, -5.65)],
       manager: [new THREE.Vector3(10.5, 0, 1.55), new THREE.Vector3(12.4, 0, 2.25)],
       ceo: [new THREE.Vector3(10.9, 0, 9.1)],
-      lounge: [new THREE.Vector3(-11.7, .72, 8), new THREE.Vector3(-10.5, .72, 8)],
+      lounge: [new THREE.Vector3(-13.2, 0, 7.3), new THREE.Vector3(-9.4, 0, 9.35)],
       cafe: [new THREE.Vector3(-2.4, 0, 9.65), new THREE.Vector3(0, 0, 9.65)],
     };
     const walkPoints = [
@@ -1122,6 +1167,19 @@ export default function Office3D({ people, onSelect }: { people: Office3DPerson[
       new THREE.Vector3(5.8, 0, -4.2), new THREE.Vector3(0, 0, -4.7), new THREE.Vector3(-6.2, 0, -4.6),
       new THREE.Vector3(-14.5, 0, 4.7), new THREE.Vector3(-5.7, 0, 9.7), new THREE.Vector3(4.3, 0, 9.6),
     ];
+    type WorldActivityTarget = { position: THREE.Vector3; activity: Exclude<CampusActivity, "walking"> };
+    const activityForRoom: Record<OfficeRoom, Exclude<CampusActivity, "walking">> = {
+      open: "working", creative: "working", meeting: "talking", manager: "working", ceo: "hero", lounge: "resting", cafe: "coffee",
+    };
+    const roomTargets = Object.fromEntries((Object.keys(roomAnchors) as OfficeRoom[]).map((room) => [
+      room,
+      roomAnchors[room].map((position) => ({ position, activity: activityForRoom[room] })),
+    ])) as Record<OfficeRoom, WorldActivityTarget[]>;
+    const corridorTargets: WorldActivityTarget[] = walkPoints.map((position, index) => ({
+      position,
+      activity: index % 3 === 0 ? "hero" : "talking",
+    }));
+    const allRoomTargets = Object.values(roomTargets).flat();
     const rigs: CharacterRig[] = [];
     activePeople.forEach((person, index) => {
       const room = roomFor(person, index);
@@ -1129,29 +1187,47 @@ export default function Office3D({ people, onSelect }: { people: Office3DPerson[
       const gag = gagFor(person, officeDateKey, funCycle);
       const character = createCharacter(person, costume, gag, room);
       const anchors = roomAnchors[room];
-      let basePosition = anchors[index % anchors.length].clone();
-      if (person.behavior === "walk") basePosition = walkPoints[(index * 2) % walkPoints.length].clone();
-      if (person.behavior === "chat") basePosition = roomAnchors.cafe[index % roomAnchors.cafe.length].clone();
-      if (person.behavior === "nap") basePosition = roomAnchors.lounge[index % roomAnchors.lounge.length].clone();
+      const basePosition = anchors[index % anchors.length].clone();
       character.root.position.copy(basePosition);
-      character.root.rotation.y = person.behavior === "walk" ? 0 : Math.PI;
-      if (person.behavior === "nap") {
-        character.model.rotation.z = -Math.PI * .48;
-        character.model.rotation.y = Math.PI * .5;
-        character.model.scale.setScalar(.82);
-        character.model.position.set(-.25, .05, 0);
-      }
+      character.root.rotation.y = Math.PI;
       scene.add(character.root);
       rigs.push({
         id: person.id,
-        behavior: person.behavior,
+        person,
+        homeRoom: room,
+        activity: "walking",
+        targetActivity: activityForRoom[room],
+        pauseUntil: 0,
+        seed: stableHash(`${person.id}:${officeDateKey}:${funCycle}:3d-route`),
         gag,
         ...character,
         basePosition,
+        targetPosition: basePosition.clone(),
         targetIndex: (index * 2 + 1) % walkPoints.length,
-        speed: .62 + (index % 3) * .09,
+        speed: person.level === "overloaded" ? 1.15 : person.level === "busy" ? .98 : person.level === "steady" ? .82 : .68,
       });
     });
+
+    const nextRigRandom = (rig: CharacterRig) => {
+      rig.seed = Math.imul(rig.seed ^ (rig.seed >>> 16), 2246822507) + 3266489909;
+      return (rig.seed >>> 0) / 4294967295;
+    };
+    const chooseNext3DTarget = (rig: CharacterRig) => {
+      const home = roomTargets[rig.homeRoom];
+      let pool: WorldActivityTarget[];
+      if (rig.person.level === "overloaded") pool = [...home, ...home, ...home, ...roomTargets.meeting.slice(0, 1), ...corridorTargets.slice(3, 6)];
+      else if (rig.person.level === "busy") pool = [...home, ...home, ...roomTargets.meeting, ...corridorTargets];
+      else if (rig.person.level === "steady") pool = [...home, ...roomTargets.meeting, ...roomTargets.cafe, ...corridorTargets];
+      else pool = [...allRoomTargets, ...roomTargets.lounge, ...roomTargets.cafe, ...corridorTargets, ...corridorTargets];
+      const target = pool[Math.floor(nextRigRandom(rig) * pool.length) % pool.length];
+      rig.targetPosition.copy(target.position);
+      rig.targetPosition.x += (nextRigRandom(rig) - .5) * .7;
+      rig.targetPosition.z += (nextRigRandom(rig) - .5) * .7;
+      rig.targetActivity = target.activity;
+      rig.activity = "walking";
+      rig.pauseUntil = 0;
+    };
+    rigs.forEach(chooseNext3DTarget);
 
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
@@ -1173,7 +1249,12 @@ export default function Office3D({ people, onSelect }: { people: Office3DPerson[
 
     const resizeObserver = new ResizeObserver(() => {
       if (!host.clientWidth || !host.clientHeight) return;
-      camera.aspect = host.clientWidth / host.clientHeight;
+      const aspect = host.clientWidth / host.clientHeight;
+      const viewHeight = Math.max(minViewHeight, fittedWorldWidth / aspect);
+      camera.left = -viewHeight * aspect / 2;
+      camera.right = viewHeight * aspect / 2;
+      camera.top = viewHeight / 2;
+      camera.bottom = -viewHeight / 2;
       camera.updateProjectionMatrix();
       renderer.setSize(host.clientWidth, host.clientHeight, false);
     });
@@ -1186,39 +1267,63 @@ export default function Office3D({ people, onSelect }: { people: Office3DPerson[
       if (motionRef.current) elapsed += delta;
       rigs.forEach((rig, index) => {
         if (!motionRef.current) return;
-        const phase = elapsed * (rig.behavior === "rush" ? 9 : rig.behavior === "work" ? 5.5 : 2.4) + index;
-        if (rig.behavior === "rush" || rig.behavior === "work" || rig.behavior === "chill") {
-          rig.model.position.y = Math.sin(phase) * (rig.behavior === "rush" ? .035 : .018);
-          rig.leftArm.rotation.x = -.72 + Math.sin(phase * 1.7) * .27;
-          rig.rightArm.rotation.x = -.72 + Math.cos(phase * 1.9) * .27;
-          if (rig.behavior === "chill") rig.rightArm.rotation.z = .35 + Math.max(0, Math.sin(elapsed * 1.4)) * .48;
-        } else if (rig.behavior === "walk") {
-          const target = walkPoints[rig.targetIndex];
-          const direction = target.clone().sub(rig.root.position);
+        const phase = elapsed * (rig.person.level === "overloaded" ? 8.5 : rig.person.level === "busy" ? 6.2 : 3.6) + index;
+        rig.model.position.set(0, 0, 0);
+        rig.model.rotation.set(0, 0, 0);
+        rig.model.scale.setScalar(1);
+        rig.leftArm.rotation.set(0, 0, -.2);
+        rig.rightArm.rotation.set(0, 0, .2);
+        rig.leftLeg.rotation.set(0, 0, 0);
+        rig.rightLeg.rotation.set(0, 0, 0);
+
+        if (rig.activity === "walking") {
+          const direction = rig.targetPosition.clone().sub(rig.root.position);
           direction.y = 0;
-          if (direction.length() < .2) rig.targetIndex = (rig.targetIndex + 1 + index % 3) % walkPoints.length;
-          else {
+          if (direction.length() < .18) {
+            rig.root.position.x = rig.targetPosition.x;
+            rig.root.position.z = rig.targetPosition.z;
+            rig.activity = rig.targetActivity;
+            const pauseBase = rig.person.level === "overloaded" ? 3.2 : rig.person.level === "available" ? 6.8 : 4.6;
+            rig.pauseUntil = elapsed + pauseBase + nextRigRandom(rig) * 4.8;
+          } else {
             direction.normalize();
             rig.root.position.addScaledVector(direction, rig.speed * delta);
             rig.root.rotation.y = Math.atan2(direction.x, direction.z);
           }
-          rig.leftLeg.rotation.x = Math.sin(phase * 2.2) * .58;
-          rig.rightLeg.rotation.x = -Math.sin(phase * 2.2) * .58;
-          rig.leftArm.rotation.x = -Math.sin(phase * 2.2) * .42;
-          rig.rightArm.rotation.x = Math.sin(phase * 2.2) * .42;
-          rig.model.position.y = Math.abs(Math.sin(phase * 2.2)) * .055;
-        } else if (rig.behavior === "chat") {
-          rig.model.position.y = Math.sin(phase) * .025;
-          rig.rightArm.rotation.z = .2 + Math.sin(phase * 1.5) * .65;
-          rig.root.rotation.y = Math.PI * .72 + Math.sin(elapsed * .7 + index) * .16;
-        } else if (rig.behavior === "nap") {
-          rig.model.position.y = .05 + Math.sin(elapsed * 1.35 + index) * .018;
+          rig.leftLeg.rotation.x = Math.sin(phase * 2.25) * .6;
+          rig.rightLeg.rotation.x = -Math.sin(phase * 2.25) * .6;
+          rig.leftArm.rotation.x = -Math.sin(phase * 2.25) * .46;
+          rig.rightArm.rotation.x = Math.sin(phase * 2.25) * .46;
+          rig.model.position.y = Math.abs(Math.sin(phase * 2.25)) * .07;
+        } else {
+          if (elapsed >= rig.pauseUntil) chooseNext3DTarget(rig);
+          if (rig.activity === "working") {
+            rig.model.position.y = Math.sin(phase) * .025;
+            rig.leftArm.rotation.x = -.76 + Math.sin(phase * 1.7) * .3;
+            rig.rightArm.rotation.x = -.76 + Math.cos(phase * 1.9) * .3;
+          } else if (rig.activity === "talking") {
+            rig.model.position.y = Math.sin(phase * .7) * .035;
+            rig.rightArm.rotation.z = .25 + Math.sin(phase * 1.25) * .72;
+            rig.root.rotation.y += Math.sin(elapsed * .8 + index) * .006;
+          } else if (rig.activity === "coffee") {
+            rig.rightArm.rotation.x = -1.65 + Math.sin(elapsed * 1.7 + index) * .2;
+            rig.rightArm.rotation.z = .45;
+          } else if (rig.activity === "resting") {
+            rig.model.rotation.z = -.12 + Math.sin(elapsed * 1.1 + index) * .035;
+            rig.model.position.y = .03 + Math.sin(elapsed * 1.4 + index) * .02;
+            rig.leftArm.rotation.z = -.55;
+            rig.rightArm.rotation.z = .55;
+          } else if (rig.activity === "hero") {
+            rig.leftArm.rotation.z = -1.08 + Math.sin(elapsed * 1.2 + index) * .08;
+            rig.rightArm.rotation.z = 1.08 - Math.sin(elapsed * 1.2 + index) * .08;
+            rig.model.position.y = Math.abs(Math.sin(elapsed * 2.1 + index)) * .055;
+          }
         }
         if (rig.cape) {
           rig.cape.rotation.x = -.1 + Math.sin(elapsed * 2.2 + index) * (rig.gag === "cape-drama" ? .42 : .08);
           rig.cape.rotation.z = Math.sin(elapsed * 1.4 + index) * (rig.gag === "cape-drama" ? .2 : .035);
         }
-        if (rig.behavior !== "walk" && rig.behavior !== "nap") {
+        if (rig.activity !== "walking" && rig.activity !== "resting" && rig.activity !== "working") {
           if (rig.gag === "air-guitar") {
             rig.leftArm.rotation.z = -.48 + Math.sin(elapsed * 8 + index) * .22;
             rig.rightArm.rotation.z = .55 + Math.cos(elapsed * 10 + index) * .3;
@@ -1238,6 +1343,12 @@ export default function Office3D({ people, onSelect }: { people: Office3DPerson[
             rig.model.rotation.z = Math.sin(elapsed * 4.6 + index) * .12;
           }
         }
+      });
+      renderer.domElement.dataset.heroPositions = rigs.map((rig) => `${rig.id}:${rig.root.position.x.toFixed(2)},${rig.root.position.z.toFixed(2)}`).join("|");
+      renderer.domElement.dataset.heroActivities = rigs.map((rig) => `${rig.id}:${rig.activity}`).join("|");
+      scene.traverse((object) => {
+        if (object.userData.campusRing) object.rotation.z = elapsed * .22;
+        if (object.userData.campusBeam) object.scale.y = .9 + Math.sin(elapsed * 2.2) * .12;
       });
       controls.update();
       renderer.render(scene, camera);
@@ -1272,18 +1383,15 @@ export default function Office3D({ people, onSelect }: { people: Office3DPerson[
   return (
     <section ref={shellRef} className={`office-3d-shell ${visualMode === "cinematic" ? "cinematic-mode" : "interactive-mode"} ${motionEnabled ? "" : "motion-paused"}`}>
       <div className="office-3d-toolbar">
-        <div><span className="office-3d-live"><i /> HERO OFFICE LIVE</span><p><strong>People Pulse Hero Campus</strong><small>ตัวละครเต็มตัว · เดินอิสระ · เลือกห้องและกิจกรรมตามภาระงาน</small></p></div>
+        <div><span className="office-3d-live"><i /> 3D WORLD LIVE</span><p><strong>People Pulse 3D Hero Campus</strong><small>ฉาก 3D สร้างใหม่ทั้งหมด · ตัวละครโมเดล 3D เดินและเลือกกิจกรรมเอง</small></p></div>
         <div className="office-3d-actions">
-          <div className="office-view-switch" aria-label="เลือกรูปแบบสำนักงาน">
-            <button className={visualMode === "cinematic" ? "active" : ""} onClick={() => setVisualMode("cinematic")} aria-pressed={visualMode === "cinematic"}>▦ ตัวละครอิสระ</button>
-            <button className={visualMode === "interactive" ? "active" : ""} onClick={() => setVisualMode("interactive")} aria-pressed={visualMode === "interactive"}>◇ 3D หมุนได้</button>
-          </div>
+          <span className="office-native-3d-badge">◆ REAL-TIME 3D</span>
           <button className={ambienceEnabled ? "active" : ""} onClick={() => void toggleAmbience()} aria-pressed={ambienceEnabled}>{ambienceEnabled ? "🔊 เสียงทำงาน" : "🔈 เปิดบรรยากาศ"}</button>
           <button className={musicEnabled ? "active" : ""} onClick={() => void toggleMusic()} aria-pressed={musicEnabled}>{musicEnabled ? "♫ เพลงกำลังเล่น" : "♪ เพลง Focus"}</button>
           <button onClick={playAiConversation}>◖ ฟัง AI คุยกัน</button>
           <button onClick={() => { window.speechSynthesis?.cancel(); setFunCycle((cycle) => cycle + 1); setConversation("สุ่มชุดและเหตุการณ์ฮารอบใหม่แล้ว"); }}>✦ สุ่มเหตุการณ์ฮา</button>
           <button onClick={() => setMotionEnabled((enabled) => !enabled)}>{motionEnabled ? "Ⅱ หยุดฉาก" : "▶ เล่นต่อ"}</button>
-          {visualMode === "interactive" && <button onClick={() => resetCameraRef.current()}>⌂ มุมเริ่มต้น</button>}
+          <button onClick={() => resetCameraRef.current()}>⌂ มุมเริ่มต้น</button>
           <button onClick={toggleFullscreen}>⛶ เต็มจอ</button>
         </div>
       </div>
@@ -1296,7 +1404,10 @@ export default function Office3D({ people, onSelect }: { people: Office3DPerson[
       {visualMode === "cinematic" ? (
         <CinematicCampus people={people} dateKey={officeDateKey} funCycle={funCycle} motionEnabled={motionEnabled} onSelect={(employeeId) => onSelectRef.current(employeeId)} />
       ) : (
-        <div ref={hostRef} className="office-3d-canvas">{error && <div className="office-3d-error"><span>!</span><strong>เปิดฉาก 3D ไม่สำเร็จ</strong><p>{error}</p></div>}</div>
+        <div ref={hostRef} className="office-3d-canvas">
+          <div className="office-3d-world-hud" aria-hidden="true"><span><i /> AUTONOMOUS 3D WORLD</span><b>{people.length} HEROES</b><small>ลากเพื่อหมุน · เลื่อนเพื่อซูม · กดโมเดลเพื่อเปิดงาน</small></div>
+          {error && <div className="office-3d-error"><span>!</span><strong>เปิดฉาก 3D ไม่สำเร็จ</strong><p>{error}</p></div>}
+        </div>
       )}
       <div className="office-ai-conversation" aria-live="polite"><span>AI OFFICE RADIO</span><p>{conversation}</p></div>
       <div className="office-3d-footer"><span><i className="overloaded" />งานล้น: เร่งกู้เดดไลน์</span><span><i className="steady" />สมดุล: ทำงานพร้อมปล่อยมุก</span><span><i className="available" />ว่าง: เดิน คุย พัก หรือเล่นเกม</span><small>เสียงเป็นบรรยากาศจำลองและเปิดเมื่อผู้ใช้กดเท่านั้น · สถานะมาจากทูดูลิส ไม่ใช่การติดตามหน้าจอจริง</small></div>
