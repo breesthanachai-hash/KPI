@@ -6,6 +6,7 @@ import { authenticateRequest, authenticatedIdentity, canAccessEmployee, ensureBo
 import {
   clampScore,
   clampSkillLevel,
+  calculateSkillScore,
   getRole,
   makeInitials,
   periods,
@@ -511,10 +512,15 @@ export async function POST(request: Request) {
       if (!employee) return Response.json({ error: "ไม่พบพนักงานที่เลือก" }, { status: 404 });
 
       const role = getRole(employee.roleId);
+      const hasCompleteSkillAssessment = role.skills.every((skill) => {
+        const level = payload.skillScores?.[skill.id];
+        return typeof level === "number" && Number.isFinite(level) && level >= 1 && level <= 5;
+      });
+      if (!hasCompleteSkillAssessment) return Response.json({ error: `กรุณาประเมินสมรรถนะให้ครบทั้ง ${role.skills.length} ด้านก่อนบันทึก` }, { status: 400 });
       const kpiScores = Object.fromEntries(role.kpis.map((kpi) => [kpi.id, clampScore(payload.kpiScores?.[kpi.id])]));
       const skillScores = Object.fromEntries(role.skills.map((skill) => [skill.id, clampSkillLevel(payload.skillScores?.[skill.id])]));
       const kpiScore = role.kpis.reduce((sum, kpi) => sum + kpiScores[kpi.id] * kpi.weight / 100, 0);
-      const skillScore = role.skills.reduce((sum, skill) => sum + skillScores[skill.id], 0) / role.skills.length / 5 * 100;
+      const skillScore = calculateSkillScore(role, skillScores);
       const totalScore = kpiScore * 0.7 + skillScore * 0.3;
       const now = new Date().toISOString();
       const evaluation = {
@@ -711,6 +717,7 @@ export async function POST(request: Request) {
       const skill = role.skills.find((item) => item.id === payload.skillId);
       const level = Math.max(1, Math.min(5, Math.round(Number(payload.level) || 0)));
       if (!skill || level < 2) return Response.json({ error: "กรุณาเลือกสกิลและระดับที่ผ่านการยืนยัน" }, { status: 400 });
+      if (skill.eligibleForAllowance === false) return Response.json({ error: "สมรรถนะพฤติกรรมใช้ประกอบการประเมินและแผนพัฒนา แต่ไม่เพิ่มเงินเดือนโดยอัตโนมัติ" }, { status: 400 });
       if (!isSafeOptionalUrl(payload.evidenceUrl?.trim() ?? "")) return Response.json({ error: "ลิงก์หลักฐานต้องขึ้นต้นด้วย http หรือ https" }, { status: 400 });
       const [evaluation] = await db.select().from(evaluations).where(and(eq(evaluations.employeeId, employeeId), eq(evaluations.period, periods[0]))).limit(1);
       const evaluatedLevel = Number(evaluation?.skillScores?.[skill.id] ?? 0);

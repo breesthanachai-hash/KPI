@@ -17,11 +17,13 @@ import {
   type ProjectRecord,
   type RewardRecord,
   type RewardRedemptionRecord,
+  type SkillCategoryId,
   type SkillAchievementRecord,
   type TalentActionRecord,
   type UserAccountRecord,
   type WorkItemRecord,
   type WorkSubmissionRecord,
+  calculateSkillScore,
   getRole,
   makeInitials,
   periods,
@@ -29,6 +31,7 @@ import {
   roleSalaryBands,
   roles,
   scoreStatus,
+  skillCategories,
   skillAllowanceFor,
 } from "../lib/kpi-data";
 
@@ -171,6 +174,20 @@ const skillDimensionWeights: Record<string, Partial<Record<TalentDimensionId, nu
   "labor-practice": { execution: .7, analysis: .3 },
   facilitation: { communication: .7, leadership: .3 },
   "talent-development": { leadership: .6, communication: .4 },
+  "core-discipline": { execution: 1 },
+  "core-responsibility": { execution: .6, leadership: .4 },
+  "core-time-management": { execution: .7, analysis: .3 },
+  "core-quality-mindset": { execution: .6, problemSolving: .4 },
+  "core-professional-communication": { communication: 1 },
+  "core-teamwork": { communication: .7, leadership: .3 },
+  "core-respect-manners": { communication: .8, leadership: .2 },
+  "core-service-mind": { communication: .7, problemSolving: .3 },
+  "core-integrity": { leadership: .5, execution: .5 },
+  "core-compliance": { execution: .8, analysis: .2 },
+  "core-emotional-maturity": { leadership: .55, communication: .45 },
+  "core-adaptability": { problemSolving: .55, execution: .45 },
+  "core-learning": { analysis: .55, problemSolving: .45 },
+  "core-initiative": { problemSolving: .55, leadership: .25, execution: .2 },
 };
 
 const submissionTypeLabels: Record<WorkSubmissionRecord["submissionType"], string> = {
@@ -248,6 +265,25 @@ function buildTalentProfile(roleId: string, evaluation: EvaluationRecord | null)
   return profile;
 }
 
+function skillCategorySummary(role: ReturnType<typeof getRole>, evaluation: EvaluationRecord | null, categoryId: SkillCategoryId) {
+  const skills = role.skills.filter((skill) => (skill.category ?? "role") === categoryId);
+  const recorded = skills.filter((skill) => {
+    const level = evaluation?.skillScores[skill.id];
+    return typeof level === "number" && level >= 1 && level <= 5;
+  });
+  const average = recorded.length
+    ? recorded.reduce((sum, skill) => sum + (evaluation?.skillScores[skill.id] ?? 0), 0) / recorded.length / 5 * 100
+    : null;
+  return { skills, recorded: recorded.length, average };
+}
+
+function hasCompleteSkillAssessment(role: ReturnType<typeof getRole>, evaluation: EvaluationRecord | null) {
+  return Boolean(evaluation && role.skills.every((skill) => {
+    const level = evaluation.skillScores[skill.id];
+    return typeof level === "number" && level >= 1 && level <= 5;
+  }));
+}
+
 function calculateRoleFit(profile: Record<TalentDimensionId, number>, roleId: string) {
   const target = roleTalentProfiles[roleId];
   const fit = talentDimensions.reduce((sum, { id }) => sum + Math.min(profile[id] / target[id], 1), 0) / talentDimensions.length * 100;
@@ -276,7 +312,7 @@ function fallbackEvaluation(employee: EmployeeRecord): EvaluationRecord | null {
     employeeId: employee.id,
     period: employee.latestPeriod,
     kpiScores: Object.fromEntries(role.kpis.map((kpi) => [kpi.id, employee.latestScore ?? 80])),
-    skillScores: Object.fromEntries(role.skills.map((skill) => [skill.id, skillLevel])),
+    skillScores: Object.fromEntries(role.skills.filter((skill) => (skill.category ?? "role") === "role").map((skill) => [skill.id, skillLevel])),
     kpiScore: employee.latestScore,
     skillScore: employee.latestSkillScore ?? skillLevel * 20,
     totalScore: employee.latestScore,
@@ -464,6 +500,7 @@ export default function Home() {
   const [hrEmployee, setHrEmployee] = useState<EmployeeRecord | null>(null);
   const [kpiScores, setKpiScores] = useState<Record<string, number>>({});
   const [skillScores, setSkillScores] = useState<Record<string, number>>({});
+  const [skillCategoryFilter, setSkillCategoryFilter] = useState<SkillCategoryId>("role");
   const [note, setNote] = useState("");
   const [search, setSearch] = useState("");
   const [toast, setToast] = useState("");
@@ -629,8 +666,9 @@ export default function Home() {
   const averageScore = evaluatedEmployees.length
     ? evaluatedEmployees.reduce((sum, employee) => sum + (evaluationsByEmployee.get(employee.id)?.totalScore ?? 0), 0) / evaluatedEmployees.length
     : 0;
-  const averageSkill = evaluatedEmployees.length
-    ? evaluatedEmployees.reduce((sum, employee) => sum + (evaluationsByEmployee.get(employee.id)?.skillScore ?? 0), 0) / evaluatedEmployees.length
+  const completelyAssessedEmployees = evaluatedEmployees.filter((employee) => hasCompleteSkillAssessment(getRole(employee.roleId), evaluationsByEmployee.get(employee.id) ?? null));
+  const averageSkill = completelyAssessedEmployees.length
+    ? completelyAssessedEmployees.reduce((sum, employee) => sum + calculateSkillScore(getRole(employee.roleId), evaluationsByEmployee.get(employee.id)?.skillScores ?? {}), 0) / completelyAssessedEmployees.length
     : 0;
   const completion = employees.length ? evaluatedEmployees.length / employees.length * 100 : 0;
   const pendingEmployees = employees.filter((employee) => !evaluationsByEmployee.has(employee.id));
@@ -638,9 +676,10 @@ export default function Home() {
   const roleStats = useMemo(() => roles.map((role) => {
     const people = employees.filter((employee) => employee.roleId === role.id && employee.status === "active");
     const roleEvaluations = people.map((employee) => evaluationsByEmployee.get(employee.id)).filter((item): item is EvaluationRecord => Boolean(item));
+    const completeRoleEvaluations = roleEvaluations.filter((evaluation) => hasCompleteSkillAssessment(role, evaluation));
     const score = roleEvaluations.length ? roleEvaluations.reduce((sum, item) => sum + item.totalScore, 0) / roleEvaluations.length : 0;
-    const skill = roleEvaluations.length ? roleEvaluations.reduce((sum, item) => sum + item.skillScore, 0) / roleEvaluations.length : 0;
-    return { role, people: people.length, evaluated: roleEvaluations.length, score, skill };
+    const skill = completeRoleEvaluations.length ? completeRoleEvaluations.reduce((sum, item) => sum + calculateSkillScore(role, item.skillScores), 0) / completeRoleEvaluations.length : 0;
+    return { role, people: people.length, evaluated: roleEvaluations.length, skillEvaluated: completeRoleEvaluations.length, score, skill };
   }), [employees, evaluationsByEmployee]);
 
   const hrProfilesByEmployee = useMemo(() => new Map(hrProfiles.map((profile) => [profile.employeeId, profile])), [hrProfiles]);
@@ -717,7 +756,7 @@ export default function Home() {
   const attendanceReliabilityRecords = peopleOpsAttendanceHistory.filter((record) => !(record.status === "leave" && record.approvalStatus === "approved"));
   const attendanceReliability = attendanceReliabilityRecords.length ? attendanceReliabilityRecords.reduce((sum, record) => sum + (record.status === "present" ? 100 : record.status === "late" ? 70 : record.status === "leave" ? 100 : 0), 0) / attendanceReliabilityRecords.length : 100;
   const promotionReadiness = Math.round((peopleOpsEvaluation?.kpiScore ?? 0) * .4 + (peopleOpsEvaluation?.skillScore ?? 0) * .4 + missionGrowthScore * .15 + attendanceReliability * .05);
-  const nextSkillOpportunities = peopleOpsRole ? peopleOpsRole.skills.map((skill) => {
+  const nextSkillOpportunities = peopleOpsRole ? peopleOpsRole.skills.filter((skill) => skill.eligibleForAllowance !== false).map((skill) => {
     const currentLevel = peopleOpsEvaluation?.skillScores[skill.id] ?? 0;
     const highestVerifiedLevel = peopleOpsAchievements.filter((achievement) => achievement.skillId === skill.id).reduce((highest, achievement) => Math.max(highest, achievement.level), 0);
     return { skill, currentLevel, highestVerifiedLevel, allowance: skillAllowanceFor(peopleOpsRole.id, currentLevel), canVerify: currentLevel >= 2 && currentLevel > highestVerifiedLevel };
@@ -895,23 +934,31 @@ export default function Home() {
   const selectedRole = selectedEmployee ? getRole(selectedEmployee.roleId) : null;
   const skillProfileRole = skillProfileEmployee ? getRole(skillProfileEmployee.roleId) : null;
   const skillProfileEvaluation = skillProfileEmployee ? evaluationsByEmployee.get(skillProfileEmployee.id) ?? null : null;
-  const skillProfileTalent = useMemo(
-    () => skillProfileEmployee ? buildTalentProfile(skillProfileEmployee.roleId, skillProfileEvaluation) : emptyTalentProfile(),
-    [skillProfileEmployee, skillProfileEvaluation],
-  );
-  const roleFitRecommendations = useMemo(
-    () => skillProfileEvaluation
-      ? roles.map((role) => ({ role, score: calculateRoleFit(skillProfileTalent, role.id) })).sort((a, b) => b.score - a.score)
-      : [],
-    [skillProfileEvaluation, skillProfileTalent],
-  );
+  const skillProfileAssessedCount = skillProfileRole
+    ? skillProfileRole.skills.filter((skill) => {
+      const level = skillProfileEvaluation?.skillScores[skill.id];
+      return typeof level === "number" && level >= 1 && level <= 5;
+    }).length
+    : 0;
+  const skillProfileComplete = Boolean(skillProfileRole && skillProfileEvaluation && skillProfileAssessedCount === skillProfileRole.skills.length);
+  const skillProfileScore = skillProfileComplete && skillProfileRole && skillProfileEvaluation
+    ? calculateSkillScore(skillProfileRole, skillProfileEvaluation.skillScores)
+    : null;
+  const skillProfileTalent = skillProfileEmployee ? buildTalentProfile(skillProfileEmployee.roleId, skillProfileEvaluation) : emptyTalentProfile();
+  const roleFitRecommendations = skillProfileEvaluation
+    ? roles.map((role) => ({ role, score: calculateRoleFit(skillProfileTalent, role.id) })).sort((a, b) => b.score - a.score)
+    : [];
   const kpiTotal = selectedRole
     ? selectedRole.kpis.reduce((sum, kpi) => sum + (kpiScores[kpi.id] ?? 0) * kpi.weight / 100, 0)
     : 0;
-  const skillTotal = selectedRole
-    ? selectedRole.skills.reduce((sum, skill) => sum + (skillScores[skill.id] ?? 1), 0) / selectedRole.skills.length / 5 * 100
+  const ratedSkillCount = selectedRole
+    ? selectedRole.skills.filter((skill) => typeof skillScores[skill.id] === "number" && skillScores[skill.id] >= 1 && skillScores[skill.id] <= 5).length
     : 0;
+  const skillAssessmentComplete = Boolean(selectedRole && ratedSkillCount === selectedRole.skills.length);
+  const skillTotal = selectedRole ? calculateSkillScore(selectedRole, skillScores) : 0;
   const grandTotal = kpiTotal * 0.7 + skillTotal * 0.3;
+  const selectedSkillCategory = skillCategories.find((category) => category.id === skillCategoryFilter) ?? skillCategories[0];
+  const selectedCategorySkills = selectedRole?.skills.filter((skill) => (skill.category ?? "role") === selectedSkillCategory.id) ?? [];
 
   const showToast = (message: string) => {
     setToast(message);
@@ -935,7 +982,11 @@ export default function Home() {
     const existing = evaluationsByEmployee.get(employee.id) ?? fallbackEvaluation(employee);
     setSelectedEmployee(employee);
     setKpiScores(Object.fromEntries(role.kpis.map((kpi) => [kpi.id, existing?.kpiScores[kpi.id] ?? 80])));
-    setSkillScores(Object.fromEntries(role.skills.map((skill) => [skill.id, existing?.skillScores[skill.id] ?? skill.targetLevel])));
+    setSkillScores(Object.fromEntries(role.skills.flatMap((skill) => {
+      const level = existing?.skillScores[skill.id];
+      return typeof level === "number" && level >= 1 && level <= 5 ? [[skill.id, level]] : [];
+    })));
+    setSkillCategoryFilter("role");
     setNote(existing?.note ?? "");
   };
 
@@ -1454,6 +1505,10 @@ export default function Home() {
 
   const saveEvaluation = async () => {
     if (!selectedEmployee) return;
+    if (!skillAssessmentComplete) {
+      showToast(`กรุณาประเมินสมรรถนะให้ครบอีก ${(selectedRole?.skills.length ?? 0) - ratedSkillCount} ด้าน`);
+      return;
+    }
     setIsSaving(true);
     try {
       const response = await fetch("/api/dashboard", {
@@ -2035,7 +2090,7 @@ export default function Home() {
           <section className="skills-layout">
             <div className="skill-summary-card">
               <p className="eyebrow">ภาพรวมทั้งองค์กร</p>
-              <div className="skill-summary-score"><strong>{averageSkill ? averageSkill.toFixed(1) : "—"}</strong><span>คะแนนสกิลเฉลี่ย<br />จากเต็ม 100</span></div>
+              <div className="skill-summary-score"><strong>{averageSkill ? averageSkill.toFixed(1) : "—"}</strong><span>คะแนนสมรรถนะเฉลี่ย<br />จากเต็ม 100</span></div>
               <div className="skill-legend"><span><i className="ready" />พร้อมใช้งาน ≥ 80</span><span><i className="develop" />ควรพัฒนา &lt; 80</span></div>
             </div>
             <div className="skill-matrix-card">
@@ -2043,13 +2098,33 @@ export default function Home() {
               <div className="skill-matrix">
                 {roleStats.filter(({ role }) => activeDepartment === "all" || role.departmentId === activeDepartment).map(({ role, people, skill }) => (
                   <button key={role.id} className="skill-role" onClick={() => { setActiveDepartment(role.departmentId); setView("employees"); }}>
-                    <span className="skill-role-title"><i>{role.shortName.slice(0, 2)}</i><span><strong>{role.name}</strong><small>{people} คน · {role.skills.length} สกิลหลัก</small></span></span>
+                    <span className="skill-role-title"><i>{role.shortName.slice(0, 2)}</i><span><strong>{role.name}</strong><small>{people} คน · {role.skills.length} สมรรถนะ · 5 หมวด</small></span></span>
                     <span className="skill-bar"><i><b className={skill > 0 && skill < 80 ? "develop" : ""} style={{ width: `${skill}%` }} /></i><em>{skill ? skill.toFixed(0) : "—"}</em></span>
                     <span className={`skill-readiness ${skill > 0 && skill < 80 ? "develop" : ""}`}>{skill >= 80 ? "พร้อมใช้งาน" : skill > 0 ? "ควรพัฒนา" : "รอข้อมูล"}</span>
                   </button>
                 ))}
               </div>
             </div>
+            <section className="competency-framework-card">
+              <div className="competency-framework-heading">
+                <div><p className="eyebrow">COMPETENCY FRAMEWORK</p><h2>ประเมินรอบด้าน 18 สมรรถนะ</h2><p>ครอบคลุมทั้งความสามารถตามตำแหน่ง วิธีทำงาน การร่วมงาน ความเป็นมืออาชีพ และการเติบโต</p></div>
+                <span>5 หมวดมาตรฐาน</span>
+              </div>
+              <div className="competency-category-grid">
+                {skillCategories.map((category, index) => {
+                  const skillCount = roles[0].skills.filter((skill) => (skill.category ?? "role") === category.id).length;
+                  return (
+                    <article key={category.id} className={category.id}>
+                      <span>{String(index + 1).padStart(2, "0")}</span>
+                      <div><strong>{category.label}</strong><p>{category.description}</p></div>
+                      <b>{skillCount}<small> ด้าน</small></b>
+                      <em>น้ำหนัก {category.weight}%</em>
+                    </article>
+                  );
+                })}
+              </div>
+              <div className="competency-fairness-note"><span>i</span><p><strong>ประเมินจากพฤติกรรมที่สังเกตได้และหลักฐานการทำงาน</strong> ใช้ตัวอย่างเหตุการณ์จริง ไม่ตัดสินนิสัยส่วนตัวหรือความชอบของผู้ประเมิน</p></div>
+            </section>
             <div className="development-card">
               <div><p className="eyebrow">แผนพัฒนาแนะนำ</p><h2>ช่องว่างที่ควรเร่งเติม</h2></div>
               <div className="development-list">
@@ -2060,15 +2135,22 @@ export default function Home() {
             </div>
             <div className="individual-skills-card">
               <div className="individual-skills-heading">
-                <div><p className="eyebrow">INDIVIDUAL SKILL PROFILE</p><h2>สกิลรายบุคคล</h2><p>เปรียบเทียบระดับปัจจุบันกับเป้าหมายของตำแหน่ง เพื่อวางแผนพัฒนาได้ตรงจุด</p></div>
+                <div><p className="eyebrow">INDIVIDUAL SKILL PROFILE</p><h2>สมรรถนะและสกิลรายบุคคล</h2><p>ดูคะแนน 5 หมวดในบัตรเดียว แล้วเปิดรายละเอียดครบ 18 ด้านเพื่อวางแผนพัฒนา</p></div>
                 <label className="search-field"><span aria-hidden="true">⌕</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="ค้นหาพนักงานหรือตำแหน่ง" /><span className="sr-only">ค้นหาโปรไฟล์สกิล</span></label>
               </div>
               <div className="individual-skill-grid">
                 {filteredEmployees.map((employee) => {
                   const role = getRole(employee.roleId);
                   const evaluation = evaluationsByEmployee.get(employee.id);
-                  const readiness = role.skills.filter((skill) => (evaluation?.skillScores[skill.id] ?? 0) >= skill.targetLevel).length;
+                  const assessedSkills = role.skills.filter((skill) => {
+                    const level = evaluation?.skillScores[skill.id];
+                    return typeof level === "number" && level >= 1 && level <= 5;
+                  });
+                  const assessmentComplete = assessedSkills.length === role.skills.length;
+                  const competencyScore = assessmentComplete && evaluation ? calculateSkillScore(role, evaluation.skillScores) : null;
+                  const readiness = assessedSkills.filter((skill) => (evaluation?.skillScores[skill.id] ?? 0) >= skill.targetLevel).length;
                   const biggestGap = role.skills
+                    .filter((skill) => typeof evaluation?.skillScores[skill.id] === "number")
                     .map((skill) => ({ skill, gap: skill.targetLevel - (evaluation?.skillScores[skill.id] ?? 0) }))
                     .sort((a, b) => b.gap - a.gap)[0];
                   return (
@@ -2076,25 +2158,24 @@ export default function Home() {
                       <div className="person-skill-head">
                         <EmployeeAvatar employee={employee} profile={employeeProfilesById.get(employee.id)} className="avatar-skill" />
                         <span><strong>{employee.name}</strong><small>{role.name}</small></span>
-                        <b className={evaluation && evaluation.skillScore < 80 ? "develop" : ""}>{evaluation ? evaluation.skillScore.toFixed(0) : "—"}<small>/100</small></b>
+                        <b className={competencyScore !== null && competencyScore < 80 ? "develop" : ""}>{competencyScore !== null ? competencyScore.toFixed(0) : "—"}<small>/100</small></b>
                       </div>
-                      <div className="person-skill-list">
-                        {role.skills.map((skill) => {
-                          const level = evaluation?.skillScores[skill.id] ?? null;
+                      <div className="person-competency-summary">
+                        {skillCategories.map((category) => {
+                          const summary = skillCategorySummary(role, evaluation ?? null, category.id);
                           return (
-                            <div key={skill.id}>
-                              <span><strong>{skill.name}</strong><small>{level === null ? "รอประเมิน" : `ระดับ ${level} · ${skillLevelLabel(level)}`}</small></span>
-                              <span className="mini-levels" aria-label={`${skill.name} ${level === null ? "ยังไม่ประเมิน" : `ระดับ ${level} จาก 5`}`}>
-                                {[1, 2, 3, 4, 5].map((item) => <i key={item} className={`${level !== null && item <= level ? "filled" : ""} ${item === skill.targetLevel ? "target" : ""}`} />)}
-                              </span>
+                            <div key={category.id}>
+                              <span><strong>{category.shortLabel}</strong><small>{summary.recorded}/{summary.skills.length} ด้าน</small></span>
+                              <i aria-label={`${category.label} ${summary.average === null ? "รอประเมิน" : `${summary.average.toFixed(0)} เปอร์เซ็นต์`}`}><b style={{ width: `${summary.average ?? 0}%` }} /></i>
+                              <em>{summary.average === null ? "—" : summary.average.toFixed(0)}</em>
                             </div>
                           );
                         })}
                       </div>
                       <div className="person-skill-foot">
-                        <span className={readiness === role.skills.length ? "ready" : "develop"}>{evaluation ? `ถึงเป้าหมาย ${readiness}/${role.skills.length} สกิล` : "ยังไม่มีผลประเมิน"}</span>
-                        <small>{evaluation && biggestGap?.gap > 0 ? `เน้นพัฒนา: ${biggestGap.skill.name}` : evaluation ? "สกิลพร้อมตามบทบาท" : "เริ่มประเมินเพื่อสร้างโปรไฟล์"}</small>
-                        <button onClick={() => setSkillProfileEmployee(employee)}>ดูกราฟและ Talent Fit →</button>
+                        <span className={assessmentComplete ? "ready" : "develop"}>ประเมินแล้ว {assessedSkills.length}/{role.skills.length} ด้าน</span>
+                        <small>{!assessmentComplete ? `รอประเมินเพิ่ม ${role.skills.length - assessedSkills.length} ด้าน` : biggestGap?.gap > 0 ? `เน้นพัฒนา: ${biggestGap.skill.name}` : `ถึงเป้าหมาย ${readiness}/${role.skills.length} ด้าน`}</small>
+                        <button onClick={() => setSkillProfileEmployee(employee)}>ดูกราฟและรายละเอียด 18 ด้าน →</button>
                       </div>
                     </article>
                   );
@@ -2282,7 +2363,7 @@ export default function Home() {
                     </div>
                     <form id="skill-verification-form" className="skill-verification-form" onSubmit={verifySkillAchievement}>
                       <div><p className="eyebrow">VERIFICATION</p><h3>ยืนยันสกิลและเพิ่มค่าตอบแทน</h3><small>ระบบตรวจระดับจากผลประเมินล่าสุดและป้องกันการเพิ่มซ้ำอัตโนมัติ</small></div>
-                      <label><span>สกิล</span><select required value={skillAchievementForm.skillId} onChange={(event) => { const skillId = event.target.value; setSkillAchievementForm((form) => ({ ...form, skillId, level: Math.max(2, peopleOpsEvaluation?.skillScores[skillId] ?? 2) })); }}><option value="">เลือกสกิล</option>{peopleOpsRole.skills.map((skill) => <option key={skill.id} value={skill.id}>{skill.name}</option>)}</select></label>
+                      <label><span>สกิลวิชาชีพที่มีเงินเพิ่ม</span><select required value={skillAchievementForm.skillId} onChange={(event) => { const skillId = event.target.value; setSkillAchievementForm((form) => ({ ...form, skillId, level: Math.max(2, peopleOpsEvaluation?.skillScores[skillId] ?? 2) })); }}><option value="">เลือกสกิล</option>{peopleOpsRole.skills.filter((skill) => skill.eligibleForAllowance !== false).map((skill) => <option key={skill.id} value={skill.id}>{skill.name}</option>)}</select></label>
                       <label><span>ระดับที่ยืนยัน</span><input required type="number" min="2" max="5" value={skillAchievementForm.level} onChange={(event) => setSkillAchievementForm((form) => ({ ...form, level: Number(event.target.value) }))} /></label>
                       <label className="wide"><span>ลิงก์หลักฐานการทดสอบ / ผลงาน</span><input type="url" value={skillAchievementForm.evidenceUrl} onChange={(event) => setSkillAchievementForm((form) => ({ ...form, evidenceUrl: event.target.value }))} placeholder="https://... (ถ้ามี)" /></label>
                       <label className="wide"><span>เหตุผลที่ผ่านเกณฑ์</span><input value={skillAchievementForm.note} onChange={(event) => setSkillAchievementForm((form) => ({ ...form, note: event.target.value }))} placeholder="เช่น ผ่าน Skill Test 86% และมีผลงานจริง 2 ชิ้น" /></label>
@@ -2857,8 +2938,8 @@ export default function Home() {
               </div>
               <button className="modal-close dark" onClick={() => setSkillProfileEmployee(null)} aria-label="ปิดหน้าต่าง">×</button>
               <div className="profile-score-block">
-                <div><small>ความพร้อมด้านสกิล</small><strong>{skillProfileEvaluation ? skillProfileEvaluation.skillScore.toFixed(0) : "—"}</strong><span>/ 100</span></div>
-                <div className="profile-score-copy"><b>{skillProfileEvaluation ? scoreStatus(skillProfileEvaluation.skillScore) : "รอประเมิน"}</b><p>{period}<br />เป้าหมายตามตำแหน่ง {skillProfileRole.skills.length} สกิล</p></div>
+                <div><small>คะแนนสมรรถนะรวม</small><strong>{skillProfileScore !== null ? skillProfileScore.toFixed(0) : "—"}</strong><span>/ 100</span></div>
+                <div className="profile-score-copy"><b>{skillProfileScore !== null ? scoreStatus(skillProfileScore) : `ประเมินแล้ว ${skillProfileAssessedCount}/${skillProfileRole.skills.length}`}</b><p>{period}<br />ประเมินรอบด้าน {skillProfileRole.skills.length} สมรรถนะ · 5 หมวด</p></div>
               </div>
             </div>
             <div className="skill-profile-body">
@@ -2888,19 +2969,29 @@ export default function Home() {
                   <div className="talent-empty"><span>◎</span><div><strong>ยังสร้างกราฟไม่ได้</strong><p>เริ่มประเมินระดับสกิล 1–5 เพื่อดูกราฟความถนัดและตำแหน่งที่เหมาะสม</p></div><button onClick={() => editSkillProfile(skillProfileEmployee)}>เริ่มประเมินสกิล</button></div>
                 )}
               </section>
-              <div className="profile-section-heading"><div><p className="eyebrow">COMPETENCY DETAIL</p><h3>ระดับปัจจุบันเทียบเป้าหมาย</h3></div><span><i />ระดับปัจจุบัน <i className="target" />เป้าหมาย</span></div>
-              <div className="profile-skill-list">
-                {skillProfileRole.skills.map((skill) => {
-                  const level = skillProfileEvaluation?.skillScores[skill.id] ?? null;
-                  const gap = level === null ? null : skill.targetLevel - level;
+              <div className="profile-section-heading"><div><p className="eyebrow">COMPETENCY DETAIL</p><h3>รายละเอียดสมรรถนะ 5 หมวด</h3></div><span><i />ระดับปัจจุบัน <i className="target" />เป้าหมาย</span></div>
+              <div className="profile-skill-categories">
+                {skillCategories.map((category) => {
+                  const summary = skillCategorySummary(skillProfileRole, skillProfileEvaluation, category.id);
                   return (
-                    <article key={skill.id}>
-                      <div className="profile-skill-name"><strong>{skill.name}</strong><small>{level === null ? "ยังไม่มีระดับในรอบนี้" : `${skillLevelLabel(level)} · ระดับ ${level} จาก 5`}</small></div>
-                      <div className="profile-level-track" aria-label={`${skill.name}: ${level === null ? "รอประเมิน" : `ระดับ ${level}`} เป้าหมายระดับ ${skill.targetLevel}`}>
-                        {[1, 2, 3, 4, 5].map((item) => <span key={item} className={`${level !== null && item <= level ? "filled" : ""} ${item === skill.targetLevel ? "target" : ""}`}><i />{item}</span>)}
+                    <section className={`profile-skill-category ${category.id}`} key={category.id}>
+                      <header><div><p>{category.shortLabel}</p><h4>{category.label}</h4></div><span>{summary.recorded}/{summary.skills.length} ด้าน · {summary.average === null ? "รอประเมิน" : `${summary.average.toFixed(0)}%`}</span></header>
+                      <div className="profile-skill-list">
+                        {summary.skills.map((skill) => {
+                          const level = skillProfileEvaluation?.skillScores[skill.id] ?? null;
+                          const gap = level === null ? null : skill.targetLevel - level;
+                          return (
+                            <article key={skill.id}>
+                              <div className="profile-skill-name"><strong>{skill.name}</strong><small>{level === null ? "ยังไม่มีระดับในรอบนี้" : `${skillLevelLabel(level)} · ระดับ ${level} จาก 5`}</small>{skill.description && <p>{skill.description}</p>}</div>
+                              <div className="profile-level-track" aria-label={`${skill.name}: ${level === null ? "รอประเมิน" : `ระดับ ${level}`} เป้าหมายระดับ ${skill.targetLevel}`}>
+                                {[1, 2, 3, 4, 5].map((item) => <span key={item} className={`${level !== null && item <= level ? "filled" : ""} ${item === skill.targetLevel ? "target" : ""}`}><i />{item}</span>)}
+                              </div>
+                              <div className={`gap-pill ${gap !== null && gap <= 0 ? "ready" : ""}`}>{gap === null ? "รอประเมิน" : gap > 0 ? `ขาด ${gap} ระดับ` : gap === 0 ? "ตรงเป้าหมาย" : `เกิน ${Math.abs(gap)} ระดับ`}</div>
+                            </article>
+                          );
+                        })}
                       </div>
-                      <div className={`gap-pill ${gap !== null && gap <= 0 ? "ready" : ""}`}>{gap === null ? "รอประเมิน" : gap > 0 ? `ขาด ${gap} ระดับ` : gap === 0 ? "ตรงเป้าหมาย" : `เกิน ${Math.abs(gap)} ระดับ`}</div>
-                    </article>
+                    </section>
                   );
                 })}
               </div>
@@ -2908,13 +2999,15 @@ export default function Home() {
                 <article>
                   <span className="insight-icon strength">✓</span>
                   <div><strong>จุดแข็ง</strong><p>{skillProfileEvaluation ? (() => {
-                    const strengths = skillProfileRole.skills.filter((skill) => (skillProfileEvaluation.skillScores[skill.id] ?? 0) >= skill.targetLevel);
+                    const strengths = skillProfileRole.skills.filter((skill) => typeof skillProfileEvaluation.skillScores[skill.id] === "number" && skillProfileEvaluation.skillScores[skill.id] >= skill.targetLevel);
                     return strengths.length ? strengths.map((skill) => skill.name).join(" · ") : "ยังไม่มีสกิลที่ถึงระดับเป้าหมาย";
                   })() : "ประเมินสกิลเพื่อค้นหาจุดแข็งของบุคคลนี้"}</p></div>
                 </article>
                 <article>
                   <span className="insight-icon focus">↗</span>
                   <div><strong>จุดเน้นพัฒนา</strong><p>{skillProfileEvaluation ? (() => {
+                    const missing = skillProfileRole.skills.filter((skill) => typeof skillProfileEvaluation.skillScores[skill.id] !== "number");
+                    if (missing.length) return `รอประเมินอีก ${missing.length} ด้าน: ${missing.slice(0, 2).map((skill) => skill.name).join(" · ")}`;
                     const gaps = skillProfileRole.skills
                       .map((skill) => ({ skill, gap: skill.targetLevel - (skillProfileEvaluation.skillScores[skill.id] ?? 0) }))
                       .filter((item) => item.gap > 0)
@@ -2975,9 +3068,9 @@ export default function Home() {
               <button className="modal-close" onClick={() => setSelectedEmployee(null)} aria-label="ปิดหน้าต่าง">×</button>
             </div>
             <div className="modal-score-summary">
-              <div><small>คะแนนรวม</small><strong>{grandTotal.toFixed(1)}</strong><span className={grandTotal < 75 ? "low" : ""}>{scoreStatus(grandTotal)}</span></div>
-              <div className="score-formula"><span>KPI 70% <b>{kpiTotal.toFixed(1)}</b></span><span>สกิล 30% <b>{skillTotal.toFixed(1)}</b></span></div>
-              <div className="modal-progress"><i style={{ width: `${grandTotal}%` }} /></div>
+              <div><small>คะแนนรวม</small><strong>{skillAssessmentComplete ? grandTotal.toFixed(1) : "—"}</strong><span className={skillAssessmentComplete && grandTotal < 75 ? "low" : ""}>{skillAssessmentComplete ? scoreStatus(grandTotal) : `รอประเมินอีก ${selectedRole.skills.length - ratedSkillCount} ด้าน`}</span></div>
+              <div className="score-formula"><span>KPI 70% <b>{kpiTotal.toFixed(1)}</b></span><span>สมรรถนะ 30% <b>{skillAssessmentComplete ? skillTotal.toFixed(1) : "—"}</b></span></div>
+              <div className="modal-progress"><i style={{ width: `${skillAssessmentComplete ? grandTotal : 0}%` }} /></div>
             </div>
             <div className="evaluation-columns">
               <div className="evaluation-section">
@@ -2992,18 +3085,27 @@ export default function Home() {
                 </div>
               </div>
               <div className="evaluation-section">
-                <div className="evaluation-section-title"><span>02</span><div><strong>ระดับสกิล</strong><small>เลือกระดับความสามารถ 1–5</small></div></div>
+                <div className="evaluation-section-title"><span>02</span><div><strong>สมรรถนะรอบด้าน</strong><small>ประเมินแล้ว {ratedSkillCount}/{selectedRole.skills.length} ด้าน</small></div></div>
+                <div className="skill-category-tabs" aria-label="เลือกหมวดสมรรถนะ">
+                  {skillCategories.map((category) => {
+                    const categorySkills = selectedRole.skills.filter((skill) => (skill.category ?? "role") === category.id);
+                    const categoryRated = categorySkills.filter((skill) => typeof skillScores[skill.id] === "number").length;
+                    return <button type="button" key={category.id} className={skillCategoryFilter === category.id ? "active" : ""} onClick={() => setSkillCategoryFilter(category.id)}><strong>{category.shortLabel}</strong><small>{categoryRated}/{categorySkills.length}</small></button>;
+                  })}
+                </div>
+                <div className={`skill-category-context ${selectedSkillCategory.id}`}><div><strong>{selectedSkillCategory.label}</strong><p>{selectedSkillCategory.description}</p></div><span>น้ำหนัก {selectedSkillCategory.weight}%</span></div>
                 <div className="skill-editor">
-                  {selectedRole.skills.map((skill) => (
-                    <fieldset key={skill.id}><legend><strong>{skill.name}</strong><small>เป้าหมาย {skill.target}</small></legend><div className="level-picker">
-                      {[1, 2, 3, 4, 5].map((level) => <button type="button" key={level} className={(skillScores[skill.id] ?? 1) === level ? "active" : ""} onClick={() => setSkillScores((scores) => ({ ...scores, [skill.id]: level }))} aria-label={`${skill.name} ระดับ ${level}`}>{level}</button>)}
+                  {selectedCategorySkills.map((skill) => (
+                    <fieldset key={skill.id}><legend><strong>{skill.name}</strong><small>{skill.description}<br />หลักฐาน: {skill.evidence} · เป้าหมาย {skill.target}</small></legend><div className="level-picker">
+                      {[1, 2, 3, 4, 5].map((level) => <button type="button" key={level} className={skillScores[skill.id] === level ? "active" : ""} onClick={() => setSkillScores((scores) => ({ ...scores, [skill.id]: level }))} aria-label={`${skill.name} ระดับ ${level}`}>{level}</button>)}
                     </div></fieldset>
                   ))}
                 </div>
+                <div className="skill-evaluation-note"><span>i</span><p>ให้คะแนนจากหลักฐานและพฤติกรรมที่สังเกตได้ในการทำงาน ไม่ใช้ความชอบหรือความเห็นต่อนิสัยส่วนตัว</p></div>
               </div>
             </div>
             <label className="note-field"><span>บันทึกและแผนพัฒนา</span><textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder="ระบุผลงานเด่น จุดที่ควรพัฒนา และสิ่งที่องค์กรจะสนับสนุน..." /></label>
-            <div className="modal-actions"><button className="secondary-button" onClick={() => setSelectedEmployee(null)}>ยกเลิก</button><button className="primary-button" disabled={isSaving} onClick={saveEvaluation}>{isSaving ? "กำลังบันทึก..." : "บันทึกผลประเมิน"}</button></div>
+            <div className="modal-actions"><button className="secondary-button" onClick={() => setSelectedEmployee(null)}>ยกเลิก</button><button className="primary-button" disabled={isSaving || !skillAssessmentComplete} onClick={saveEvaluation} title={skillAssessmentComplete ? "บันทึกผลประเมิน" : `เหลือสมรรถนะที่ต้องประเมิน ${selectedRole.skills.length - ratedSkillCount} ด้าน`}>{isSaving ? "กำลังบันทึก..." : skillAssessmentComplete ? "บันทึกผลประเมิน" : `ประเมินให้ครบอีก ${selectedRole.skills.length - ratedSkillCount} ด้าน`}</button></div>
           </section>
         </div>
       )}

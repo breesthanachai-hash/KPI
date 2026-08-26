@@ -10,9 +10,62 @@ export type KpiTemplate = MetricTemplate & {
   weight: number;
 };
 
+export type SkillCategoryId = "role" | "execution" | "collaboration" | "professionalism" | "growth";
+
 export type SkillTemplate = MetricTemplate & {
   targetLevel: number;
+  category?: SkillCategoryId;
+  description?: string;
+  evidence?: string;
+  eligibleForAllowance?: boolean;
 };
+
+export const skillCategories: { id: SkillCategoryId; label: string; shortLabel: string; description: string; weight: number }[] = [
+  { id: "role", label: "สกิลตามตำแหน่ง", shortLabel: "ตามตำแหน่ง", description: "ความรู้และความสามารถเฉพาะที่ต้องใช้เพื่อส่งมอบงานในบทบาทปัจจุบัน", weight: 40 },
+  { id: "execution", label: "การทำงานและความรับผิดชอบ", shortLabel: "การทำงาน", description: "วินัย ความรับผิดชอบ การบริหารเวลา และมาตรฐานคุณภาพงาน", weight: 20 },
+  { id: "collaboration", label: "การทำงานกับผู้อื่น", shortLabel: "การร่วมงาน", description: "การสื่อสาร ทีมเวิร์ก มารยาท และการใส่ใจผู้รับบริการ", weight: 15 },
+  { id: "professionalism", label: "ความเป็นมืออาชีพ", shortLabel: "มืออาชีพ", description: "ความซื่อสัตย์ การรักษากฎและข้อมูล รวมถึงการจัดการอารมณ์", weight: 15 },
+  { id: "growth", label: "การเติบโตและพัฒนาตน", shortLabel: "การเติบโต", description: "การปรับตัว เรียนรู้สิ่งใหม่ และริเริ่มแก้ปัญหาอย่างสร้างสรรค์", weight: 10 },
+];
+
+export const coreCompetencies: SkillTemplate[] = [
+  { id: "core-discipline", name: "วินัยและความตรงต่อเวลา", target: "ระดับ 4 จาก 5", targetLevel: 4, category: "execution", description: "รักษาเวลา ข้อตกลง และขั้นตอนการทำงานอย่างสม่ำเสมอ", evidence: "เวลาเข้างาน การเข้าประชุม และประวัติทำตามข้อตกลง", eligibleForAllowance: false },
+  { id: "core-responsibility", name: "ความรับผิดชอบและการเป็นเจ้าของงาน", target: "ระดับ 4 จาก 5", targetLevel: 4, category: "execution", description: "รับผิดชอบผลลัพธ์ ติดตามงาน และแจ้งความเสี่ยงก่อนเกิดปัญหา", evidence: "งานที่รับผิดชอบ การติดตาม และการแก้ไขเมื่อเกิดข้อผิดพลาด", eligibleForAllowance: false },
+  { id: "core-time-management", name: "การบริหารเวลาและลำดับความสำคัญ", target: "ระดับ 4 จาก 5", targetLevel: 4, category: "execution", description: "วางแผนงาน เลือกสิ่งสำคัญ และส่งมอบตามเวลาที่ตกลง", evidence: "แผนงาน กำหนดส่ง และการจัดการงานเร่งด่วน", eligibleForAllowance: false },
+  { id: "core-quality-mindset", name: "ความละเอียดรอบคอบและคุณภาพงาน", target: "ระดับ 4 จาก 5", targetLevel: 4, category: "execution", description: "ตรวจสอบความถูกต้องและรักษามาตรฐานก่อนส่งมอบ", evidence: "จำนวนรอบแก้ไข ข้อผิดพลาด และผลตรวจคุณภาพ", eligibleForAllowance: false },
+  { id: "core-professional-communication", name: "การสื่อสารอย่างมืออาชีพ", target: "ระดับ 4 จาก 5", targetLevel: 4, category: "collaboration", description: "สื่อสารชัดเจน ตรงประเด็น เลือกช่องทางและน้ำเสียงเหมาะสม", evidence: "การประชุม ข้อความสรุปงาน และการส่งต่อข้อมูล", eligibleForAllowance: false },
+  { id: "core-teamwork", name: "การทำงานเป็นทีมและให้ความร่วมมือ", target: "ระดับ 4 จาก 5", targetLevel: 4, category: "collaboration", description: "แบ่งปันข้อมูล ช่วยเหลือทีม และทำงานข้ามหน้าที่ได้", evidence: "ผลตอบรับจากทีม งานร่วม และการแบ่งปันความรู้", eligibleForAllowance: false },
+  { id: "core-respect-manners", name: "มารยาท การให้เกียรติ และความเหมาะสม", target: "ระดับ 4 จาก 5", targetLevel: 4, category: "collaboration", description: "รับฟัง ให้เกียรติ และแสดงพฤติกรรมที่เหมาะสมกับสถานการณ์ทำงาน", evidence: "พฤติกรรมที่สังเกตได้ในการประชุม การสนทนา และการรับข้อเสนอแนะ", eligibleForAllowance: false },
+  { id: "core-service-mind", name: "จิตบริการและความใส่ใจผู้อื่น", target: "ระดับ 4 จาก 5", targetLevel: 4, category: "collaboration", description: "เข้าใจความต้องการและช่วยให้ผู้รับงานหรือลูกค้าได้รับผลลัพธ์ที่ดี", evidence: "ผลตอบรับ การแก้ปัญหา และความครบถ้วนของการส่งมอบ", eligibleForAllowance: false },
+  { id: "core-integrity", name: "ความซื่อสัตย์และจริยธรรม", target: "ระดับ 5 จาก 5", targetLevel: 5, category: "professionalism", description: "รายงานข้อเท็จจริง โปร่งใส และไม่ใช้ตำแหน่งหรือข้อมูลอย่างไม่เหมาะสม", evidence: "เหตุการณ์และการตัดสินใจที่ตรวจสอบได้ ไม่ใช้ความรู้สึกส่วนตัว", eligibleForAllowance: false },
+  { id: "core-compliance", name: "การปฏิบัติตามกฎและรักษาความลับ", target: "ระดับ 4 จาก 5", targetLevel: 4, category: "professionalism", description: "ปฏิบัติตามนโยบาย ความปลอดภัย และคุ้มครองข้อมูลของบริษัทกับลูกค้า", evidence: "การผ่านอบรม เหตุการณ์ความปลอดภัย และการจัดการข้อมูล", eligibleForAllowance: false },
+  { id: "core-emotional-maturity", name: "วุฒิภาวะและการจัดการอารมณ์", target: "ระดับ 4 จาก 5", targetLevel: 4, category: "professionalism", description: "รับมือความกดดัน รับฟังความเห็นต่าง และตอบสนองอย่างสร้างสรรค์", evidence: "พฤติกรรมที่สังเกตได้เมื่อมีความขัดแย้ง งานเร่งด่วน หรือข้อเสนอแนะ", eligibleForAllowance: false },
+  { id: "core-adaptability", name: "การปรับตัวต่อการเปลี่ยนแปลง", target: "ระดับ 3 จาก 5", targetLevel: 3, category: "growth", description: "ปรับวิธีทำงานเมื่อเป้าหมาย เครื่องมือ หรือสถานการณ์เปลี่ยน", evidence: "การรับบทบาทใหม่ การใช้เครื่องมือใหม่ และผลลัพธ์หลังปรับแผน", eligibleForAllowance: false },
+  { id: "core-learning", name: "การเรียนรู้และพัฒนาตนเอง", target: "ระดับ 3 จาก 5", targetLevel: 3, category: "growth", description: "ค้นหาความรู้ ฝึกฝน และนำสิ่งที่เรียนมาใช้กับงานจริง", evidence: "ผลทดสอบ หลักสูตร ผลงานก่อน–หลัง และการแบ่งปันความรู้", eligibleForAllowance: false },
+  { id: "core-initiative", name: "ความคิดริเริ่มและการแก้ปัญหา", target: "ระดับ 3 จาก 5", targetLevel: 3, category: "growth", description: "มองเห็นปัญหา เสนอทางเลือก และลงมือปรับปรุงโดยไม่ต้องรอคำสั่งทุกขั้น", evidence: "ข้อเสนอปรับปรุง การทดลอง และผลลัพธ์ที่วัดได้", eligibleForAllowance: false },
+];
+
+function completeSkillFramework(roleSkills: SkillTemplate[]) {
+  return [
+    ...roleSkills.map((skill) => ({
+      ...skill,
+      category: "role" as const,
+      description: skill.description ?? "ประยุกต์ความรู้เฉพาะทางเพื่อส่งมอบผลงานตามมาตรฐานของตำแหน่ง",
+      evidence: skill.evidence ?? "ผลทดสอบ ตัวอย่างผลงาน คุณภาพการส่งมอบ และผลตอบรับจากผู้ตรวจงาน",
+      eligibleForAllowance: skill.eligibleForAllowance ?? true,
+    })),
+    ...coreCompetencies,
+  ];
+}
+
+export function calculateSkillScore(role: RoleTemplate, scores: Record<string, number>) {
+  return skillCategories.reduce((total, category) => {
+    const skills = role.skills.filter((skill) => (skill.category ?? "role") === category.id);
+    if (!skills.length) return total;
+    const categoryScore = skills.reduce((sum, skill) => sum + Math.max(0, Math.min(5, Number(scores[skill.id]) || 0)), 0) / skills.length / 5 * 100;
+    return total + categoryScore * category.weight / 100;
+  }, 0);
+}
 
 export type RoleTemplate = {
   id: string;
@@ -309,12 +362,12 @@ export const roles: RoleTemplate[] = [
       { id: "retention", name: "การรักษาลูกค้า", weight: 20, target: "≥ 90%" },
       { id: "team-growth", name: "การพัฒนาและบริหารทีม", weight: 15, target: "≥ 85%" },
     ],
-    skills: [
+    skills: completeSkillFramework([
       { id: "negotiation", name: "การเจรจาต่อรอง", target: "ระดับ 4 จาก 5", targetLevel: 4 },
       { id: "forecasting", name: "การวางแผนยอดขาย", target: "ระดับ 4 จาก 5", targetLevel: 4 },
       { id: "coaching", name: "การโค้ชทีม", target: "ระดับ 4 จาก 5", targetLevel: 4 },
       { id: "customer-insight", name: "ความเข้าใจลูกค้า", target: "ระดับ 4 จาก 5", targetLevel: 4 },
-    ],
+    ]),
   },
   {
     id: "marketing",
@@ -329,12 +382,12 @@ export const roles: RoleTemplate[] = [
       { id: "engagement", name: "อัตราการมีส่วนร่วม", weight: 20, target: "≥ 6.5%" },
       { id: "campaign-delivery", name: "แคมเปญเสร็จตามแผน", weight: 20, target: "≥ 90%" },
     ],
-    skills: [
+    skills: completeSkillFramework([
       { id: "campaign-strategy", name: "กลยุทธ์แคมเปญ", target: "ระดับ 4 จาก 5", targetLevel: 4 },
       { id: "analytics", name: "การวิเคราะห์ข้อมูล", target: "ระดับ 4 จาก 5", targetLevel: 4 },
       { id: "content", name: "การสื่อสารเนื้อหา", target: "ระดับ 4 จาก 5", targetLevel: 4 },
       { id: "experimentation", name: "การทดลองและเรียนรู้", target: "ระดับ 3 จาก 5", targetLevel: 3 },
-    ],
+    ]),
   },
   {
     id: "customer-service",
@@ -349,12 +402,12 @@ export const roles: RoleTemplate[] = [
       { id: "first-contact", name: "แก้ปัญหาในการติดต่อครั้งแรก", weight: 25, target: "≥ 82%" },
       { id: "service-quality", name: "คุณภาพการให้บริการ", weight: 15, target: "≥ 88%" },
     ],
-    skills: [
+    skills: completeSkillFramework([
       { id: "empathy", name: "ความเข้าอกเข้าใจ", target: "ระดับ 4 จาก 5", targetLevel: 4 },
       { id: "problem-solving", name: "การแก้ปัญหา", target: "ระดับ 4 จาก 5", targetLevel: 4 },
       { id: "product-knowledge", name: "ความรู้ผลิตภัณฑ์", target: "ระดับ 4 จาก 5", targetLevel: 4 },
       { id: "communication", name: "การสื่อสาร", target: "ระดับ 4 จาก 5", targetLevel: 4 },
-    ],
+    ]),
   },
   {
     id: "developer",
@@ -369,12 +422,12 @@ export const roles: RoleTemplate[] = [
       { id: "reliability", name: "ความเสถียรของระบบ", weight: 25, target: "≥ 99.9%" },
       { id: "knowledge-sharing", name: "การแบ่งปันความรู้", weight: 15, target: "≥ 2 ครั้ง/ไตรมาส" },
     ],
-    skills: [
+    skills: completeSkillFramework([
       { id: "engineering", name: "ทักษะวิศวกรรมซอฟต์แวร์", target: "ระดับ 4 จาก 5", targetLevel: 4 },
       { id: "system-design", name: "การออกแบบระบบ", target: "ระดับ 3 จาก 5", targetLevel: 3 },
       { id: "quality", name: "การประกันคุณภาพ", target: "ระดับ 4 จาก 5", targetLevel: 4 },
       { id: "collaboration", name: "การทำงานร่วมกัน", target: "ระดับ 4 จาก 5", targetLevel: 4 },
-    ],
+    ]),
   },
   {
     id: "video-editor",
@@ -389,12 +442,12 @@ export const roles: RoleTemplate[] = [
       { id: "quality-approval", name: "งานผ่านคุณภาพครั้งแรก", weight: 25, target: "≥ 85%" },
       { id: "content-performance", name: "ผลงานคอนเทนต์หลังเผยแพร่", weight: 20, target: "ตามเป้าแคมเปญ" },
     ],
-    skills: [
+    skills: completeSkillFramework([
       { id: "video-editing", name: "การตัดต่อและเล่าเรื่อง", target: "ระดับ 4 จาก 5", targetLevel: 4 },
       { id: "motion-graphics", name: "โมชั่นกราฟิก", target: "ระดับ 3 จาก 5", targetLevel: 3 },
       { id: "sound-design", name: "การออกแบบเสียง", target: "ระดับ 3 จาก 5", targetLevel: 3 },
       { id: "creative-collaboration", name: "การทำงานร่วมกับทีมครีเอทีฟ", target: "ระดับ 4 จาก 5", targetLevel: 4 },
-    ],
+    ]),
   },
   {
     id: "hr",
@@ -409,12 +462,12 @@ export const roles: RoleTemplate[] = [
       { id: "engagement", name: "ความผูกพันต่อองค์กร", weight: 25, target: "≥ 80%" },
       { id: "development-plan", name: "แผนพัฒนาที่เสร็จตามกำหนด", weight: 15, target: "≥ 90%" },
     ],
-    skills: [
+    skills: completeSkillFramework([
       { id: "people-analytics", name: "การวิเคราะห์ข้อมูลบุคลากร", target: "ระดับ 3 จาก 5", targetLevel: 3 },
       { id: "labor-practice", name: "งานบุคคลและข้อกำหนด", target: "ระดับ 4 จาก 5", targetLevel: 4 },
       { id: "facilitation", name: "การอำนวยความร่วมมือ", target: "ระดับ 4 จาก 5", targetLevel: 4 },
       { id: "talent-development", name: "การพัฒนาบุคลากร", target: "ระดับ 4 จาก 5", targetLevel: 4 },
-    ],
+    ]),
   },
 ];
 

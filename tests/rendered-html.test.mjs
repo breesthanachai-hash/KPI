@@ -23,6 +23,13 @@ test("builds the People Pulse KPI product bundle", async () => {
   assert.match(pageAsset, /PEOPLE &amp; WORK OS|PEOPLE & WORK OS/);
   assert.match(pageAsset, /saveEvaluation/);
   assert.match(pageAsset, /สกิลรายบุคคล/);
+  assert.match(pageAsset, /ประเมินรอบด้าน 18 สมรรถนะ/);
+  assert.match(pageAsset, /วินัยและความตรงต่อเวลา/);
+  assert.match(pageAsset, /ความรับผิดชอบและการเป็นเจ้าของงาน/);
+  assert.match(pageAsset, /มารยาท การให้เกียรติ และความเหมาะสม/);
+  assert.match(pageAsset, /ความซื่อสัตย์และจริยธรรม/);
+  assert.match(pageAsset, /พฤติกรรมที่สังเกตได้/);
+  assert.match(pageAsset, /ประเมินแล้ว/);
   assert.match(pageAsset, /INDIVIDUAL SKILL PROFILE/);
   assert.match(pageAsset, /TALENT FIT ANALYSIS/);
   assert.match(pageAsset, /กราฟสกิลที่ถนัด/);
@@ -170,6 +177,9 @@ test("builds the People Pulse KPI product bundle", async () => {
   assert.match(styles, /--forest: #245fbe/);
   assert.match(styles, /Work hub/);
   assert.match(styles, /work-section-tabs/);
+  assert.match(styles, /Competency framework/);
+  assert.match(styles, /competency-framework-card/);
+  assert.match(styles, /skill-category-tabs/);
   assert.match(office3D, /Noto Sans Thai Variable/);
   assert.match(styles, /calm-shell/);
   assert.match(styles, /prefers-reduced-motion/);
@@ -279,6 +289,8 @@ test("ships durable role-based access and scoped people, work, portfolio and rew
   assert.match(dashboardRoute, /saveAttendance/);
   assert.match(dashboardRoute, /approveAttendance/);
   assert.match(dashboardRoute, /verifySkillAchievement/);
+  assert.match(dashboardRoute, /hasCompleteSkillAssessment/);
+  assert.match(dashboardRoute, /calculateSkillScore/);
   assert.match(dashboardRoute, /saveUserAccount/);
   assert.match(dashboardRoute, /visibleEmployeeIds/);
   assert.match(dashboardRoute, /canManageAccounts/);
@@ -286,6 +298,10 @@ test("ships durable role-based access and scoped people, work, portfolio and rew
   assert.match(accessControl, /authenticateRequest/);
   assert.match(accessControl, /canAccessEmployee/);
   assert.match(data, /pointEventRules/);
+  assert.match(data, /coreCompetencies/);
+  assert.match(data, /core-discipline/);
+  assert.match(data, /core-respect-manners/);
+  assert.match(data, /calculateSkillScore/);
   assert.match(data, /reward-cash-100/);
   assert.match(data, /reward-iphone-18/);
   assert.match(page, /saveEmployeeProfile/);
