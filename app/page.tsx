@@ -3368,7 +3368,7 @@ export default function Home() {
         </div>
       )}
 
-      <AiAssistant open={showAiAssistant} context={peopleAiContext} onOpen={() => setShowAiAssistant(true)} onClose={() => setShowAiAssistant(false)} onSystemAction={handlePeopleAiAction} />
+      <AiAssistant open={showAiAssistant} context={peopleAiContext} onClose={() => setShowAiAssistant(false)} onSystemAction={handlePeopleAiAction} />
       <div className={`toast ${toast ? "show" : ""}`} role="status"><span>✓</span>{toast}</div>
     </main>
   );

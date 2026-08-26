@@ -221,7 +221,7 @@ function MessageContent({ content }: { content: string }) {
   return <>{content.split("\n").map((line, index) => line ? <p key={`${index}-${line.slice(0, 12)}`}>{line}</p> : <span className="ai-message-gap" key={`gap-${index}`} />)}</>;
 }
 
-export default function AiAssistant({ open, context, onClose, onOpen, onSystemAction }: { open: boolean; context: PeopleAiContext; onClose: () => void; onOpen: () => void; onSystemAction: (action: PeopleAiActionId) => void }) {
+export default function AiAssistant({ open, context, onClose, onSystemAction }: { open: boolean; context: PeopleAiContext; onClose: () => void; onSystemAction: (action: PeopleAiActionId) => void }) {
   const storageKey = `people-pulse-ai-chat:${context.userKey || "guest"}`;
   const [messages, setMessages] = useState<ChatMessage[]>(() => loadConversation(storageKey, context.userName));
   const [input, setInput] = useState("");
@@ -272,7 +272,6 @@ export default function AiAssistant({ open, context, onClose, onOpen, onSystemAc
 
   return (
     <>
-      {!open && <button className="ai-assistant-launch" onClick={onOpen} aria-label="เปิด People AI ผู้ช่วยงาน"><span aria-hidden="true">AI</span><b>ผู้ช่วยงาน</b><i>พร้อมช่วย</i></button>}
       {open && <div className="ai-assistant-layer open">
         <button className="ai-assistant-backdrop" onClick={onClose} aria-label="ปิด People AI" tabIndex={open ? 0 : -1} />
         <aside className="ai-assistant-panel" role="dialog" aria-modal="true" aria-labelledby="people-ai-title">

@@ -2821,8 +2821,7 @@ footer { border-top-color: #ccd9eb; color: #365d80 !important; }
 .mission-layout > * { min-width: 0; }
 .mission-layout > .work-section-tabs { order: 0; }
 .work-section-tabs {
-  position: sticky;
-  top: 18px;
+  position: static;
   z-index: 20;
   display: grid;
   grid-template-columns: repeat(4,minmax(0,1fr));
