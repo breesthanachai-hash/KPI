@@ -180,6 +180,11 @@ test("builds the People Pulse KPI product bundle", async () => {
   assert.match(styles, /Competency framework/);
   assert.match(styles, /competency-framework-card/);
   assert.match(styles, /skill-category-tabs/);
+  assert.match(styles, /Accessibility contrast lock/);
+  assert.match(styles, /--on-dark-secondary: #e7f1ff/);
+  assert.match(styles, /\.skill-profile-hero \.profile-identity h2/);
+  assert.match(styles, /\.role-fit-panel \.fit-disclaimer/);
+  assert.match(styles, /\.profile-level-track span \{ color: #365d80/);
   assert.match(office3D, /Noto Sans Thai Variable/);
   assert.match(styles, /calm-shell/);
   assert.match(styles, /prefers-reduced-motion/);

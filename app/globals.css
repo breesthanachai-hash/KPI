@@ -2996,3 +2996,185 @@ footer { border-top-color: #ccd9eb; color: #365d80 !important; }
   .level-picker { grid-column: 1; grid-row: auto; }
   .profile-skill-category > header { align-items: flex-start; flex-direction: column; }
 }
+
+/* Accessibility contrast lock · keep every label readable on light and dark surfaces */
+:root {
+  --on-dark: #ffffff;
+  --on-dark-secondary: #e7f1ff;
+  --on-dark-muted: #c9dcf3;
+  --on-dark-accent: #ffd3ad;
+}
+
+.skill-profile-hero,
+.role-fit-panel,
+.hr-plan-hero,
+.people-ops-hero,
+.skill-verification-form,
+.promotion-score-card {
+  border-color: #214e88;
+  background: linear-gradient(145deg,#174a94,#12396f);
+  color: var(--on-dark);
+}
+
+:is(
+  .skill-profile-hero,
+  .role-fit-panel,
+  .hr-plan-hero,
+  .people-ops-hero,
+  .skill-verification-form,
+  .promotion-score-card,
+  .modal-header,
+  .submission-hero,
+  .profile-editor-hero,
+  .contract-form-hero,
+  .signature-hero,
+  .reward-modal-hero,
+  .work-form-hero,
+  .monthly-points-panel,
+  .redemption-history,
+  .portfolio-owner-banner,
+  .power-hero-card,
+  .portfolio-hero-card,
+  .access-hero-card,
+  .office-command-center,
+  .todo-priority-panel,
+  .hero-score,
+  .dossier-hero,
+  .employee-power-card.elite,
+  .employee-power-card.legend,
+  .ai-assistant-header
+) :is(h1,h2,h3,h4,h5,h6,strong,b) {
+  color: var(--on-dark) !important;
+  text-shadow: none !important;
+}
+
+:is(
+  .skill-profile-hero,
+  .role-fit-panel,
+  .hr-plan-hero,
+  .people-ops-hero,
+  .skill-verification-form,
+  .promotion-score-card,
+  .modal-header,
+  .submission-hero,
+  .profile-editor-hero,
+  .contract-form-hero,
+  .signature-hero,
+  .reward-modal-hero,
+  .work-form-hero,
+  .monthly-points-panel,
+  .redemption-history,
+  .portfolio-owner-banner,
+  .power-hero-card,
+  .portfolio-hero-card,
+  .access-hero-card,
+  .office-command-center,
+  .todo-priority-panel,
+  .hero-score,
+  .dossier-hero,
+  .employee-power-card.elite,
+  .employee-power-card.legend,
+  .ai-assistant-header
+) :is(p,small,label,em) {
+  color: var(--on-dark-secondary) !important;
+  opacity: 1;
+}
+
+:is(
+  .skill-profile-hero,
+  .role-fit-panel,
+  .hr-plan-hero,
+  .people-ops-hero,
+  .skill-verification-form,
+  .promotion-score-card,
+  .modal-header,
+  .submission-hero,
+  .profile-editor-hero,
+  .contract-form-hero,
+  .signature-hero,
+  .reward-modal-hero,
+  .work-form-hero,
+  .monthly-points-panel,
+  .redemption-history,
+  .portfolio-owner-banner,
+  .power-hero-card,
+  .portfolio-hero-card,
+  .access-hero-card,
+  .office-command-center,
+  .todo-priority-panel,
+  .hero-score,
+  .dossier-hero,
+  .employee-power-card.elite,
+  .employee-power-card.legend,
+  .ai-assistant-header
+) .eyebrow {
+  color: var(--on-dark-accent) !important;
+}
+
+.skill-profile-hero .profile-score-copy b {
+  background: #ffb467;
+  color: #173252 !important;
+  font-size: 12px;
+  font-weight: 850;
+}
+.skill-profile-hero .profile-score-block > div:first-child span,
+.role-fit-title > span,
+.role-fit-list .fit-rank,
+.role-fit-list .fit-score strong {
+  color: var(--on-dark-accent) !important;
+}
+.skill-profile-hero .profile-identity h2 { color: var(--on-dark) !important; font-size: 26px; }
+.skill-profile-hero .profile-identity small,
+.skill-profile-hero .profile-score-block small { color: var(--on-dark-secondary) !important; font-size: 13px; }
+.skill-profile-hero .profile-score-copy p { color: var(--on-dark-secondary) !important; font-size: 13px; line-height: 1.55; }
+.skill-profile-hero .profile-score-block strong { color: var(--on-dark) !important; }
+.role-fit-panel .role-fit-title > span { font-size: 15px; }
+.role-fit-panel .role-fit-title small { color: var(--on-dark-secondary) !important; font-size: 12px; }
+.role-fit-panel .role-fit-list article > div:nth-child(2) strong { color: var(--on-dark) !important; font-size: 13px; }
+.role-fit-panel .role-fit-list article > div:nth-child(2) small { color: var(--on-dark-secondary) !important; font-size: 11px; }
+.role-fit-panel .fit-disclaimer { color: var(--on-dark-secondary) !important; font-size: 12px; line-height: 1.55; }
+.role-fit-panel .role-fit-list article { border-color: rgba(255,255,255,.2); }
+.role-fit-panel .role-fit-list article.top { border-color: rgba(255,211,173,.65); background: rgba(255,255,255,.1); }
+
+.modal-score-summary {
+  border: 1px solid #c7d8ec;
+  background: #f1f6fc;
+  color: #173252;
+}
+.modal-score-summary :is(strong,b) { color: #173252 !important; }
+.modal-score-summary :is(small,span) { color: #365d80 !important; }
+.modal-score-summary .score-formula span { border: 1px solid #c9d9eb; background: #e6eef9; color: #294e72 !important; }
+.modal-score-summary .score-formula b { color: #173252 !important; }
+
+.radar-label strong { color: #294e72; font-size: 11px; }
+.radar-label small { color: #174f9c; font-size: 13px; }
+.talent-dimension-list small { color: #294e72 !important; font-size: 12px; }
+.talent-dimension-list strong { color: #174f9c; font-size: 14px; }
+.radar-legend { color: #294e72; font-size: 12px; }
+.profile-level-track span { color: #365d80; font-size: 11px; font-weight: 700; }
+.gap-pill { background: #fbe9eb; color: #963541; font-size: 11px; }
+.gap-pill.ready { background: #e3f3ee; color: #176151; }
+.toast > span { color: #173252 !important; }
+
+.filter-row button.active,
+.work-view-switch button.active,
+.work-due-filter button.active,
+.work-kind-filter button.active,
+.office-load-filters button.active,
+.level-picker button.active,
+.skill-category-tabs button.active {
+  color: #fff !important;
+}
+.skill-category-tabs button.active :is(strong,small),
+.work-section-tabs button.active :is(strong,b,small) {
+  color: #fff !important;
+}
+
+.ai-assistant-header :is(h1,h2,h3,h4,strong,b) { color: #fff !important; }
+.ai-assistant-header :is(p,small,span) { color: #e7f1ff !important; }
+.ai-assistant-header .ai-status-dot { background: #7ee1b8; }
+
+@media (max-width: 560px) {
+  .skill-profile-hero .profile-identity h2 { font-size: 23px; }
+  .role-fit-panel .role-fit-list article > div:nth-child(2) strong { font-size: 12px; }
+}
