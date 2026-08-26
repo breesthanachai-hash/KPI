@@ -266,6 +266,15 @@ export async function GET(request: Request) {
       if (employee.id === currentUser.employeeId) return true;
       return currentUser.role === "manager" && Boolean(currentUser.departmentId) && getRole(employee.roleId).departmentId === currentUser.departmentId;
     }).map((employee) => employee.id));
+    const signedInEmployee = currentUser.employeeId ? employeeRows.find((employee) => employee.id === currentUser.employeeId) ?? null : null;
+    if (currentUser.role === "employee" && (!signedInEmployee || signedInEmployee.status !== "active")) {
+      return Response.json({ error: "บัญชีพนักงานยังไม่ได้ผูกกับโปรไฟล์ที่ใช้งานอยู่", accessDenied: true, identity: { email: currentUser.email, name: currentUser.displayName } }, { status: 403 });
+    }
+    const employeeDepartmentId = currentUser.departmentId || (signedInEmployee ? getRole(signedInEmployee.roleId).departmentId : "");
+    const teamOverviewEmployeeIds = new Set(employeeRows.filter((employee) => {
+      if (currentUser.role !== "employee") return visibleEmployeeIds.has(employee.id);
+      return employee.status === "active" && Boolean(employeeDepartmentId) && getRole(employee.roleId).departmentId === employeeDepartmentId;
+    }).map((employee) => employee.id));
     const scopedEmployees = employeeRows.filter((employee) => visibleEmployeeIds.has(employee.id));
     const scopedWorkItems = workItemRows
       .filter((item) => visibleEmployeeIds.has(item.assigneeEmployeeId))
@@ -278,19 +287,45 @@ export async function GET(request: Request) {
       canManageWork: currentUser.role !== "employee",
       canReviewWork: currentUser.role !== "employee",
       canViewTeam: currentUser.role !== "employee",
+      canViewTeamOverview: currentUser.role !== "employee" || Boolean(currentUser.employeeId),
+      canViewOwnGrowth: currentUser.role !== "employee" || Boolean(currentUser.employeeId),
+      canViewOwnRewards: currentUser.role !== "employee" || Boolean(currentUser.employeeId),
     };
     const visibleProfileImages = employeeProfileRows
       .filter((row) => visibleEmployeeIds.has(row.employeeId))
       .map((row) => ({ employeeId: row.employeeId, profileImageKey: row.profileImageKey, profileImageUpdatedAt: row.profileImageUpdatedAt, updatedAt: row.updatedAt }));
+    const teamOverviewDate = new Date().toISOString().slice(0, 10);
+    const employeePortalTeamOverview = currentUser.role === "employee" ? {
+      employees: employeeRows
+        .filter((employee) => teamOverviewEmployeeIds.has(employee.id))
+        .map((employee) => ({ ...employee, email: "", manager: "" })),
+      evaluations: evaluationRows
+        .filter((row) => teamOverviewEmployeeIds.has(row.employeeId))
+        .map((row) => ({ ...row, id: `team-power:${row.employeeId}:${row.period}`, kpiScores: {}, note: "", evaluator: "" })),
+      workItems: workItemRows
+        .filter((item) => teamOverviewEmployeeIds.has(item.assigneeEmployeeId))
+        .map((item, index) => ({
+          ...item,
+          id: `team-load:${item.assigneeEmployeeId}:${index}`,
+          projectId: "team-overview",
+          title: item.kind === "mission" ? "ภารกิจของทีม" : item.kind === "request" ? "คำขอของทีม" : "งานของทีม",
+          description: "",
+          points: 0,
+          dueDate: item.dueDate < teamOverviewDate ? "2000-01-01" : item.dueDate === teamOverviewDate ? teamOverviewDate : "2999-12-31",
+          createdAt: "",
+          updatedAt: "",
+        })),
+    } : { employees: [], evaluations: [], workItems: [] };
     return Response.json({
       currentUser,
       permissions,
+      teamOverview: employeePortalTeamOverview,
       employees: scopedEmployees,
       evaluations: evaluationRows.filter((row) => visibleEmployeeIds.has(row.employeeId)),
-      hrProfiles: currentUser.role === "admin" ? hrProfileRows.filter((row) => visibleEmployeeIds.has(row.employeeId)) : [],
-      attendanceRecords: currentUser.role === "admin" ? attendanceRows.filter((row) => visibleEmployeeIds.has(row.employeeId)) : [],
-      skillAchievements: currentUser.role === "admin" ? skillAchievementRows.filter((row) => visibleEmployeeIds.has(row.employeeId)) : [],
-      talentActions: currentUser.role === "admin" ? talentActionRows.filter((row) => visibleEmployeeIds.has(row.employeeId)) : [],
+      hrProfiles: currentUser.role === "admin" || currentUser.role === "employee" ? hrProfileRows.filter((row) => visibleEmployeeIds.has(row.employeeId)) : [],
+      attendanceRecords: currentUser.role === "admin" || currentUser.role === "employee" ? attendanceRows.filter((row) => visibleEmployeeIds.has(row.employeeId)) : [],
+      skillAchievements: currentUser.role === "admin" || currentUser.role === "employee" ? skillAchievementRows.filter((row) => visibleEmployeeIds.has(row.employeeId)) : [],
+      talentActions: currentUser.role === "admin" || currentUser.role === "employee" ? talentActionRows.filter((row) => visibleEmployeeIds.has(row.employeeId)) : [],
       projects: projectRows.filter((row) => visibleProjectIds.has(row.id)),
       workItems: scopedWorkItems,
       workSubmissions: workSubmissionRows.filter((row) => visibleEmployeeIds.has(row.employeeId)),
@@ -498,6 +533,8 @@ export async function POST(request: Request) {
     if (!currentUser) return Response.json({ error: "บัญชีนี้ไม่มีสิทธิ์ดำเนินการ" }, { status: 403 });
     const adminOnlyActions = new Set(["createEmployee", "saveHrPlan", "verifySkillAchievement", "runMonthlyPointCycle", "saveEmployeeProfile", "updateDocumentStatus", "createContract", "sendContract", "saveUserAccount"]);
     const teamActions = new Set(["saveEvaluation", "completeTalentAction", "approveAttendance", "saveProject", "reviewWorkSubmission", "recordPointEvent"]);
+    const employeePortalActions = new Set(["markNotificationsRead", "saveWorkItem", "redeemReward"]);
+    if (currentUser.role === "employee" && !employeePortalActions.has(payload.action)) return Response.json({ error: "สิทธิ์พนักงานใช้ได้เฉพาะงานของฉัน การแจ้งเตือน และการแลกรางวัล" }, { status: 403 });
     if (adminOnlyActions.has(payload.action) && currentUser.role !== "admin") return Response.json({ error: "เฉพาะ HR หรือผู้ดูแลระบบเท่านั้น" }, { status: 403 });
     if (teamActions.has(payload.action) && currentUser.role === "employee") return Response.json({ error: "รายการนี้ต้องดำเนินการโดยหัวหน้าทีมหรือ HR" }, { status: 403 });
 
@@ -904,8 +941,9 @@ export async function POST(request: Request) {
         const workItemId = payload.workItemId?.trim() ?? "";
         const [assignedWorkItem] = workItemId ? await db.select().from(workItems).where(eq(workItems.id, workItemId)).limit(1) : [];
         if (!assignedWorkItem || assignedWorkItem.assigneeEmployeeId !== currentUser.employeeId) return Response.json({ error: "แก้ไขได้เฉพาะงานที่มอบหมายให้คุณ" }, { status: 403 });
-        const status = payload.status === "in_progress" || payload.status === "todo" ? payload.status : assignedWorkItem.status;
-        const progress = Math.min(90, Math.max(0, Math.round(Number(payload.progress) || assignedWorkItem.progress)));
+        if (assignedWorkItem.status === "review" || assignedWorkItem.status === "done") return Response.json({ error: "งานที่ส่งตรวจหรือปิดแล้วไม่สามารถแก้ความคืบหน้าได้" }, { status: 409 });
+        const status = assignedWorkItem.status === "todo" && payload.status === "in_progress" ? "in_progress" as const : assignedWorkItem.status;
+        const progress = status === "todo" ? 0 : Math.min(90, Math.max(1, Math.round(Number(payload.progress) || assignedWorkItem.progress || 10)));
         const now = new Date().toISOString();
         await db.update(workItems).set({ status, progress, updatedAt: now }).where(eq(workItems.id, workItemId));
         return Response.json({ workItem: { ...assignedWorkItem, status, progress, points: workPointValue(assignedWorkItem.kind, assignedWorkItem.priority), updatedAt: now }, pointEntry: null });

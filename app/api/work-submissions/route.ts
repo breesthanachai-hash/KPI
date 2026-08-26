@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { getDb, getFilesBucket } from "../../../db";
 import { ensureDatabase } from "../../../db/initialize";
 import { employees, workItems, workSubmissions } from "../../../db/schema";
@@ -73,6 +73,9 @@ export async function POST(request: Request) {
     const [workItem] = await db.select().from(workItems).where(eq(workItems.id, workItemId)).limit(1);
     if (!workItem) return Response.json({ error: "ไม่พบงานที่เลือก" }, { status: 404 });
     if (!(await canAccessEmployee(currentUser, workItem.assigneeEmployeeId))) return Response.json({ error: "ส่งหลักฐานได้เฉพาะงานที่อยู่ในสิทธิ์ของคุณ" }, { status: 403 });
+    if (workItem.status === "review" || workItem.status === "done") return Response.json({ error: "งานนี้ส่งตรวจหรือปิดแล้ว กรุณารอผลตรวจก่อนส่งใหม่" }, { status: 409 });
+    const [pendingSubmission] = await db.select({ id: workSubmissions.id }).from(workSubmissions).where(and(eq(workSubmissions.workItemId, workItemId), eq(workSubmissions.status, "submitted"))).limit(1);
+    if (pendingSubmission) return Response.json({ error: "งานนี้มีหลักฐานรอตรวจอยู่แล้ว" }, { status: 409 });
     const [employee] = await db.select({ id: employees.id }).from(employees).where(eq(employees.id, workItem.assigneeEmployeeId)).limit(1);
     if (!employee) return Response.json({ error: "ไม่พบพนักงานผู้รับผิดชอบ" }, { status: 404 });
 

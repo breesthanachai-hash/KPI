@@ -380,3 +380,58 @@ test("ships durable role-based access and scoped people, work, portfolio and rew
   assert.match(page, /exportReport/);
   await assert.rejects(access(new URL("app/_sites-preview", projectRoot)));
 });
+
+test("ships a private employee portal with safe team overview and self-only actions", async () => {
+  const [page, pageAsset, dashboardRoute, workSubmissionRoute, styles] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    (async () => {
+      const assetRoot = new URL("../dist/client/assets/", import.meta.url);
+      const assetNames = await readdir(assetRoot);
+      const pageAssetName = assetNames.find((name) => /^page-.*\.js$/.test(name));
+      assert.ok(pageAssetName, "expected a built page asset");
+      return readFile(new URL(pageAssetName, assetRoot), "utf8");
+    })(),
+    readFile(new URL("../app/api/dashboard/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/work-submissions/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(pageAsset, /MY PEOPLE PULSE/);
+  assert.match(pageAsset, /EMPLOYEE PORTAL/);
+  assert.match(pageAsset, /งานของฉัน/);
+  assert.match(pageAsset, /แฟ้มผลงานของฉัน/);
+  assert.match(pageAsset, /สำนักงานของทีม/);
+  assert.match(pageAsset, /ค่าพลังทีม/);
+  assert.match(pageAsset, /เติบโต &amp; เงินเดือน|เติบโต & เงินเดือน/);
+  assert.match(pageAsset, /แต้ม &amp; รางวัล|แต้ม & รางวัล/);
+  assert.match(pageAsset, /MY GROWTH PATH/);
+  assert.match(pageAsset, /เงินเดือนปัจจุบัน/);
+  assert.match(pageAsset, /สกิลที่ควรพัฒนาต่อ/);
+  assert.match(pageAsset, /ข้อมูลส่วนนี้เห็นได้เฉพาะคุณและ HR/);
+
+  assert.match(page, /const employeeViews: View\[\] = \["work", "portfolio", "office", "power", "peopleOps"\]/);
+  assert.match(page, /section\.id !== "projects"/);
+  assert.match(page, /!isEmployeeUser && <AiAssistant/);
+  assert.match(page, /item\.assigneeEmployeeId === currentUser\.employeeId/);
+  assert.match(page, /activeRewardEmployeeId = isEmployeeUser/);
+  assert.match(page, /บัญชีที่ใช้แต้ม/);
+  assert.match(page, /employee-growth-portal/);
+  assert.match(page, /employee-portal-welcome/);
+
+  assert.match(dashboardRoute, /teamOverview: employeePortalTeamOverview/);
+  assert.match(dashboardRoute, /email: "", manager: ""/);
+  assert.match(dashboardRoute, /kpiScores: \{\}, note: "", evaluator: ""/);
+  assert.match(dashboardRoute, /title: item\.kind === "mission" \? "ภารกิจของทีม"/);
+  assert.match(dashboardRoute, /id: `team-load:/);
+  assert.match(dashboardRoute, /dueDate: item\.dueDate < teamOverviewDate \? "2000-01-01"/);
+  assert.match(dashboardRoute, /currentUser\.role === "admin" \|\| currentUser\.role === "employee" \? hrProfileRows/);
+  assert.match(dashboardRoute, /const employeePortalActions = new Set\(\["markNotificationsRead", "saveWorkItem", "redeemReward"\]\)/);
+  assert.match(dashboardRoute, /งานที่ส่งตรวจหรือปิดแล้วไม่สามารถแก้ความคืบหน้าได้/);
+  assert.match(workSubmissionRoute, /งานนี้ส่งตรวจหรือปิดแล้ว/);
+  assert.match(workSubmissionRoute, /งานนี้มีหลักฐานรอตรวจอยู่แล้ว/);
+
+  assert.match(styles, /Employee portal: a focused, private workspace/);
+  assert.match(styles, /\.employee-portal-shell/);
+  assert.match(styles, /\.employee-growth-portal/);
+  assert.match(styles, /\.reward-owner-lock/);
+});

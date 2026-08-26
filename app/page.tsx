@@ -47,7 +47,17 @@ type View = "overview" | "employees" | "profiles" | "skills" | "power" | "people
 
 type CurrentUser = UserAccountRecord & { authenticatedName: string };
 
-type AppPermissions = { canManageAccounts: boolean; canManagePeople: boolean; canManageWork: boolean; canReviewWork: boolean; canViewTeam: boolean };
+type AppPermissions = {
+  canManageAccounts: boolean;
+  canManagePeople: boolean;
+  canManageWork: boolean;
+  canReviewWork: boolean;
+  canViewTeam: boolean;
+  canViewTeamOverview: boolean;
+  canViewOwnGrowth: boolean;
+  canViewOwnRewards: boolean;
+};
+type EmployeeTeamOverview = { employees: EmployeeRecord[]; evaluations: EvaluationRecord[]; workItems: WorkItemRecord[] };
 
 type OfficeLoadLevel = "available" | "steady" | "busy" | "overloaded";
 
@@ -638,7 +648,8 @@ export default function Home() {
   const [userAccounts, setUserAccounts] = useState<UserAccountRecord[]>([]);
   const [notificationReads, setNotificationReads] = useState<NotificationReadRecord[]>([]);
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
-  const [permissions, setPermissions] = useState<AppPermissions>({ canManageAccounts: false, canManagePeople: false, canManageWork: false, canReviewWork: false, canViewTeam: false });
+  const [permissions, setPermissions] = useState<AppPermissions>({ canManageAccounts: false, canManagePeople: false, canManageWork: false, canReviewWork: false, canViewTeam: false, canViewTeamOverview: false, canViewOwnGrowth: false, canViewOwnRewards: false });
+  const [teamOverview, setTeamOverview] = useState<EmployeeTeamOverview>({ employees: [], evaluations: [], workItems: [] });
   const [accessDenied, setAccessDenied] = useState<{ email: string; name: string } | null>(null);
   const [selectedEmployee, setSelectedEmployee] = useState<EmployeeRecord | null>(null);
   const [skillProfileEmployee, setSkillProfileEmployee] = useState<EmployeeRecord | null>(null);
@@ -706,17 +717,19 @@ export default function Home() {
     const controller = new AbortController();
     fetch(`/api/dashboard?period=${encodeURIComponent(period)}`, { signal: controller.signal })
       .then(async (response) => {
-        const body = await response.json() as { currentUser?: CurrentUser; permissions?: AppPermissions; userAccounts?: UserAccountRecord[]; notificationReads?: NotificationReadRecord[]; employees?: EmployeeRecord[]; evaluations?: EvaluationRecord[]; hrProfiles?: HrProfileRecord[]; attendanceRecords?: AttendanceRecord[]; skillAchievements?: SkillAchievementRecord[]; talentActions?: TalentActionRecord[]; projects?: ProjectRecord[]; workItems?: WorkItemRecord[]; workSubmissions?: WorkSubmissionRecord[]; rewards?: RewardRecord[]; pointLedger?: PointLedgerRecord[]; pointEvents?: PointEventRecord[]; rewardRedemptions?: RewardRedemptionRecord[]; employeeProfiles?: EmployeeProfileRecord[]; applicationDocuments?: ApplicationDocumentRecord[]; employmentContracts?: EmploymentContractRecord[]; accessDenied?: boolean; identity?: { email: string; name: string } | null; error?: string };
+        const body = await response.json() as { currentUser?: CurrentUser; permissions?: AppPermissions; teamOverview?: EmployeeTeamOverview; userAccounts?: UserAccountRecord[]; notificationReads?: NotificationReadRecord[]; employees?: EmployeeRecord[]; evaluations?: EvaluationRecord[]; hrProfiles?: HrProfileRecord[]; attendanceRecords?: AttendanceRecord[]; skillAchievements?: SkillAchievementRecord[]; talentActions?: TalentActionRecord[]; projects?: ProjectRecord[]; workItems?: WorkItemRecord[]; workSubmissions?: WorkSubmissionRecord[]; rewards?: RewardRecord[]; pointLedger?: PointLedgerRecord[]; pointEvents?: PointEventRecord[]; rewardRedemptions?: RewardRedemptionRecord[]; employeeProfiles?: EmployeeProfileRecord[]; applicationDocuments?: ApplicationDocumentRecord[]; employmentContracts?: EmploymentContractRecord[]; accessDenied?: boolean; identity?: { email: string; name: string } | null; error?: string };
         if (response.status === 403 && body.accessDenied) {
           setAccessDenied(body.identity ?? { email: "ไม่พบอีเมล", name: "ผู้ใช้งาน" });
           setCurrentUser(null);
           setEmployees([]);
           setWorkItems([]);
+          setTeamOverview({ employees: [], evaluations: [], workItems: [] });
           return;
         }
         if (!response.ok) throw new Error(body.error ?? "โหลดข้อมูลไม่สำเร็จ");
         setCurrentUser(body.currentUser ?? null);
-        setPermissions(body.permissions ?? { canManageAccounts: false, canManagePeople: false, canManageWork: false, canReviewWork: false, canViewTeam: false });
+        setPermissions(body.permissions ?? { canManageAccounts: false, canManagePeople: false, canManageWork: false, canReviewWork: false, canViewTeam: false, canViewTeamOverview: false, canViewOwnGrowth: false, canViewOwnRewards: false });
+        setTeamOverview(body.teamOverview ?? { employees: [], evaluations: [], workItems: [] });
         setUserAccounts(body.userAccounts ?? []);
         setNotificationReads(body.notificationReads ?? []);
         setAccessDenied(null);
@@ -737,12 +750,14 @@ export default function Home() {
         setApplicationDocuments(body.applicationDocuments ?? []);
         setEmploymentContracts(body.employmentContracts ?? []);
         setDataWarning("");
+        const powerEmployees = body.currentUser?.role === "employee" && body.teamOverview?.employees.length ? body.teamOverview.employees : body.employees ?? [];
         const firstEmployeeId = body.employees?.[0]?.id ?? "";
-        const secondEmployeeId = body.employees?.[1]?.id ?? firstEmployeeId;
+        const firstPowerEmployeeId = powerEmployees[0]?.id ?? firstEmployeeId;
+        const secondEmployeeId = powerEmployees[1]?.id ?? firstPowerEmployeeId;
         const firstProjectId = body.projects?.[0]?.id ?? "";
         if (firstEmployeeId) {
           setProfileEmployeeId((value) => value || firstEmployeeId);
-          setPowerLeftId((value) => value || firstEmployeeId);
+          setPowerLeftId((value) => value || firstPowerEmployeeId);
           setPowerRightId((value) => value || secondEmployeeId);
           setPeopleOpsEmployeeId((value) => value || firstEmployeeId);
           setRewardEmployeeId((value) => value || firstEmployeeId);
@@ -776,6 +791,17 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    if (currentUser?.role !== "employee") return;
+    const employeeViews: View[] = ["work", "portfolio", "office", "power", "peopleOps"];
+    if (employeeViews.includes(view) && workSection !== "projects") return;
+    const timer = window.setTimeout(() => {
+      if (!employeeViews.includes(view)) setView("work");
+      setWorkSection("tasks");
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [currentUser?.role, view, workSection]);
+
+  useEffect(() => {
     if (!selectedEmployee && !skillProfileEmployee && !hrEmployee && !showAddEmployee && !showWorkForm && !showProjectForm && !submissionWorkItem && !rewardToRedeem && !showProfileEditor && !showContractForm && !contractToSign && !showNotifications && !showUserMenu) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -802,6 +828,13 @@ export default function Home() {
     () => new Map(evaluations.filter((evaluation) => evaluation.period === period).map((evaluation) => [evaluation.employeeId, evaluation])),
     [evaluations, period],
   );
+  const teamEvaluationsByEmployee = useMemo(
+    () => new Map(teamOverview.evaluations.filter((evaluation) => evaluation.period === period).map((evaluation) => [evaluation.employeeId, evaluation])),
+    [period, teamOverview.evaluations],
+  );
+  const officeSourceEmployees = currentUser?.role === "employee" ? teamOverview.employees : employees;
+  const officeSourceWorkItems = currentUser?.role === "employee" ? teamOverview.workItems : workItems;
+  const powerEvaluationsByEmployee = currentUser?.role === "employee" ? teamEvaluationsByEmployee : evaluationsByEmployee;
 
   const filteredEmployees = useMemo(() => {
     const query = search.trim().toLocaleLowerCase("th");
@@ -863,15 +896,16 @@ export default function Home() {
   const dossierCompleteness = Math.round((profileFilledFields / 10 * .45 + verifiedRequiredDocuments / requiredDocumentTypes.length * .4 + (profileContracts.some((contract) => contract.status === "signed") ? .15 : 0)) * 100);
   const hrEmployeeInsight = hrEmployee ? workforceInsights.find(({ employee }) => employee.id === hrEmployee.id) ?? null : null;
   const projectsById = useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects]);
+  const accessiblePointLedger = useMemo(() => currentUser?.role === "employee" ? pointLedger.filter((entry) => entry.employeeId === currentUser.employeeId) : pointLedger, [currentUser, pointLedger]);
   const pointBalances = useMemo(() => {
     const balances = new Map<string, number>();
-    pointLedger.forEach((entry) => balances.set(entry.employeeId, (balances.get(entry.employeeId) ?? 0) + entry.points));
+    accessiblePointLedger.forEach((entry) => balances.set(entry.employeeId, (balances.get(entry.employeeId) ?? 0) + entry.points));
     return balances;
-  }, [pointLedger]);
-  const pointsEarned = pointLedger.filter((entry) => entry.points > 0).reduce((sum, entry) => sum + entry.points, 0);
-  const pointsDeducted = Math.abs(pointLedger.filter((entry) => entry.points < 0).reduce((sum, entry) => sum + entry.points, 0));
+  }, [accessiblePointLedger]);
+  const pointsEarned = accessiblePointLedger.filter((entry) => entry.points > 0).reduce((sum, entry) => sum + entry.points, 0);
+  const pointsDeducted = Math.abs(accessiblePointLedger.filter((entry) => entry.points < 0).reduce((sum, entry) => sum + entry.points, 0));
   const monthlyPointRecipients = new Set(pointEvents.filter((event) => event.eventType === "monthly_evaluation" && event.eventDate.startsWith(monthlyPointMonth)).map((event) => event.employeeId)).size;
-  const visiblePointLedger = pointLedger
+  const visiblePointLedger = accessiblePointLedger
     .filter((entry) => pointHistoryEmployeeId === "all" || entry.employeeId === pointHistoryEmployeeId)
     .slice()
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -912,6 +946,11 @@ export default function Home() {
     const highestVerifiedLevel = peopleOpsAchievements.filter((achievement) => achievement.skillId === skill.id).reduce((highest, achievement) => Math.max(highest, achievement.level), 0);
     return { skill, currentLevel, highestVerifiedLevel, allowance: skillAllowanceFor(peopleOpsRole.id, currentLevel), canVerify: currentLevel >= 2 && currentLevel > highestVerifiedLevel };
   }) : [];
+  const employeeGrowthSkills = peopleOpsRole ? peopleOpsRole.skills.map((skill) => ({
+    skill,
+    currentLevel: peopleOpsEvaluation?.skillScores[skill.id] ?? 0,
+    gap: Math.max(0, skill.targetLevel - (peopleOpsEvaluation?.skillScores[skill.id] ?? 0)),
+  })).sort((a, b) => b.gap - a.gap || b.skill.targetLevel - a.skill.targetLevel) : [];
   const growthTeam = activeEmployees.map((employee) => {
     const role = getRole(employee.roleId);
     const evaluation = evaluationsByEmployee.get(employee.id) ?? null;
@@ -1002,11 +1041,11 @@ export default function Home() {
   const officePeople = useMemo<OfficePersonModel[]>(() => {
     const priorityWeight: Record<WorkItemRecord["priority"], number> = { low: .7, medium: 1, high: 1.4, urgent: 1.8 };
     const statusWeight: Record<Exclude<WorkItemRecord["status"], "done">, number> = { todo: 0, in_progress: .4, review: .2 };
-    return employees
+    return officeSourceEmployees
       .filter((employee) => employee.status === "active")
       .map((employee) => {
         const role = getRole(employee.roleId);
-        const assignedItems = workItems.filter((item) => item.assigneeEmployeeId === employee.id);
+        const assignedItems = officeSourceWorkItems.filter((item) => item.assigneeEmployeeId === employee.id);
         const openItems = assignedItems.filter((item) => item.status !== "done");
         const doneItems = assignedItems.filter((item) => item.status === "done");
         const loadUnits = openItems.reduce((sum, item) => sum + priorityWeight[item.priority] + statusWeight[item.status as Exclude<WorkItemRecord["status"], "done">] + (item.dueDate < todayDate ? .7 : 0), 0);
@@ -1034,7 +1073,7 @@ export default function Home() {
         };
       })
       .sort((a, b) => b.loadRatio - a.loadRatio || b.openItems.length - a.openItems.length);
-  }, [employees, todayDate, workItems]);
+  }, [officeSourceEmployees, officeSourceWorkItems, todayDate]);
   const visibleOfficePeople = officePeople.filter((person) => {
     const departmentMatches = activeDepartment === "all" || person.role.departmentId === activeDepartment;
     const loadMatches = officeLoadFilter === "all" || person.level === officeLoadFilter;
@@ -1065,6 +1104,7 @@ export default function Home() {
       const departmentMatches = activeDepartment === "all" || project?.departmentId === activeDepartment;
       const kindMatches = workFilter === "all" || item.kind === workFilter;
       const assigneeMatches = workAssigneeFilter === "all" || item.assigneeEmployeeId === workAssigneeFilter;
+      const employeePortalMatches = currentUser?.role !== "employee" || item.assigneeEmployeeId === currentUser.employeeId;
       const dueMatches = (workDueFilter === "all" && item.status !== "done")
         || (workDueFilter === "today" && item.status !== "done" && item.dueDate === todayDate)
         || (workDueFilter === "overdue" && item.status !== "done" && item.dueDate < todayDate)
@@ -1072,14 +1112,14 @@ export default function Home() {
         || (workDueFilter === "review" && item.status === "review")
         || (workDueFilter === "done" && item.status === "done");
       const queryMatches = !query || `${item.title} ${item.description} ${project?.name ?? ""} ${assignee?.name ?? ""}`.toLocaleLowerCase("th").includes(query);
-      return departmentMatches && kindMatches && assigneeMatches && dueMatches && queryMatches;
+      return employeePortalMatches && departmentMatches && kindMatches && assigneeMatches && dueMatches && queryMatches;
     }).sort((a, b) => {
       if (a.status === "done" && b.status !== "done") return 1;
       if (a.status !== "done" && b.status === "done") return -1;
       const dueOrder = a.dueDate.localeCompare(b.dueDate);
       return dueOrder || priorityRank[a.priority] - priorityRank[b.priority];
     });
-  }, [activeDepartment, employeesById, projectsById, todayDate, weekEndDate, workAssigneeFilter, workDueFilter, workFilter, workItems, workSearch]);
+  }, [activeDepartment, currentUser, employeesById, projectsById, todayDate, weekEndDate, workAssigneeFilter, workDueFilter, workFilter, workItems, workSearch]);
   const workCompletion = workItems.length ? workItems.filter((item) => item.status === "done").length / workItems.length * 100 : 0;
   const workSubmissionsByItem = useMemo(() => {
     const grouped = new Map<string, WorkSubmissionRecord[]>();
@@ -1089,6 +1129,7 @@ export default function Home() {
     return grouped;
   }, [workSubmissions]);
   const portfolioEntries = useMemo(() => workItems
+    .filter((item) => currentUser?.role !== "employee" || item.assigneeEmployeeId === currentUser.employeeId)
     .map((item) => {
       const submissions = workSubmissionsByItem.get(item.id) ?? [];
       const approvedSubmission = submissions.find((submission) => submission.status === "approved") ?? null;
@@ -1109,7 +1150,7 @@ export default function Home() {
       };
     })
     .filter((entry) => entry.item.status === "done" || entry.submissions.length > 0)
-    .sort((a, b) => b.sortDate.localeCompare(a.sortDate)), [employeesById, evaluationsByEmployee, projectsById, workItems, workSubmissionsByItem]);
+    .sort((a, b) => b.sortDate.localeCompare(a.sortDate)), [currentUser, employeesById, evaluationsByEmployee, projectsById, workItems, workSubmissionsByItem]);
   const visiblePortfolioEntries = useMemo(() => {
     const query = portfolioSearch.trim().toLocaleLowerCase("th");
     return portfolioEntries.filter((entry) => {
@@ -1136,17 +1177,23 @@ export default function Home() {
   const activeProofGuide = submissionAssignee ? roleProofGuides[submissionAssignee.roleId] ?? defaultProofGuide : defaultProofGuide;
   const totalPoints = [...pointBalances.values()].reduce((sum, points) => sum + points, 0);
   const allPowerProfiles = useMemo(
-    () => employees
+    () => officeSourceEmployees
       .filter((employee) => employee.status === "active")
       .map((employee) => buildEmployeePower(
         employee,
-        evaluationsByEmployee.get(employee.id) ?? null,
-        workItems.filter((item) => item.assigneeEmployeeId === employee.id),
+        powerEvaluationsByEmployee.get(employee.id) ?? null,
+        officeSourceWorkItems.filter((item) => item.assigneeEmployeeId === employee.id),
       ))
       .sort((a, b) => (b.overall ?? -1) - (a.overall ?? -1)),
-    [employees, evaluationsByEmployee, workItems],
+    [officeSourceEmployees, officeSourceWorkItems, powerEvaluationsByEmployee],
   );
-  const visiblePowerProfiles = allPowerProfiles.filter(({ employee }) => filteredEmployees.some((item) => item.id === employee.id));
+  const visiblePowerProfiles = allPowerProfiles.filter(({ employee }) => {
+    const role = getRole(employee.roleId);
+    const query = search.trim().toLocaleLowerCase("th");
+    const departmentMatches = activeDepartment === "all" || role.departmentId === activeDepartment;
+    const queryMatches = !query || `${employee.name} ${role.name} ${role.department}`.toLocaleLowerCase("th").includes(query);
+    return departmentMatches && queryMatches;
+  });
   const ratedPowerProfiles = allPowerProfiles.filter((profile) => profile.overall !== null);
   const averagePower = ratedPowerProfiles.length
     ? ratedPowerProfiles.reduce((sum, profile) => sum + (profile.overall ?? 0), 0) / ratedPowerProfiles.length
@@ -1605,9 +1652,11 @@ export default function Home() {
   const redeemReward = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!rewardToRedeem) return;
+    const redemptionEmployeeId = currentUser?.role === "employee" ? currentUser.employeeId ?? "" : rewardEmployeeId;
+    if (!redemptionEmployeeId) return showToast("บัญชีนี้ยังไม่ได้ผูกกับพนักงาน");
     setIsSaving(true);
     try {
-      const response = await fetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "redeemReward", employeeId: rewardEmployeeId, rewardId: rewardToRedeem.id }) });
+      const response = await fetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "redeemReward", employeeId: redemptionEmployeeId, rewardId: rewardToRedeem.id }) });
       const body = await response.json() as { redemption?: RewardRedemptionRecord; pointEntry?: PointLedgerRecord; reward?: RewardRecord; error?: string };
       if (!response.ok || !body.redemption || !body.pointEntry || !body.reward) throw new Error(body.error ?? "แลกรางวัลไม่สำเร็จ");
       setRewardRedemptions((items) => [...items, body.redemption as RewardRedemptionRecord]);
@@ -1954,8 +2003,24 @@ export default function Home() {
   const isEmployeeUser = currentUser?.role === "employee";
   const currentUserRoleLabel = currentUser?.role === "admin" ? "HR / Admin" : currentUser?.role === "manager" ? "หัวหน้าทีม" : "พนักงาน";
   const currentUserEmployee = currentUser?.employeeId ? employeesById.get(currentUser.employeeId) ?? null : null;
-  const activeViewTitle = isEmployeeUser && view === "work" ? "งานของฉัน" : isEmployeeUser && view === "portfolio" ? "แฟ้มผลงานของฉัน" : viewMeta[view].title;
-  const activeViewDescription = isEmployeeUser && view === "work" ? "ดูสิ่งที่ต้องทำ เริ่มงาน และส่งหลักฐานได้ในไม่กี่ขั้นตอน" : isEmployeeUser && view === "portfolio" ? "ดูงานและหลักฐานที่ส่งไว้ พร้อมสถานะตรวจผลงานของคุณ" : viewMeta[view].description;
+  const activeRewardEmployeeId = isEmployeeUser ? currentUser?.employeeId ?? "" : rewardEmployeeId;
+  const activeViewTitle = isEmployeeUser && view === "work" && workSection === "points" ? "แต้มสะสมของฉัน"
+    : isEmployeeUser && view === "work" && workSection === "rewards" ? "แลกรางวัล"
+      : isEmployeeUser && view === "work" ? "งานของฉัน"
+        : isEmployeeUser && view === "portfolio" ? "แฟ้มผลงานของฉัน"
+          : isEmployeeUser && view === "office" ? "สำนักงานของทีม"
+            : isEmployeeUser && view === "power" ? "ค่าพลังของฉันและทีม"
+              : isEmployeeUser && view === "peopleOps" ? "การเติบโตและเงินเดือนของฉัน"
+                : viewMeta[view].title;
+  const activeViewDescription = isEmployeeUser && view === "work" && workSection === "points" ? "ตรวจสอบยอดแต้ม รายการได้–เสียแต้ม และที่มาทุกรายการของคุณ"
+    : isEmployeeUser && view === "work" && workSection === "rewards" ? "ใช้แต้มของคุณแลกรางวัล และติดตามสถานะคำขอได้ในที่เดียว"
+      : isEmployeeUser && view === "work" ? "ดูสิ่งที่ต้องทำ เริ่มงาน อัปเดตความคืบหน้า และส่งหลักฐานได้ในไม่กี่ขั้นตอน"
+        : isEmployeeUser && view === "portfolio" ? "ค้นงานและหลักฐานของคุณ พร้อมติดตามสถานะการตรวจผลงาน"
+          : isEmployeeUser && view === "office" ? "ดูสถานะภาระงานรวมของทีมโดยไม่เปิดเผยรายละเอียดงานส่วนบุคคล"
+            : isEmployeeUser && view === "power" ? "เห็นจุดแข็งของตัวเอง เปรียบเทียบกับทีม และเลือกทักษะที่ควรพัฒนาต่อ"
+              : isEmployeeUser && view === "peopleOps" ? "ดูเงินเดือน เงินเพิ่มตามสกิล เป้าหมายตำแหน่ง และแผนพัฒนาของคุณ"
+                : viewMeta[view].description;
+  const activeViewEyebrow = isEmployeeUser ? "EMPLOYEE PORTAL" : viewMeta[view].eyebrow;
   const peopleAiContext: PeopleAiContext = {
     userKey: currentUser?.id ?? currentUser?.email ?? "guest",
     userName: currentUser?.displayName ?? currentUser?.authenticatedName ?? "ผู้ใช้งาน",
@@ -2035,31 +2100,41 @@ export default function Home() {
   }
 
   return (
-    <main className="app-shell calm-shell">
+    <main className={`app-shell calm-shell ${isEmployeeUser ? "employee-portal-shell" : ""}`}>
       <header className="topbar">
         <button className="brand" onClick={() => { setActiveDepartment("all"); setWorkSection("tasks"); setWorkDueFilter("all"); setWorkSearch(""); setView("work"); }} aria-label="ไปที่รายการงาน">
           <span className="brand-mark" aria-hidden="true"><i /><i /><i /></span>
-          <span><strong>PEOPLE PULSE</strong><small>PEOPLE &amp; WORK OS</small></span>
+          <span><strong>{isEmployeeUser ? "MY PEOPLE PULSE" : "PEOPLE PULSE"}</strong><small>{isEmployeeUser ? "EMPLOYEE PORTAL" : "PEOPLE &amp; WORK OS"}</small></span>
         </button>
         <nav aria-label="เมนูหลัก">
-          <span className="nav-section-label">พื้นที่ทำงาน</span>
-          <button className={view === "work" ? "active" : ""} onClick={() => { setActiveDepartment("all"); setWorkSection("tasks"); setWorkDueFilter("all"); setWorkSearch(""); setView("work"); }}><span aria-hidden="true">✓</span><b>งาน</b><em>{workItems.filter((item) => item.status !== "done").length}</em></button>
-          <button className={view === "portfolio" ? "active" : ""} onClick={() => setView("portfolio")}><span aria-hidden="true">◇</span><b>แฟ้มผลงาน</b></button>
-          <button className={showAiAssistant ? "active" : ""} onClick={() => setShowAiAssistant(true)}><span aria-hidden="true">AI</span><b>ผู้ช่วย AI</b><em>ใหม่</em></button>
-          {!isEmployeeUser && <>
+          {isEmployeeUser ? <>
+            <span className="nav-section-label">พื้นที่ของฉัน</span>
+            <button className={view === "work" && workSection === "tasks" ? "active" : ""} onClick={() => { setActiveDepartment("all"); setWorkSection("tasks"); setWorkAssigneeFilter(currentUser?.employeeId ?? "all"); setWorkDueFilter("all"); setWorkSearch(""); setView("work"); }}><span aria-hidden="true">✓</span><b>งานของฉัน</b><em>{workItems.filter((item) => item.status !== "done").length}</em></button>
+            <button className={view === "portfolio" ? "active" : ""} onClick={() => { setPortfolioEmployeeId(currentUser?.employeeId ?? "all"); setView("portfolio"); }}><span aria-hidden="true">◇</span><b>แฟ้มผลงานของฉัน</b></button>
+            <span className="nav-section-label">ทีมของฉัน</span>
+            <button className={view === "office" ? "active" : ""} onClick={() => setView("office")}><span aria-hidden="true">⌂</span><b>สำนักงานของทีม</b><em>{officePressureCount}</em></button>
+            <button className={view === "power" ? "active" : ""} onClick={() => setView("power")}><span aria-hidden="true">◆</span><b>ค่าพลังทีม</b></button>
+            <span className="nav-section-label">การเติบโต</span>
+            <button className={view === "peopleOps" ? "active" : ""} onClick={() => setView("peopleOps")}><span aria-hidden="true">↗</span><b>เติบโต &amp; เงินเดือน</b></button>
+            <button className={view === "work" && (workSection === "points" || workSection === "rewards") ? "active" : ""} onClick={() => { setWorkSection("points"); setView("work"); }}><span aria-hidden="true">★</span><b>แต้ม &amp; รางวัล</b><em>{formatMoney(currentUser?.employeeId ? pointBalances.get(currentUser.employeeId) ?? 0 : 0)}</em></button>
+          </> : <>
+            <span className="nav-section-label">พื้นที่ทำงาน</span>
+            <button className={view === "work" ? "active" : ""} onClick={() => { setActiveDepartment("all"); setWorkSection("tasks"); setWorkDueFilter("all"); setWorkSearch(""); setView("work"); }}><span aria-hidden="true">✓</span><b>งาน</b><em>{workItems.filter((item) => item.status !== "done").length}</em></button>
+            <button className={view === "portfolio" ? "active" : ""} onClick={() => setView("portfolio")}><span aria-hidden="true">◇</span><b>แฟ้มผลงาน</b></button>
+            <button className={showAiAssistant ? "active" : ""} onClick={() => setShowAiAssistant(true)}><span aria-hidden="true">AI</span><b>ผู้ช่วย AI</b><em>ใหม่</em></button>
             <button className={view === "office" ? "active" : ""} onClick={() => setView("office")}><span aria-hidden="true">⌂</span><b>สำนักงานจำลอง</b><em>{officePressureCount}</em></button>
             <button className={view === "overview" ? "active" : ""} onClick={() => setView("overview")}><span aria-hidden="true">◫</span><b>ภาพรวมทีม</b></button>
             <span className="nav-section-label">ทีมและผลงาน</span>
             <button className={view === "employees" ? "active" : ""} onClick={() => setView("employees")}><span aria-hidden="true">♙</span><b>พนักงาน</b></button>
             <button className={view === "skills" ? "active" : ""} onClick={() => setView("skills")}><span aria-hidden="true">✦</span><b>สกิลทีม</b></button>
             <button className={view === "power" ? "active" : ""} onClick={() => setView("power")}><span aria-hidden="true">◆</span><b>ค่าพลัง</b></button>
-          </>}
-          {isAdmin && <>
+            {isAdmin && <>
             <span className="nav-section-label">HR และระบบ</span>
             <button className={view === "peopleOps" ? "active" : ""} onClick={() => setView("peopleOps")}><span aria-hidden="true">◷</span><b>เวลา &amp; เติบโต</b><em>{pendingLeaveRecords.length}</em></button>
             <button className={view === "profiles" ? "active" : ""} onClick={() => setView("profiles")}><span aria-hidden="true">▣</span><b>แฟ้มพนักงาน</b></button>
             <button className={view === "hr" ? "active" : ""} onClick={() => setView("hr")}><span aria-hidden="true">⬡</span><b>บริหารบุคลากร</b></button>
             <button className={view === "access" ? "active" : ""} onClick={() => setView("access")}><span aria-hidden="true">◎</span><b>ผู้ใช้งานและสิทธิ์</b><em>{userAccounts.filter((account) => account.status === "active").length}</em></button>
+            </>}
           </>}
         </nav>
         <div className="header-actions">
@@ -2094,8 +2169,10 @@ export default function Home() {
           <div className="top-profile-menu-head"><span>{currentUser?.displayName ? makeInitials(currentUser.displayName) : "PP"}</span><p><strong>{currentUser?.displayName ?? "ผู้ใช้งาน"}</strong><small>{currentUser?.email}</small><b>{currentUserRoleLabel}</b></p></div>
           {currentUserEmployee && <div className="top-profile-work-summary"><span><small>ตำแหน่ง</small><strong>{getRole(currentUserEmployee.roleId).name}</strong></span><span><small>แต้มคงเหลือ</small><strong>{formatMoney(pointBalances.get(currentUserEmployee.id) ?? 0)}</strong></span></div>}
           <nav>
-            <button type="button" onClick={() => { setShowUserMenu(false); if (isAdmin) { if (currentUser?.employeeId) setProfileEmployeeId(currentUser.employeeId); setView("profiles"); } else { setPortfolioEmployeeId(currentUser?.employeeId ?? "all"); setView("portfolio"); } }}><span>▣</span><p><strong>{isAdmin ? "จัดการโปรไฟล์" : "โปรไฟล์และแฟ้มผลงาน"}</strong><small>{isAdmin ? "ข้อมูล เอกสาร และสัญญา" : "ดูผลงานและหลักฐานของฉัน"}</small></p></button>
+            <button type="button" onClick={() => { setShowUserMenu(false); if (isAdmin) { if (currentUser?.employeeId) setProfileEmployeeId(currentUser.employeeId); setView("profiles"); } else { setPortfolioEmployeeId(currentUser?.employeeId ?? "all"); setView("portfolio"); } }}><span>▣</span><p><strong>{isAdmin ? "จัดการโปรไฟล์" : "แฟ้มผลงานของฉัน"}</strong><small>{isAdmin ? "ข้อมูล เอกสาร และสัญญา" : "ดูผลงานและหลักฐานที่ส่งไว้"}</small></p></button>
             <button type="button" onClick={() => { setShowUserMenu(false); setView("work"); setWorkSection("tasks"); setWorkAssigneeFilter(currentUser?.employeeId ?? "all"); }}><span>✓</span><p><strong>งานของฉัน</strong><small>เปิดรายการสิ่งที่ต้องทำ</small></p></button>
+            {isEmployeeUser && <button type="button" onClick={() => { setShowUserMenu(false); setView("peopleOps"); }}><span>↗</span><p><strong>การเติบโตและเงินเดือน</strong><small>ดูเป้าหมาย สกิล และค่าตอบแทนของฉัน</small></p></button>}
+            {isEmployeeUser && <button type="button" onClick={() => { setShowUserMenu(false); setView("work"); setWorkSection("points"); }}><span>★</span><p><strong>แต้มและรางวัล</strong><small>ดูยอดแต้มและเลือกรางวัล</small></p></button>}
             <a href="/signout-with-chatgpt?return_to=/"><span>↗</span><p><strong>ออกจากระบบ</strong><small>เปลี่ยนบัญชีผู้ใช้งาน</small></p></a>
           </nav>
         </aside>}
@@ -2139,9 +2216,28 @@ export default function Home() {
 
       <section className="dashboard">
         {dataWarning && <div className="data-warning" role="status"><span>!</span>{dataWarning}</div>}
+        {isEmployeeUser && currentUserEmployee && view === "work" && workSection === "tasks" && (
+          <section className="employee-portal-welcome">
+            <div className="employee-welcome-person">
+              <EmployeeAvatar employee={currentUserEmployee} profile={employeeProfilesById.get(currentUserEmployee.id)} className="avatar-growth" />
+              <div><p className="eyebrow">MY WORKSPACE</p><h2>สวัสดี {currentUserEmployee.name}</h2><p>{getRole(currentUserEmployee.roleId).name} · วันนี้จัดการงานและการเติบโตของคุณได้จากหน้าจอเดียว</p></div>
+            </div>
+            <div className="employee-welcome-stats">
+              <button onClick={() => { setWorkDueFilter("today"); setWorkSection("tasks"); }}><span>✓</span><p><small>งานวันนี้</small><strong>{todayWorkItems.length}</strong></p></button>
+              <button onClick={() => { setWorkDueFilter("review"); setWorkSection("tasks"); }}><span>⌕</span><p><small>รอตรวจ</small><strong>{reviewQueueWorkItems.length}</strong></p></button>
+              <button onClick={() => setView("peopleOps")}><span>↗</span><p><small>พร้อมเติบโต</small><strong>{promotionReadiness}%</strong></p></button>
+              <button onClick={() => setWorkSection("points")}><span>★</span><p><small>แต้มคงเหลือ</small><strong>{formatMoney(pointBalances.get(currentUserEmployee.id) ?? 0)}</strong></p></button>
+            </div>
+            <div className="employee-welcome-shortcuts">
+              <button onClick={() => { setPortfolioEmployeeId(currentUserEmployee.id); setView("portfolio"); }}>แฟ้มผลงานของฉัน <span>→</span></button>
+              <button onClick={() => setView("office")}>ดูสำนักงานทีม <span>→</span></button>
+              <button onClick={() => setView("power")}>ดูค่าพลัง <span>→</span></button>
+            </div>
+          </section>
+        )}
         <div className="page-heading">
           <div>
-            <p className="eyebrow">{viewMeta[view].eyebrow}</p>
+            <p className="eyebrow">{activeViewEyebrow}</p>
             <h1>{activeViewTitle}</h1>
             <p>{activeViewDescription}</p>
           </div>
@@ -2197,8 +2293,8 @@ export default function Home() {
             <section className="office-command-center">
               <div className="office-command-copy">
                 <span className="office-live-label"><i /> สำนักงาน 3D แบบเรียลไทม์</span>
-                <h2>โลกสำนักงาน 3D สร้างใหม่<br />หมุนดูได้และมีชีวิตจริง</h2>
-                <p>ทุกห้อง เฟอร์นิเจอร์ แสงธรรมชาติ และตัวละครถูกสร้างเป็นวัตถุ 3D จริง ไม่มีภาพออฟฟิศเป็นพื้นหลัง พนักงานแต่ละคนเลือกเส้นทางและกิจกรรมตามภาระงาน</p>
+                <h2>{isEmployeeUser ? <>เห็นจังหวะการทำงานของทีม<br />โดยไม่รบกวนกัน</> : <>โลกสำนักงาน 3D สร้างใหม่<br />หมุนดูได้และมีชีวิตจริง</>}</h2>
+                <p>{isEmployeeUser ? "สถานะตัวละครแสดงเฉพาะภาระงานโดยรวม ไม่เปิดรายละเอียด กำหนดส่ง หรือลิงก์งานของเพื่อนร่วมทีม" : "ทุกห้อง เฟอร์นิเจอร์ แสงธรรมชาติ และตัวละครถูกสร้างเป็นวัตถุ 3D จริง ไม่มีภาพออฟฟิศเป็นพื้นหลัง พนักงานแต่ละคนเลือกเส้นทางและกิจกรรมตามภาระงาน"}</p>
                 <div className="office-legend" aria-label="คำอธิบายสีภาระงาน">
                   {(Object.entries(officeLevelMeta) as [OfficeLoadLevel, (typeof officeLevelMeta)[OfficeLoadLevel]][]).map(([level, meta]) => <span key={level} className={level}><i />{meta.label}</span>)}
                 </div>
@@ -2216,7 +2312,7 @@ export default function Home() {
             </section>
 
             <div className="office-floor-toolbar" id="office-team-floor">
-              <div><p className="eyebrow">ISOMETRIC 3D OFFICE WORLD</p><h2>สำนักงานใหญ่ 3D หลายห้องในโลกเดียวกัน</h2><small>ลากเพื่อหมุน เลื่อนเพื่อซูม ดูโมเดลเดินข้ามห้อง และกดตัวละครเพื่อเปิดงานของคนนั้น</small></div>
+              <div><p className="eyebrow">ISOMETRIC 3D OFFICE WORLD</p><h2>สำนักงานใหญ่ 3D หลายห้องในโลกเดียวกัน</h2><small>{isEmployeeUser ? "ลากเพื่อหมุน เลื่อนเพื่อซูม และกดตัวละครเพื่อดูสถานะภาระงานโดยรวม" : "ลากเพื่อหมุน เลื่อนเพื่อซูม ดูโมเดลเดินข้ามห้อง และกดตัวละครเพื่อเปิดงานของคนนั้น"}</small></div>
               <div className="office-load-filters" aria-label="กรองตามภาระงาน">
                 {([
                   ["all", "ทั้งหมด"],
@@ -2229,6 +2325,11 @@ export default function Home() {
             </div>
 
             {office3DPeople.length ? <Suspense fallback={<div className="office-3d-loading"><span /><strong>กำลังสร้างสำนักงาน 3D...</strong><small>ประกอบ 7 ห้อง พื้นที่สีเขียว และโมเดลตัวละครตามภาระงาน</small></div>}><Office3D people={office3DPeople} onSelect={(employeeId) => {
+              if (isEmployeeUser) {
+                const teammate = teamOverview.employees.find((employee) => employee.id === employeeId);
+                showToast(`${teammate?.name ?? "เพื่อนร่วมทีม"} · แสดงเฉพาะสถานะภาระงานโดยรวม`);
+                return;
+              }
               setWorkAssigneeFilter(employeeId);
               setWorkDueFilter("all");
               setWorkSearch("");
@@ -2536,8 +2637,8 @@ export default function Home() {
               <article className="power-hero-card">
                 <div className="power-hero-copy">
                   <p className="eyebrow">POWER INDEX · {period}</p>
-                  <h2>เห็นศักยภาพของคน<br />เพื่อจัดทีมได้ตรงจุด</h2>
-                  <p>ค่าพลัง 6 ด้านถูกแปลงจาก KPI สกิล และความคืบหน้างานจริง เพื่อให้หัวหน้าทีมวางแผนพัฒนาและจัดคนให้เหมาะกับงานได้ง่ายขึ้น</p>
+                  <h2>{isEmployeeUser ? <>เห็นจุดแข็งของตัวเอง<br />และเรียนรู้จากทีม</> : <>เห็นศักยภาพของคน<br />เพื่อจัดทีมได้ตรงจุด</>}</h2>
+                  <p>{isEmployeeUser ? "ค่าพลัง 6 ด้านช่วยให้คุณเห็นทักษะเด่น ช่องว่างที่ควรพัฒนา และจุดแข็งที่ทำงานร่วมกับเพื่อนในทีมได้ดี" : "ค่าพลัง 6 ด้านถูกแปลงจาก KPI สกิล และความคืบหน้างานจริง เพื่อให้หัวหน้าทีมวางแผนพัฒนาและจัดคนให้เหมาะกับงานได้ง่ายขึ้น"}</p>
                   <div className="power-formula"><span><b>70%</b> ค่าพลังสกิล</span><i>+</i><span><b>30%</b> ผลงาน KPI</span></div>
                 </div>
                 <div className="power-hero-score"><small>TEAM OVR</small><strong>{averagePower ? averagePower.toFixed(0) : "—"}</strong><span>ค่าพลังเฉลี่ยของทีม</span></div>
@@ -2609,7 +2710,62 @@ export default function Home() {
           </section>
         )}
 
-        {view === "peopleOps" && (
+        {view === "peopleOps" && (isEmployeeUser ? (peopleOpsEmployee && peopleOpsRole ? (
+          <section className="employee-growth-portal">
+            <section className="employee-growth-hero">
+              <div className="employee-growth-identity">
+                <EmployeeAvatar employee={peopleOpsEmployee} profile={employeeProfilesById.get(peopleOpsEmployee.id)} className="avatar-growth" />
+                <div><p className="eyebrow">MY GROWTH PATH</p><h2>เส้นทางของ {peopleOpsEmployee.name}</h2><p>{peopleOpsRole.name} · ข้อมูลส่วนนี้เห็นได้เฉพาะคุณและ HR</p></div>
+              </div>
+              <div className="employee-growth-readiness"><small>ความพร้อมก้าวต่อไป</small><strong>{promotionReadiness}</strong><span>/100</span><i><b style={{ width: `${promotionReadiness}%` }} /></i><em>{promotionReadiness >= 80 ? "พร้อมเสนอพิจารณา" : promotionReadiness >= 65 ? "พร้อมรับงานระดับถัดไป" : "กำลังสะสมทักษะและผลงาน"}</em></div>
+            </section>
+
+            <div className="employee-growth-summary">
+              <article className="salary"><span>฿</span><div><small>เงินเดือนปัจจุบัน</small><strong>{peopleOpsHrProfile ? `฿${formatMoney(peopleOpsHrProfile.currentSalary)}` : "รอ HR อัปเดต"}</strong><p>{peopleOpsHrProfile ? `ทบทวนรอบถัดไป ${peopleOpsHrProfile.salaryReviewMonth || "ตามนโยบายบริษัท"}` : "ติดต่อ HR หากข้อมูลยังไม่ครบ"}</p></div></article>
+              <article className="allowance"><span>＋</span><div><small>เงินเพิ่มจากสกิลสะสม</small><strong>+฿{formatMoney(peopleOpsSkillUplift)} / เดือน</strong><p>{peopleOpsAchievements.length} ระดับสกิลที่ผ่านการยืนยัน</p></div></article>
+              <article><span>↗</span><div><small>ตำแหน่งเป้าหมาย</small><strong>{growthRoleNames[peopleOpsRole.id] ?? `หัวหน้าทีม${peopleOpsRole.department}`}</strong><p>ใช้ผลงาน สกิล เควสต์ และความสม่ำเสมอร่วมกัน</p></div></article>
+              <article><span>★</span><div><small>เควสต์พัฒนาสำเร็จ</small><strong>{peopleOpsMissions.filter((item) => item.status === "done").length} / {peopleOpsMissions.length}</strong><p>งานเปิดอยู่ {peopleOpsWork.filter((item) => item.status !== "done").length} รายการ</p></div></article>
+            </div>
+
+            <section className="employee-growth-roadmap">
+              <div className="employee-growth-section-heading"><div><p className="eyebrow">CAREER ROADMAP</p><h2>ฉันอยู่ตรงไหน และต้องทำอะไรต่อ</h2></div><button onClick={() => { setPortfolioEmployeeId(peopleOpsEmployee.id); setView("portfolio"); }}>ดูหลักฐานผลงาน →</button></div>
+              <div>
+                <article className="done"><span>01</span><div><small>ตำแหน่งปัจจุบัน</small><strong>{peopleOpsRole.name}</strong><p>KPI {peopleOpsEvaluation?.kpiScore.toFixed(0) ?? "รอประเมิน"} · สกิล {peopleOpsEvaluation?.skillScore.toFixed(0) ?? "รอประเมิน"}</p></div><b>ปัจจุบัน</b></article>
+                <i>→</i>
+                <article className={promotionReadiness >= 65 ? "active" : "locked"}><span>02</span><div><small>ด่านถัดไป</small><strong>รับงานและเควสต์ระดับสูงขึ้น</strong><p>ปลดล็อกเมื่อความพร้อมถึง 65%</p></div><b>{promotionReadiness >= 65 ? "ปลดล็อกแล้ว" : `อีก ${Math.max(0, 65 - promotionReadiness)}%`}</b></article>
+                <i>→</i>
+                <article className={promotionReadiness >= 80 ? "active" : "locked"}><span>03</span><div><small>เป้าหมาย</small><strong>{growthRoleNames[peopleOpsRole.id] ?? `หัวหน้าทีม${peopleOpsRole.department}`}</strong><p>HR และหัวหน้าพิจารณาร่วมกับหลักฐานจริง</p></div><b>{promotionReadiness >= 80 ? "พร้อมเสนอ" : `อีก ${Math.max(0, 80 - promotionReadiness)}%`}</b></article>
+              </div>
+            </section>
+
+            <div className="employee-growth-detail-grid">
+              <section className="employee-growth-skills">
+                <div className="employee-growth-section-heading"><div><p className="eyebrow">NEXT SKILLS</p><h2>สกิลที่ควรพัฒนาต่อ</h2><p>เรียงจากช่องว่างของระดับปัจจุบันเทียบกับเป้าหมายตำแหน่ง</p></div></div>
+                <div className="employee-growth-skill-list">
+                  {employeeGrowthSkills.slice(0, 10).map(({ skill, currentLevel, gap }) => <article key={skill.id} className={gap ? "gap" : "ready"}>
+                    <div><strong>{skill.name}</strong><small>{skill.id === "core-ai-work-mastery" ? "เส้นทาง AI พื้นฐาน → เชิงลึก → ผู้เชี่ยวชาญ" : skill.category === "discipline" ? "วินัยและความรับผิดชอบ" : skill.category === "behavior" ? "พฤติกรรมและการทำงานร่วมกัน" : "ทักษะสำหรับตำแหน่ง"}</small></div>
+                    <span>{[1, 2, 3, 4, 5].map((level) => <i key={level} className={level <= currentLevel ? "filled" : level <= skill.targetLevel ? "target" : ""} />)}</span>
+                    <b>ระดับ {currentLevel || "—"}<small>เป้าหมาย {skill.targetLevel}</small></b>
+                  </article>)}
+                </div>
+              </section>
+
+              <aside className="employee-growth-side">
+                <section className="employee-salary-band">
+                  <p className="eyebrow">SALARY PATH</p><h2>ช่วงค่าตอบแทนของตำแหน่ง</h2>
+                  <div><span><small>เริ่มต้น</small><strong>฿{formatMoney(roleSalaryBands[peopleOpsRole.id].min)}</strong></span><span><small>ค่ากลาง</small><strong>฿{formatMoney(roleSalaryBands[peopleOpsRole.id].mid)}</strong></span><span><small>ระดับสูง</small><strong>฿{formatMoney(roleSalaryBands[peopleOpsRole.id].max)}</strong></span></div>
+                  <i><b style={{ width: `${peopleOpsHrProfile ? Math.min(100, Math.max(0, (peopleOpsHrProfile.currentSalary - roleSalaryBands[peopleOpsRole.id].min) / Math.max(1, roleSalaryBands[peopleOpsRole.id].max - roleSalaryBands[peopleOpsRole.id].min) * 100)) : 0}%` }} /></i>
+                  <p>เงินเดือนจริงขึ้นกับระดับสกิล ผลงาน ความรับผิดชอบ และนโยบายบริษัท ไม่เพิ่มอัตโนมัติจากคะแนนเพียงอย่างเดียว</p>
+                </section>
+                <section className="employee-development-plan">
+                  <p className="eyebrow">MY DEVELOPMENT PLAN</p><h2>แผนพัฒนาของฉัน</h2>
+                  <div>{talentActions.slice().sort((a, b) => a.dueDate.localeCompare(b.dueDate)).slice(0, 5).map((action) => <article key={action.id}><span className={action.status}>{action.status === "completed" ? "✓" : action.status === "in_progress" ? "→" : "○"}</span><div><strong>{action.title}</strong><small>กำหนด {formatDueDate(action.dueDate)} · {action.status === "completed" ? "เสร็จแล้ว" : action.status === "in_progress" ? "กำลังทำ" : "วางแผนแล้ว"}</small></div></article>)}{!talentActions.length && <div className="employee-growth-empty"><span>↗</span><strong>ยังไม่มีแผนพัฒนา</strong><p>HR จะเพิ่ม Skill Test, Upskill หรือแผนเลื่อนตำแหน่งให้ที่นี่</p></div>}</div>
+                </section>
+              </aside>
+            </div>
+            <div className="employee-growth-privacy"><span>⌁</span><p><strong>ข้อมูลส่วนตัวของคุณ</strong> เงินเดือน เงินเพิ่ม และแผนพัฒนาไม่ถูกส่งไปยังหน้าสำนักงานหรือค่าพลังของเพื่อนร่วมทีม</p></div>
+          </section>
+        ) : <div className="empty-state">ยังไม่พบข้อมูลพนักงานที่เชื่อมกับบัญชีนี้</div>) : (
           <section className="people-ops-layout">
             <section className="people-ops-hero">
               <div className="people-ops-hero-copy">
@@ -2738,7 +2894,7 @@ export default function Home() {
               </section>
             )}
           </section>
-        )}
+        ))}
 
         {view === "hr" && (
           <section className="hr-layout">
@@ -2839,7 +2995,7 @@ export default function Home() {
                 <div className="access-card-heading"><div><p className="eyebrow">ROLE GUIDE</p><h2>แต่ละสิทธิ์ทำอะไรได้</h2></div></div>
                 <article className="admin"><span>01</span><div><strong>HR / Admin</strong><p>จัดการพนักงาน เอกสาร เงินเดือน การประเมิน งาน แต้ม และบัญชีผู้ใช้ทั้งหมด</p></div></article>
                 <article className="manager"><span>02</span><div><strong>หัวหน้าทีม</strong><p>เห็นคนในทีม มอบหมายงาน ติดตามโปรเจกต์ ตรวจผลงาน และประเมินผล โดยไม่เห็นข้อมูลเงินเดือนหรือเอกสารส่วนตัว</p></div></article>
-                <article className="employee"><span>03</span><div><strong>พนักงาน</strong><p>เห็นเฉพาะทูดูลิส ภารกิจ แฟ้มผลงาน แต้ม และของรางวัลของตัวเอง พร้อมส่งหลักฐานงานได้</p></div></article>
+                <article className="employee"><span>03</span><div><strong>พนักงาน</strong><p>ใช้พอร์ทัลส่วนตัวสำหรับงาน แฟ้มผลงาน สำนักงานและค่าพลังทีม การเติบโต เงินเดือน แต้ม และรางวัล โดยไม่เห็นเครื่องมือบริหารหรือข้อมูลส่วนตัวของผู้อื่น</p></div></article>
                 <div className="access-invite-note"><span>i</span><p><strong>ขั้นสุดท้ายก่อนใช้งานจริง</strong> หลังเพิ่มบัญชีในหน้านี้ ให้เจ้าของเว็บไซต์เชิญอีเมลเดียวกันเข้าถึงเว็บไซต์ด้วย เพื่อให้พนักงานเปิดระบบได้</p></div>
               </aside>
             </div>
@@ -2881,7 +3037,7 @@ export default function Home() {
               <div className="portfolio-finder-heading"><div><p className="eyebrow">PORTFOLIO FINDER</p><h2>ค้นหาแฟ้มและไฟล์ผลงาน</h2><p>ค้นจากชื่อพนักงาน โปรเจกต์ ชื่องาน ชื่อไฟล์ ลิงก์ หรือข้อความในหลักฐาน</p></div><span>{visiblePortfolioEntries.length} รายการ</span></div>
               <div className="portfolio-filters">
                 <label className="portfolio-search"><span aria-hidden="true">⌕</span><input value={portfolioSearch} onChange={(event) => setPortfolioSearch(event.target.value)} placeholder="พิมพ์ชื่อคน งาน โปรเจกต์ หรือชื่อไฟล์..." /><small>ค้นหาทุกข้อมูลในแฟ้ม</small></label>
-                <label><span>พนักงาน</span><select value={portfolioEmployeeId} onChange={(event) => setPortfolioEmployeeId(event.target.value)}><option value="all">พนักงานทั้งหมด</option>{employees.filter((employee) => employee.status === "active").map((employee) => <option key={employee.id} value={employee.id}>{employee.name} · {getRole(employee.roleId).shortName}</option>)}</select></label>
+                {!isEmployeeUser && <label><span>พนักงาน</span><select value={portfolioEmployeeId} onChange={(event) => setPortfolioEmployeeId(event.target.value)}><option value="all">พนักงานทั้งหมด</option>{employees.filter((employee) => employee.status === "active").map((employee) => <option key={employee.id} value={employee.id}>{employee.name} · {getRole(employee.roleId).shortName}</option>)}</select></label>}
                 <label><span>โปรเจกต์</span><select value={portfolioProjectId} onChange={(event) => setPortfolioProjectId(event.target.value)}><option value="all">ทุกโปรเจกต์</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
                 <label><span>สถานะแฟ้ม</span><select value={portfolioStatus} onChange={(event) => setPortfolioStatus(event.target.value as PortfolioStatusFilter)}><option value="all">ทุกสถานะ</option><option value="approved">ตรวจและจัดเก็บแล้ว</option><option value="submitted">รอผู้ตรวจอนุมัติ</option><option value="revision">รอแก้ไขผลงาน</option><option value="missing">ยังไม่มีหลักฐาน</option></select></label>
               </div>
@@ -2913,7 +3069,7 @@ export default function Home() {
                     </article>
                   );
                 })}
-                {!visiblePortfolioEntries.length && <div className="portfolio-empty"><span>⌕</span><strong>ไม่พบผลงานตามเงื่อนไข</strong><p>ลองเปลี่ยนคำค้นหา พนักงาน โปรเจกต์ หรือสถานะแฟ้ม</p><button onClick={() => { setPortfolioSearch(""); setPortfolioEmployeeId("all"); setPortfolioProjectId("all"); setPortfolioStatus("all"); }}>ล้างตัวกรอง</button></div>}
+                {!visiblePortfolioEntries.length && <div className="portfolio-empty"><span>⌕</span><strong>ไม่พบผลงานตามเงื่อนไข</strong><p>ลองเปลี่ยนคำค้นหา โปรเจกต์ หรือสถานะแฟ้ม</p><button onClick={() => { setPortfolioSearch(""); setPortfolioEmployeeId(isEmployeeUser ? currentUser?.employeeId ?? "all" : "all"); setPortfolioProjectId("all"); setPortfolioStatus("all"); }}>ล้างตัวกรอง</button></div>}
               </div>
               <div className="portfolio-audit-note"><span>i</span><p><strong>ข้อมูลพร้อมใช้ประกอบการประเมิน</strong> ตรวจสอบเนื้องาน หลักฐาน ผู้อนุมัติ KPI สกิล และหมายเหตุร่วมกัน ไม่ควรตัดสินพนักงานจากจำนวนไฟล์หรือคะแนนเพียงอย่างเดียว</p></div>
             </section>
@@ -2928,7 +3084,7 @@ export default function Home() {
                 { id: "projects", icon: "◇", label: "โปรเจกต์", copy: "ติดตามภาพรวม", value: projects.length },
                 { id: "points", icon: "★", label: "แต้ม", copy: "รับและตรวจสอบ", value: totalPoints },
                 { id: "rewards", icon: "♢", label: "รางวัล", copy: "ใช้แต้มแลกของ", value: rewards.filter((reward) => reward.isActive).length },
-              ] as const).map((section) => (
+              ] as const).filter((section) => !isEmployeeUser || section.id !== "projects").map((section) => (
                 <button key={section.id} className={workSection === section.id ? "active" : ""} onClick={() => setWorkSection(section.id)} aria-current={workSection === section.id ? "page" : undefined}>
                   <span aria-hidden="true">{section.icon}</span>
                   <p><strong>{section.label}</strong><small>{section.copy}</small></p>
@@ -2963,7 +3119,7 @@ export default function Home() {
                     <button className={workDueFilter === "week" ? "active" : ""} onClick={() => setWorkDueFilter(workDueFilter === "week" ? "all" : "week")}>งานภายใน 7 วัน ({dueThisWeekWorkItems.length})</button>
                   </div>
                 </details>
-                {(workSearch || workFilter !== "all" || workDueFilter !== "all" || workAssigneeFilter !== "all") && <button className="simple-reset-filter" onClick={() => { setWorkSearch(""); setWorkFilter("all"); setWorkDueFilter("all"); setWorkAssigneeFilter("all"); }}>ล้างตัวกรอง</button>}
+                {(workSearch || workFilter !== "all" || workDueFilter !== "all" || (!isEmployeeUser && workAssigneeFilter !== "all")) && <button className="simple-reset-filter" onClick={() => { setWorkSearch(""); setWorkFilter("all"); setWorkDueFilter("all"); setWorkAssigneeFilter(isEmployeeUser ? currentUser?.employeeId ?? "all" : "all"); }}>ล้างตัวกรอง</button>}
               </div>
 
               <div className="simple-todo-result"><span>พบ <strong>{visibleWorkItems.length}</strong> งาน</span><span>ทำเสร็จแล้ว <strong>{workCompletion.toFixed(0)}%</strong></span></div>
@@ -2995,7 +3151,7 @@ export default function Home() {
                     </article>
                   );
                 })}
-                {!visibleWorkItems.length && <div className="simple-task-empty"><span>✓</span><strong>ไม่พบงานในรายการนี้</strong><p>ลองเลือก “งานที่ต้องทำ” หรือล้างตัวกรองเพื่อดูงานอีกครั้ง</p><button onClick={() => { setWorkSearch(""); setWorkFilter("all"); setWorkDueFilter("all"); setWorkAssigneeFilter("all"); }}>แสดงงานที่ต้องทำ</button></div>}
+                {!visibleWorkItems.length && <div className="simple-task-empty"><span>✓</span><strong>ไม่พบงานในรายการนี้</strong><p>ลองเลือก “งานที่ต้องทำ” หรือล้างตัวกรองเพื่อดูงานอีกครั้ง</p><button onClick={() => { setWorkSearch(""); setWorkFilter("all"); setWorkDueFilter("all"); setWorkAssigneeFilter(isEmployeeUser ? currentUser?.employeeId ?? "all" : "all"); }}>แสดงงานที่ต้องทำ</button></div>}
               </div>
             </section>}
 
@@ -3029,7 +3185,7 @@ export default function Home() {
             {workSection === "points" && <section className="points-operations-card">
               <div className="points-operations-heading">
                 <div><p className="eyebrow">{isEmployeeUser ? "MY POINTS" : "POINTS OPERATIONS"}</p><h2>{isEmployeeUser ? "แต้มและประวัติของฉัน" : "ศูนย์จัดการแต้มพนักงาน"}</h2><p>{isEmployeeUser ? "ดูแต้มที่ได้รับ แต้มที่ใช้ และเหตุผลของแต่ละรายการได้อย่างโปร่งใส" : "ประมวลผลแต้มจากการประเมิน งาน การเข้า–ออกงาน และเหตุการณ์ด้านวินัย พร้อมประวัติผู้บันทึก"}</p></div>
-                <div className="points-flow-summary"><span><small>แต้มที่ได้รับ</small><strong>+{formatMoney(pointsEarned)}</strong></span><span className="negative"><small>แต้มที่หัก/ใช้</small><strong>-{formatMoney(pointsDeducted)}</strong></span></div>
+                <div className="points-flow-summary">{isEmployeeUser && <span className="balance"><small>แต้มคงเหลือของฉัน</small><strong>{formatMoney(totalPoints)}</strong></span>}<span><small>แต้มที่ได้รับ</small><strong>+{formatMoney(pointsEarned)}</strong></span><span className="negative"><small>แต้มที่หัก/ใช้</small><strong>-{formatMoney(pointsDeducted)}</strong></span></div>
               </div>
 
               {!isEmployeeUser && <div className="monthly-points-panel">
@@ -3101,7 +3257,7 @@ export default function Home() {
               <div className="reward-center-heading"><div><p className="eyebrow">REWARD STORE</p><h2>สะสมแต้ม แลกกิฟต์วอเชอร์และรางวัล</h2><p>มีตั้งแต่คูปองเงินสด 100 บาท ราคา 1,000 แต้ม ไปจนถึง iPhone 18 ราคา 500,000 แต้ม</p></div><span><strong>{formatMoney(totalPoints)}</strong> แต้มในระบบ</span></div>
               <div className="reward-center-grid">
                 <div className="reward-catalog">
-                  {rewards.filter((reward) => reward.isActive).map((reward) => <article key={reward.id}><span className={`reward-icon ${reward.category}`}>{reward.icon}</span><div><b>{reward.title}</b><p>{reward.description}</p><small>เหลือ {reward.stock} สิทธิ์</small></div><div className="reward-cost"><strong>{formatMoney(reward.costPoints)}</strong><small>แต้ม</small><button disabled={reward.stock <= 0} onClick={() => { setRewardToRedeem(reward); setRewardEmployeeId(leaderboard[0]?.employee.id ?? employees[0]?.id ?? ""); }}>{reward.stock > 0 ? "แลกรางวัล" : "หมดแล้ว"}</button></div></article>)}
+                  {rewards.filter((reward) => reward.isActive).map((reward) => <article key={reward.id}><span className={`reward-icon ${reward.category}`}>{reward.icon}</span><div><b>{reward.title}</b><p>{reward.description}</p><small>เหลือ {reward.stock} สิทธิ์</small></div><div className="reward-cost"><strong>{formatMoney(reward.costPoints)}</strong><small>แต้ม</small><button disabled={reward.stock <= 0} onClick={() => { setRewardToRedeem(reward); setRewardEmployeeId(isEmployeeUser ? currentUser?.employeeId ?? "" : leaderboard[0]?.employee.id ?? employees[0]?.id ?? ""); }}>{reward.stock > 0 ? "แลกรางวัล" : "หมดแล้ว"}</button></div></article>)}
                 </div>
                 <aside className="redemption-history">
                   <div><p className="eyebrow">RECENT REQUESTS</p><h3>คำขอแลกล่าสุด</h3></div>
@@ -3242,7 +3398,7 @@ export default function Home() {
                     {!activeWorkSubmissions.length && <div className="submission-empty"><span>↗</span><strong>ยังไม่มีหลักฐานงาน</strong><p>เพิ่มลิงก์หรือแนบไฟล์ด้วยแบบฟอร์มด้านล่าง</p></div>}
                   </div>
                 </section>
-                <form className="submission-form" onSubmit={submitWorkProof}>
+                {submissionWorkItem.status === "review" || submissionWorkItem.status === "done" ? <div className="submission-locked"><span>{submissionWorkItem.status === "done" ? "✓" : "⌕"}</span><div><strong>{submissionWorkItem.status === "done" ? "งานนี้ปิดเรียบร้อยแล้ว" : "หลักฐานกำลังรอตรวจ"}</strong><p>{submissionWorkItem.status === "done" ? "ดูหรือดาวน์โหลดหลักฐานเดิมได้จากประวัติด้านบน" : "หากผู้ตรวจส่งกลับแก้ไข ระบบจะเปิดแบบฟอร์มให้ส่งเวอร์ชันใหม่อีกครั้ง"}</p></div></div> : <form className="submission-form" onSubmit={submitWorkProof}>
                   <div className="submission-section-heading"><div><p className="eyebrow">NEW SUBMISSION</p><h3>เพิ่มหลักฐาน</h3></div><span>รอตรวจ</span></div>
                   <div className="submission-form-grid">
                     <label><span>ประเภทหลักฐาน</span><select value={submissionForm.submissionType} onChange={(event) => setSubmissionForm((form) => ({ ...form, submissionType: event.target.value as WorkSubmissionRecord["submissionType"] }))}>{(Object.entries(submissionTypeLabels) as [WorkSubmissionRecord["submissionType"], string][]).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
@@ -3252,7 +3408,7 @@ export default function Home() {
                     <label className="wide"><span>สรุปสิ่งที่ส่งมอบ</span><textarea value={submissionForm.note} onChange={(event) => setSubmissionForm((form) => ({ ...form, note: event.target.value }))} placeholder="อธิบายผลลัพธ์ จุดที่ต้องการให้ตรวจ และรหัสผ่านหากมี" /></label>
                   </div>
                   <div className="submission-form-actions"><span>ต้องมีลิงก์หรือไฟล์อย่างน้อย 1 รายการ</span><button disabled={isSaving || (!submissionForm.linkUrl.trim() && !submissionFile)}>{isSaving ? "กำลังส่ง..." : "ส่งหลักฐานเพื่อตรวจ"}</button></div>
-                </form>
+                </form>}
               </div>
             </div>
           </section>
@@ -3281,11 +3437,11 @@ export default function Home() {
           <form className="reward-modal" onSubmit={redeemReward} role="dialog" aria-modal="true" aria-labelledby="reward-modal-title">
             <div className="reward-modal-hero"><span className={`reward-icon ${rewardToRedeem.category}`}>{rewardToRedeem.icon}</span><div><p className="eyebrow">REDEEM REWARD</p><h2 id="reward-modal-title">{rewardToRedeem.title}</h2><p>{rewardToRedeem.description}</p></div><button type="button" className="modal-close dark" onClick={() => setRewardToRedeem(null)} aria-label="ปิดหน้าต่าง">×</button></div>
             <div className="reward-modal-body">
-              <label><span>พนักงานที่ใช้แต้ม</span><select value={rewardEmployeeId} onChange={(event) => setRewardEmployeeId(event.target.value)}>{leaderboard.map(({ employee, points }) => <option key={employee.id} value={employee.id}>{employee.name} · {formatMoney(points)} แต้ม</option>)}</select></label>
-              <div className="reward-balance"><span><small>แต้มคงเหลือ</small><strong>{formatMoney(pointBalances.get(rewardEmployeeId) ?? 0)}</strong></span><b>−</b><span><small>ใช้แลกรางวัล</small><strong>{formatMoney(rewardToRedeem.costPoints)}</strong></span><b>=</b><span className={(pointBalances.get(rewardEmployeeId) ?? 0) < rewardToRedeem.costPoints ? "insufficient" : ""}><small>คงเหลือหลังแลก</small><strong>{formatMoney((pointBalances.get(rewardEmployeeId) ?? 0) - rewardToRedeem.costPoints)}</strong></span></div>
+              {isEmployeeUser ? <div className="reward-owner-lock"><span>★</span><p><small>บัญชีที่ใช้แต้ม</small><strong>{currentUserEmployee?.name ?? "พนักงาน"}</strong></p><b>{formatMoney(pointBalances.get(activeRewardEmployeeId) ?? 0)} แต้ม</b></div> : <label><span>พนักงานที่ใช้แต้ม</span><select value={rewardEmployeeId} onChange={(event) => setRewardEmployeeId(event.target.value)}>{leaderboard.map(({ employee, points }) => <option key={employee.id} value={employee.id}>{employee.name} · {formatMoney(points)} แต้ม</option>)}</select></label>}
+              <div className="reward-balance"><span><small>แต้มคงเหลือ</small><strong>{formatMoney(pointBalances.get(activeRewardEmployeeId) ?? 0)}</strong></span><b>−</b><span><small>ใช้แลกรางวัล</small><strong>{formatMoney(rewardToRedeem.costPoints)}</strong></span><b>=</b><span className={(pointBalances.get(activeRewardEmployeeId) ?? 0) < rewardToRedeem.costPoints ? "insufficient" : ""}><small>คงเหลือหลังแลก</small><strong>{formatMoney((pointBalances.get(activeRewardEmployeeId) ?? 0) - rewardToRedeem.costPoints)}</strong></span></div>
               <p className="reward-approval-note">คำขอจะเข้าสู่สถานะ “รออนุมัติ” และตัดแต้มทันที เพื่อป้องกันการใช้แต้มซ้ำ</p>
             </div>
-            <div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setRewardToRedeem(null)}>ยกเลิก</button><button className="primary-button" disabled={isSaving || (pointBalances.get(rewardEmployeeId) ?? 0) < rewardToRedeem.costPoints}>{isSaving ? "กำลังส่งคำขอ..." : `ยืนยันแลก ${formatMoney(rewardToRedeem.costPoints)} แต้ม`}</button></div>
+            <div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setRewardToRedeem(null)}>ยกเลิก</button><button className="primary-button" disabled={isSaving || (pointBalances.get(activeRewardEmployeeId) ?? 0) < rewardToRedeem.costPoints}>{isSaving ? "กำลังส่งคำขอ..." : `ยืนยันแลก ${formatMoney(rewardToRedeem.costPoints)} แต้ม`}</button></div>
           </form>
         </div>
       )}
@@ -3488,7 +3644,7 @@ export default function Home() {
         </div>
       )}
 
-      <AiAssistant open={showAiAssistant} context={peopleAiContext} onClose={() => setShowAiAssistant(false)} onSystemAction={handlePeopleAiAction} />
+      {!isEmployeeUser && <AiAssistant open={showAiAssistant} context={peopleAiContext} onClose={() => setShowAiAssistant(false)} onSystemAction={handlePeopleAiAction} />}
       <div className={`toast ${toast ? "show" : ""}`} role="status"><span>✓</span>{toast}</div>
     </main>
   );
