@@ -138,6 +138,10 @@ test("builds the People Pulse KPI product bundle", async () => {
   assert.match(pageAsset, /saveUserAccount/);
   assert.match(pageAsset, /ผู้ช่วย AI/);
   assert.match(pageAsset, /People AI/);
+  assert.match(pageAsset, /กล่องข้อความและแจ้งเตือน/);
+  assert.match(pageAsset, /มีเควส:/);
+  assert.match(pageAsset, /อ่านทั้งหมด/);
+  assert.match(pageAsset, /markNotificationsRead/);
   assert.match(aiAssistant, /จัดลำดับงานวันนี้/);
   assert.match(aiAssistant, /ช่วยวิเคราะห์ KPI/);
   assert.match(aiAssistant, /AI-assisted Editing/);
@@ -181,6 +185,9 @@ test("builds the People Pulse KPI product bundle", async () => {
   assert.match(styles, /competency-framework-card/);
   assert.match(styles, /skill-category-tabs/);
   assert.match(styles, /Accessibility contrast lock/);
+  assert.match(styles, /Notification center/);
+  assert.match(styles, /notification-bell-button/);
+  assert.match(styles, /notification-center/);
   assert.match(styles, /--on-dark-secondary: #e7f1ff/);
   assert.match(styles, /\.skill-profile-hero \.profile-identity h2/);
   assert.match(styles, /\.role-fit-panel \.fit-disclaimer/);
@@ -192,7 +199,7 @@ test("builds the People Pulse KPI product bundle", async () => {
 });
 
 test("ships durable role-based access and scoped people, work, portfolio and reward storage", async () => {
-  const [hosting, migration, workforceMigration, workMigration, dossierMigration, dossierIndexMigration, proofMigration, pointsMigration, peopleOpsMigration, accessMigration, packagedMigration, packagedWorkforceMigration, packagedWorkMigration, packagedDossierMigration, packagedDossierIndexMigration, packagedProofMigration, packagedPointsMigration, packagedPeopleOpsMigration, packagedAccessMigration, page, dashboardRoute, accessControl, data, schema, documentRoute, profileImageRoute, workSubmissionRoute, nextConfig] = await Promise.all([
+  const [hosting, migration, workforceMigration, workMigration, dossierMigration, dossierIndexMigration, proofMigration, pointsMigration, peopleOpsMigration, accessMigration, notificationMigration, packagedMigration, packagedWorkforceMigration, packagedWorkMigration, packagedDossierMigration, packagedDossierIndexMigration, packagedProofMigration, packagedPointsMigration, packagedPeopleOpsMigration, packagedAccessMigration, packagedNotificationMigration, page, dashboardRoute, accessControl, data, schema, documentRoute, profileImageRoute, workSubmissionRoute, nextConfig] = await Promise.all([
     readFile(new URL("../.openai/hosting.json", import.meta.url), "utf8"),
     readFile(new URL("../drizzle/0000_marvelous_pandemic.sql", import.meta.url), "utf8"),
     readFile(new URL("../drizzle/0001_outstanding_leper_queen.sql", import.meta.url), "utf8"),
@@ -203,6 +210,7 @@ test("ships durable role-based access and scoped people, work, portfolio and rew
     readFile(new URL("../drizzle/0006_typical_zuras.sql", import.meta.url), "utf8"),
     readFile(new URL("../drizzle/0007_colossal_lord_tyger.sql", import.meta.url), "utf8"),
     readFile(new URL("../drizzle/0008_spotty_trauma.sql", import.meta.url), "utf8"),
+    readFile(new URL("../drizzle/0009_easy_wong.sql", import.meta.url), "utf8"),
     readFile(new URL("../dist/.openai/drizzle/0000_marvelous_pandemic.sql", import.meta.url), "utf8"),
     readFile(new URL("../dist/.openai/drizzle/0001_outstanding_leper_queen.sql", import.meta.url), "utf8"),
     readFile(new URL("../dist/.openai/drizzle/0002_legal_vector.sql", import.meta.url), "utf8"),
@@ -212,6 +220,7 @@ test("ships durable role-based access and scoped people, work, portfolio and rew
     readFile(new URL("../dist/.openai/drizzle/0006_typical_zuras.sql", import.meta.url), "utf8"),
     readFile(new URL("../dist/.openai/drizzle/0007_colossal_lord_tyger.sql", import.meta.url), "utf8"),
     readFile(new URL("../dist/.openai/drizzle/0008_spotty_trauma.sql", import.meta.url), "utf8"),
+    readFile(new URL("../dist/.openai/drizzle/0009_easy_wong.sql", import.meta.url), "utf8"),
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/api/dashboard/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/access-control.ts", import.meta.url), "utf8"),
@@ -259,6 +268,9 @@ test("ships durable role-based access and scoped people, work, portfolio and rew
   assert.match(accessMigration, /user_accounts_auth_user_unique/);
   assert.match(accessMigration, /user_accounts_employee_unique/);
   assert.equal(packagedAccessMigration, accessMigration);
+  assert.match(notificationMigration, /CREATE TABLE `notification_reads`/);
+  assert.match(notificationMigration, /notification_reads_user_notification_unique/);
+  assert.equal(packagedNotificationMigration, notificationMigration);
   assert.match(schema, /kpiScores/);
   assert.match(schema, /skillScores/);
   assert.match(schema, /currentSalary/);
@@ -277,6 +289,7 @@ test("ships durable role-based access and scoped people, work, portfolio and rew
   assert.match(schema, /attendanceRecords/);
   assert.match(schema, /skillAchievements/);
   assert.match(schema, /userAccounts/);
+  assert.match(schema, /notificationReads/);
   assert.match(page, /saveEvaluation/);
   assert.match(page, /saveHrPlan/);
   assert.match(page, /saveWorkItem/);
@@ -297,6 +310,7 @@ test("ships durable role-based access and scoped people, work, portfolio and rew
   assert.match(dashboardRoute, /hasCompleteSkillAssessment/);
   assert.match(dashboardRoute, /calculateSkillScore/);
   assert.match(dashboardRoute, /saveUserAccount/);
+  assert.match(dashboardRoute, /markNotificationsRead/);
   assert.match(dashboardRoute, /visibleEmployeeIds/);
   assert.match(dashboardRoute, /canManageAccounts/);
   assert.match(accessControl, /oai-authenticated-user-id/);

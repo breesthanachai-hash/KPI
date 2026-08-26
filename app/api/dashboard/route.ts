@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { ensureDatabase } from "../../../db/initialize";
-import { applicationDocuments, attendanceRecords, employeeProfiles, employees, employmentContracts, evaluations, hrProfiles, pointEvents, pointLedger, projects, rewardRedemptions, rewards, skillAchievements, talentActions, userAccounts, workItems, workSubmissions } from "../../../db/schema";
+import { applicationDocuments, attendanceRecords, employeeProfiles, employees, employmentContracts, evaluations, hrProfiles, notificationReads, pointEvents, pointLedger, projects, rewardRedemptions, rewards, skillAchievements, talentActions, userAccounts, workItems, workSubmissions } from "../../../db/schema";
 import { authenticateRequest, authenticatedIdentity, canAccessEmployee, ensureBootstrapAccounts } from "../../../lib/access-control";
 import {
   clampScore,
@@ -46,7 +46,9 @@ function apiError(error: unknown) {
   return Response.json({ error: message }, { status: 500 });
 }
 
-async function ensureSeedData() {
+let seedInitialization: Promise<void> | null = null;
+
+async function initializeSeedData() {
   await ensureDatabase();
   const db = getDb();
   const [existingEmployee] = await db.select({ id: employees.id }).from(employees).limit(1);
@@ -128,6 +130,15 @@ async function ensureSeedData() {
   await ensureBootstrapAccounts();
 }
 
+async function ensureSeedData() {
+  if (seedInitialization) return seedInitialization;
+  seedInitialization = initializeSeedData().catch((error) => {
+    seedInitialization = null;
+    throw error;
+  });
+  return seedInitialization;
+}
+
 function authenticatedActor(request: Request) {
   const userId = request.headers.get("oai-authenticated-user-id") ?? "local-admin";
   const email = request.headers.get("oai-authenticated-user-email") ?? "hr@peoplepulse.local";
@@ -168,7 +179,7 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const period = url.searchParams.get("period") ?? periods[0];
     const db = getDb();
-    const [employeeRows, evaluationRows, hrProfileRows, attendanceRows, skillAchievementRows, talentActionRows, projectRows, workItemRows, workSubmissionRows, rewardRows, pointRows, pointEventRows, redemptionRows, employeeProfileRows, applicationDocumentRows, employmentContractRows, userAccountRows] = await Promise.all([
+    const [employeeRows, evaluationRows, hrProfileRows, attendanceRows, skillAchievementRows, talentActionRows, projectRows, workItemRows, workSubmissionRows, rewardRows, pointRows, pointEventRows, redemptionRows, employeeProfileRows, applicationDocumentRows, employmentContractRows, userAccountRows, notificationReadRows] = await Promise.all([
       db.select().from(employees),
       db.select().from(evaluations).where(eq(evaluations.period, period)),
       db.select().from(hrProfiles),
@@ -186,6 +197,7 @@ export async function GET(request: Request) {
       db.select().from(applicationDocuments),
       db.select().from(employmentContracts),
       currentUser.role === "admin" ? db.select().from(userAccounts) : Promise.resolve([]),
+      db.select().from(notificationReads).where(eq(notificationReads.userKey, currentUser.id)),
     ]);
     const visibleEmployeeIds = new Set(employeeRows.filter((employee) => {
       if (currentUser.role === "admin") return true;
@@ -226,6 +238,7 @@ export async function GET(request: Request) {
       applicationDocuments: currentUser.role === "admin" ? applicationDocumentRows.filter((row) => visibleEmployeeIds.has(row.employeeId)) : [],
       employmentContracts: currentUser.role === "admin" ? employmentContractRows.filter((row) => visibleEmployeeIds.has(row.employeeId)) : [],
       userAccounts: userAccountRows,
+      notificationReads: notificationReadRows,
       period,
     });
   } catch (error) {
@@ -407,10 +420,15 @@ type UserAccountPayload = {
   status?: "active" | "inactive";
 };
 
+type MarkNotificationsReadPayload = {
+  action: "markNotificationsRead";
+  notificationIds?: string[];
+};
+
 export async function POST(request: Request) {
   try {
     await ensureSeedData();
-    const payload = await request.json() as EmployeePayload | EvaluationPayload | HrPlanPayload | CompleteTalentActionPayload | AttendancePayload | AttendanceApprovalPayload | SkillAchievementPayload | ProjectPayload | WorkItemPayload | ReviewWorkSubmissionPayload | RecordPointEventPayload | RunMonthlyPointCyclePayload | RedeemRewardPayload | EmployeeProfilePayload | DocumentStatusPayload | ContractPayload | SignContractPayload | SendContractPayload | UserAccountPayload;
+    const payload = await request.json() as EmployeePayload | EvaluationPayload | HrPlanPayload | CompleteTalentActionPayload | AttendancePayload | AttendanceApprovalPayload | SkillAchievementPayload | ProjectPayload | WorkItemPayload | ReviewWorkSubmissionPayload | RecordPointEventPayload | RunMonthlyPointCyclePayload | RedeemRewardPayload | EmployeeProfilePayload | DocumentStatusPayload | ContractPayload | SignContractPayload | SendContractPayload | UserAccountPayload | MarkNotificationsReadPayload;
     const db = getDb();
     const currentUser = await authenticateRequest(request);
     if (!currentUser) return Response.json({ error: "บัญชีนี้ไม่มีสิทธิ์ดำเนินการ" }, { status: 403 });
@@ -418,6 +436,26 @@ export async function POST(request: Request) {
     const teamActions = new Set(["saveEvaluation", "completeTalentAction", "approveAttendance", "saveProject", "reviewWorkSubmission", "recordPointEvent"]);
     if (adminOnlyActions.has(payload.action) && currentUser.role !== "admin") return Response.json({ error: "เฉพาะ HR หรือผู้ดูแลระบบเท่านั้น" }, { status: 403 });
     if (teamActions.has(payload.action) && currentUser.role === "employee") return Response.json({ error: "รายการนี้ต้องดำเนินการโดยหัวหน้าทีมหรือ HR" }, { status: 403 });
+
+    if (payload.action === "markNotificationsRead") {
+      const notificationIds = [...new Set(payload.notificationIds ?? [])]
+        .filter((id) => /^[a-z0-9:_-]{1,240}$/i.test(id))
+        .slice(0, 100);
+      if (!notificationIds.length) return Response.json({ notificationReads: [] });
+      const readAt = new Date().toISOString();
+      const savedReads = [];
+      for (const notificationId of notificationIds) {
+        const record = {
+          id: `${currentUser.id}:${notificationId}`,
+          userKey: currentUser.id,
+          notificationId,
+          readAt,
+        };
+        await db.insert(notificationReads).values(record).onConflictDoUpdate({ target: notificationReads.id, set: { readAt } });
+        savedReads.push(record);
+      }
+      return Response.json({ notificationReads: savedReads });
+    }
 
     if (payload.action === "saveUserAccount") {
       const email = payload.email?.trim().toLowerCase() ?? "";

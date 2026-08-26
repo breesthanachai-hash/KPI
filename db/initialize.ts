@@ -40,6 +40,14 @@ export function ensureDatabase() {
     d1.prepare("CREATE UNIQUE INDEX IF NOT EXISTS user_accounts_auth_user_unique ON user_accounts (auth_user_id) WHERE auth_user_id != ''"),
     d1.prepare("CREATE UNIQUE INDEX IF NOT EXISTS user_accounts_employee_unique ON user_accounts (employee_id) WHERE employee_id IS NOT NULL"),
     d1.prepare("CREATE INDEX IF NOT EXISTS user_accounts_role_status_idx ON user_accounts (role, status)"),
+    d1.prepare(`CREATE TABLE IF NOT EXISTS notification_reads (
+      id TEXT PRIMARY KEY NOT NULL,
+      user_key TEXT NOT NULL,
+      notification_id TEXT NOT NULL,
+      read_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`),
+    d1.prepare("CREATE UNIQUE INDEX IF NOT EXISTS notification_reads_user_notification_unique ON notification_reads (user_key, notification_id)"),
+    d1.prepare("CREATE INDEX IF NOT EXISTS notification_reads_user_read_idx ON notification_reads (user_key, read_at)"),
     d1.prepare(`CREATE TABLE IF NOT EXISTS evaluations (
       id TEXT PRIMARY KEY NOT NULL,
       employee_id TEXT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,

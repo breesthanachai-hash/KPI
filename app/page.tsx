@@ -11,6 +11,7 @@ import {
   type EmploymentContractRecord,
   type EvaluationRecord,
   type HrProfileRecord,
+  type NotificationReadRecord,
   type PointEventRecord,
   type PointEventType,
   type PointLedgerRecord,
@@ -71,6 +72,28 @@ type PortfolioStatusFilter = "all" | "approved" | "submitted" | "revision" | "mi
 type WorkDueFilter = "all" | "today" | "overdue" | "week" | "review" | "done";
 
 type WorkSection = "tasks" | "projects" | "points" | "rewards";
+
+type NotificationKind = "quest" | "deadline" | "review" | "reward";
+
+type NotificationFilter = "all" | "unread" | "quest";
+
+type AppNotification = {
+  id: string;
+  kind: NotificationKind;
+  title: string;
+  message: string;
+  createdAt: string;
+  workItemId?: string;
+  dueFilter?: WorkDueFilter;
+  actionLabel: string;
+};
+
+const notificationKindMeta: Record<NotificationKind, { label: string; icon: string }> = {
+  quest: { label: "เควส", icon: "Q" },
+  deadline: { label: "กำหนดส่ง", icon: "!" },
+  review: { label: "รอตรวจ", icon: "✓" },
+  reward: { label: "รางวัล", icon: "★" },
+};
 
 type TalentDimensionId = "analysis" | "communication" | "problemSolving" | "leadership" | "execution";
 
@@ -331,6 +354,16 @@ function formatUpdatedAt(value: string) {
   return new Intl.DateTimeFormat("th-TH", { day: "numeric", month: "short", year: "2-digit" }).format(new Date(value));
 }
 
+function formatNotificationTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "ล่าสุด";
+  const today = bangkokIsoDate();
+  const itemDate = bangkokIsoDate(date);
+  if (itemDate === today) return `วันนี้ ${new Intl.DateTimeFormat("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" }).format(date)} น.`;
+  if (itemDate === addIsoDays(today, -1)) return "เมื่อวาน";
+  return formatUpdatedAt(value);
+}
+
 function formatDueDate(value: string) {
   return new Intl.DateTimeFormat("th-TH", { day: "numeric", month: "short", year: "2-digit" }).format(new Date(`${value}T00:00:00`));
 }
@@ -492,6 +525,7 @@ export default function Home() {
   const [applicationDocuments, setApplicationDocuments] = useState<ApplicationDocumentRecord[]>([]);
   const [employmentContracts, setEmploymentContracts] = useState<EmploymentContractRecord[]>([]);
   const [userAccounts, setUserAccounts] = useState<UserAccountRecord[]>([]);
+  const [notificationReads, setNotificationReads] = useState<NotificationReadRecord[]>([]);
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [permissions, setPermissions] = useState<AppPermissions>({ canManageAccounts: false, canManagePeople: false, canManageWork: false, canReviewWork: false, canViewTeam: false });
   const [accessDenied, setAccessDenied] = useState<{ email: string; name: string } | null>(null);
@@ -505,6 +539,8 @@ export default function Home() {
   const [search, setSearch] = useState("");
   const [toast, setToast] = useState("");
   const [showAiAssistant, setShowAiAssistant] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [notificationFilter, setNotificationFilter] = useState<NotificationFilter>("all");
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [dataWarning, setDataWarning] = useState("");
@@ -558,7 +594,7 @@ export default function Home() {
     const controller = new AbortController();
     fetch(`/api/dashboard?period=${encodeURIComponent(period)}`, { signal: controller.signal })
       .then(async (response) => {
-        const body = await response.json() as { currentUser?: CurrentUser; permissions?: AppPermissions; userAccounts?: UserAccountRecord[]; employees?: EmployeeRecord[]; evaluations?: EvaluationRecord[]; hrProfiles?: HrProfileRecord[]; attendanceRecords?: AttendanceRecord[]; skillAchievements?: SkillAchievementRecord[]; talentActions?: TalentActionRecord[]; projects?: ProjectRecord[]; workItems?: WorkItemRecord[]; workSubmissions?: WorkSubmissionRecord[]; rewards?: RewardRecord[]; pointLedger?: PointLedgerRecord[]; pointEvents?: PointEventRecord[]; rewardRedemptions?: RewardRedemptionRecord[]; employeeProfiles?: EmployeeProfileRecord[]; applicationDocuments?: ApplicationDocumentRecord[]; employmentContracts?: EmploymentContractRecord[]; accessDenied?: boolean; identity?: { email: string; name: string } | null; error?: string };
+        const body = await response.json() as { currentUser?: CurrentUser; permissions?: AppPermissions; userAccounts?: UserAccountRecord[]; notificationReads?: NotificationReadRecord[]; employees?: EmployeeRecord[]; evaluations?: EvaluationRecord[]; hrProfiles?: HrProfileRecord[]; attendanceRecords?: AttendanceRecord[]; skillAchievements?: SkillAchievementRecord[]; talentActions?: TalentActionRecord[]; projects?: ProjectRecord[]; workItems?: WorkItemRecord[]; workSubmissions?: WorkSubmissionRecord[]; rewards?: RewardRecord[]; pointLedger?: PointLedgerRecord[]; pointEvents?: PointEventRecord[]; rewardRedemptions?: RewardRedemptionRecord[]; employeeProfiles?: EmployeeProfileRecord[]; applicationDocuments?: ApplicationDocumentRecord[]; employmentContracts?: EmploymentContractRecord[]; accessDenied?: boolean; identity?: { email: string; name: string } | null; error?: string };
         if (response.status === 403 && body.accessDenied) {
           setAccessDenied(body.identity ?? { email: "ไม่พบอีเมล", name: "ผู้ใช้งาน" });
           setCurrentUser(null);
@@ -570,6 +606,7 @@ export default function Home() {
         setCurrentUser(body.currentUser ?? null);
         setPermissions(body.permissions ?? { canManageAccounts: false, canManagePeople: false, canManageWork: false, canReviewWork: false, canViewTeam: false });
         setUserAccounts(body.userAccounts ?? []);
+        setNotificationReads(body.notificationReads ?? []);
         setAccessDenied(null);
         setEmployees(body.employees ?? []);
         setEvaluations(body.evaluations ?? []);
@@ -627,7 +664,7 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (!selectedEmployee && !skillProfileEmployee && !hrEmployee && !showAddEmployee && !showWorkForm && !showProjectForm && !submissionWorkItem && !rewardToRedeem && !showProfileEditor && !showContractForm && !contractToSign) return;
+    if (!selectedEmployee && !skillProfileEmployee && !hrEmployee && !showAddEmployee && !showWorkForm && !showProjectForm && !submissionWorkItem && !rewardToRedeem && !showProfileEditor && !showContractForm && !contractToSign && !showNotifications) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setSelectedEmployee(null);
@@ -641,11 +678,12 @@ export default function Home() {
         setShowProfileEditor(false);
         setShowContractForm(false);
         setContractToSign(null);
+        setShowNotifications(false);
       }
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [selectedEmployee, skillProfileEmployee, hrEmployee, showAddEmployee, showWorkForm, showProjectForm, submissionWorkItem, rewardToRedeem, showProfileEditor, showContractForm, contractToSign]);
+  }, [selectedEmployee, skillProfileEmployee, hrEmployee, showAddEmployee, showWorkForm, showProjectForm, submissionWorkItem, rewardToRedeem, showProfileEditor, showContractForm, contractToSign, showNotifications]);
 
   const evaluationsByEmployee = useMemo(
     () => new Map(evaluations.filter((evaluation) => evaluation.period === period).map((evaluation) => [evaluation.employeeId, evaluation])),
@@ -772,6 +810,82 @@ export default function Home() {
   const overdueWorkItems = workItems.filter((item) => item.status !== "done" && item.dueDate < todayDate);
   const dueThisWeekWorkItems = workItems.filter((item) => item.status !== "done" && item.dueDate >= todayDate && item.dueDate <= weekEndDate);
   const reviewQueueWorkItems = workItems.filter((item) => item.status === "review");
+  const notificationReadIds = useMemo(() => new Set(notificationReads.map((item) => item.notificationId)), [notificationReads]);
+  const notifications = useMemo<AppNotification[]>(() => {
+    const items: AppNotification[] = [];
+    workItems.forEach((item) => {
+      const employeeName = employeesById.get(item.assigneeEmployeeId)?.name ?? "พนักงาน";
+      const projectName = projectsById.get(item.projectId)?.name ?? "งานทั่วไป";
+      if (item.kind === "mission" && item.status !== "done") {
+        items.push({
+          id: `quest:${item.id}`,
+          kind: "quest",
+          title: `มีเควส: ${item.title}`,
+          message: `${employeeName} · ${projectName} · รับ ${formatMoney(item.points)} แต้มเมื่อสำเร็จ`,
+          createdAt: item.createdAt,
+          workItemId: item.id,
+          dueFilter: "all",
+          actionLabel: "เปิดเควส",
+        });
+      }
+      if (item.status !== "done" && item.dueDate === todayDate) {
+        items.push({
+          id: `deadline-today:${item.id}:${item.dueDate}`,
+          kind: "deadline",
+          title: `งานครบกำหนดวันนี้: ${item.title}`,
+          message: `${employeeName} · ความคืบหน้า ${item.progress}%`,
+          createdAt: item.updatedAt,
+          workItemId: item.id,
+          dueFilter: "today",
+          actionLabel: "ดูงานวันนี้",
+        });
+      } else if (item.status !== "done" && item.dueDate < todayDate) {
+        items.push({
+          id: `deadline-overdue:${item.id}:${item.dueDate}`,
+          kind: "deadline",
+          title: `งานเกินกำหนด: ${item.title}`,
+          message: `${employeeName} · กำหนดส่ง ${formatDueDate(item.dueDate)} · คืบหน้า ${item.progress}%`,
+          createdAt: item.updatedAt,
+          workItemId: item.id,
+          dueFilter: "overdue",
+          actionLabel: "จัดการงาน",
+        });
+      }
+      if (item.status === "review" && permissions.canReviewWork) {
+        const latestSubmission = workSubmissions
+          .filter((submission) => submission.workItemId === item.id && submission.status === "submitted")
+          .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt))[0];
+        items.push({
+          id: `review:${item.id}:${latestSubmission?.id ?? item.updatedAt}`,
+          kind: "review",
+          title: `มีงานรอตรวจ: ${item.title}`,
+          message: `${employeeName} ส่งหลักฐานแล้ว รอหัวหน้าตรวจและให้คะแนน`,
+          createdAt: latestSubmission?.submittedAt ?? item.updatedAt,
+          workItemId: item.id,
+          dueFilter: "review",
+          actionLabel: "ตรวจงาน",
+        });
+      }
+    });
+    rewardRedemptions
+      .filter((redemption) => redemption.status === "requested" && (currentUser?.role === "admin" || redemption.employeeId === currentUser?.employeeId))
+      .forEach((redemption) => {
+        const employeeName = employeesById.get(redemption.employeeId)?.name ?? "พนักงาน";
+        const reward = rewards.find((item) => item.id === redemption.rewardId);
+        items.push({
+          id: `reward:${redemption.id}`,
+          kind: "reward",
+          title: currentUser?.role === "admin" ? `มีคำขอแลกรางวัลจาก ${employeeName}` : "คำขอแลกรางวัลกำลังรออนุมัติ",
+          message: `${reward?.title ?? "รางวัล"} · ใช้ ${formatMoney(redemption.pointsSpent)} แต้ม`,
+          createdAt: redemption.createdAt,
+          actionLabel: "ดูรางวัล",
+        });
+      });
+    return items.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }, [currentUser?.employeeId, currentUser?.role, employeesById, permissions.canReviewWork, projectsById, rewardRedemptions, rewards, todayDate, workItems, workSubmissions]);
+  const unreadNotifications = notifications.filter((item) => !notificationReadIds.has(item.id));
+  const questNotificationCount = notifications.filter((item) => item.kind === "quest").length;
+  const visibleNotifications = notifications.filter((item) => notificationFilter === "all" || (notificationFilter === "unread" && !notificationReadIds.has(item.id)) || (notificationFilter === "quest" && item.kind === "quest"));
   const officePeople = useMemo<OfficePersonModel[]>(() => {
     const priorityWeight: Record<WorkItemRecord["priority"], number> = { low: .7, medium: 1, high: 1.4, urgent: 1.8 };
     const statusWeight: Record<Exclude<WorkItemRecord["status"], "done">, number> = { todo: 0, in_progress: .4, review: .2 };
@@ -963,6 +1077,48 @@ export default function Home() {
   const showToast = (message: string) => {
     setToast(message);
     window.setTimeout(() => setToast(""), 2800);
+  };
+
+  const markNotificationsRead = async (notificationIds: string[]) => {
+    const unreadIds = [...new Set(notificationIds)].filter((id) => !notificationReadIds.has(id));
+    if (!unreadIds.length || !currentUser) return;
+    const previousReads = notificationReads;
+    const readAt = new Date().toISOString();
+    setNotificationReads((items) => [
+      ...items,
+      ...unreadIds.map((notificationId) => ({ id: `${currentUser.id}:${notificationId}`, userKey: currentUser.id, notificationId, readAt })),
+    ]);
+    try {
+      const response = await fetch("/api/dashboard", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "markNotificationsRead", notificationIds: unreadIds }),
+      });
+      const body = await response.json() as { notificationReads?: NotificationReadRecord[]; error?: string };
+      if (!response.ok) throw new Error(body.error ?? "บันทึกสถานะแจ้งเตือนไม่สำเร็จ");
+      if (body.notificationReads?.length) {
+        const savedById = new Map(body.notificationReads.map((item) => [item.notificationId, item]));
+        setNotificationReads((items) => items.map((item) => savedById.get(item.notificationId) ?? item));
+      }
+    } catch (error) {
+      setNotificationReads(previousReads);
+      showToast(error instanceof Error ? error.message : "บันทึกสถานะแจ้งเตือนไม่สำเร็จ");
+    }
+  };
+
+  const openNotification = (notification: AppNotification) => {
+    void markNotificationsRead([notification.id]);
+    setShowNotifications(false);
+    if (notification.kind === "reward") {
+      setView("work");
+      setWorkSection("rewards");
+      return;
+    }
+    setView("work");
+    setWorkSection("tasks");
+    setWorkDueFilter(notification.dueFilter ?? "all");
+    setWorkFilter(notification.kind === "quest" ? "mission" : "all");
+    setWorkSearch(notification.workItemId ? workItems.find((item) => item.id === notification.workItemId)?.title ?? "" : "");
   };
 
   const comparePowerProfile = (employeeId: string) => {
@@ -1797,13 +1953,59 @@ export default function Home() {
             <span className="period-label">รอบประเมิน</span>
             <select value={period} onChange={(event) => { setIsLoading(true); setPeriod(event.target.value); }}>{periods.map((item) => <option key={item}>{item}</option>)}</select>
           </label>}
-          {!isEmployeeUser && <button className="icon-button" onClick={() => pendingEmployees.length ? setView("employees") : showToast("ไม่มีรายการรอประเมิน")} aria-label={`${pendingEmployees.length} รายการรอประเมิน`}>
+          <button
+            className={`notification-bell-button ${showNotifications ? "active" : ""}`}
+            onClick={() => { setShowAiAssistant(false); setShowNotifications((open) => !open); }}
+            aria-label={`กล่องข้อความและแจ้งเตือน มี ${unreadNotifications.length} รายการที่ยังไม่อ่าน`}
+            aria-expanded={showNotifications}
+            aria-controls="notification-center"
+          >
+            <span className="notification-bell-glyph" aria-hidden="true" />
+            {unreadNotifications.length > 0 && <b>{unreadNotifications.length > 99 ? "99+" : unreadNotifications.length}</b>}
+          </button>
+          {!isEmployeeUser && <button className="icon-button evaluation-alert-button" onClick={() => pendingEmployees.length ? setView("employees") : showToast("ไม่มีรายการรอประเมิน")} aria-label={`${pendingEmployees.length} รายการรอประเมิน`}>
             <span aria-hidden="true">●</span>{pendingEmployees.length > 0 && <i />}
           </button>}
           <div className="current-user-chip"><span>{currentUser?.displayName ? makeInitials(currentUser.displayName) : "PP"}</span><p><strong>{currentUser?.displayName ?? "ผู้ใช้งาน"}</strong><small>{currentUserRoleLabel}</small></p></div>
           <a className="profile-button" href="/signout-with-chatgpt?return_to=/" aria-label="ออกจากระบบ">↗</a>
         </div>
       </header>
+
+      {showNotifications && <div className="notification-layer" role="presentation" onMouseDown={() => setShowNotifications(false)}>
+        <aside id="notification-center" className="notification-center" role="dialog" aria-modal="true" aria-labelledby="notification-center-title" onMouseDown={(event) => event.stopPropagation()}>
+          <header className="notification-center-header">
+            <div><span className="notification-center-mark"><i className="notification-bell-glyph" aria-hidden="true" /></span><p><small>MESSAGE CENTER</small><strong id="notification-center-title">กล่องข้อความและแจ้งเตือน</strong></p></div>
+            <button type="button" onClick={() => setShowNotifications(false)} aria-label="ปิดกล่องแจ้งเตือน">×</button>
+          </header>
+          <section className="notification-summary" aria-label="สรุปการแจ้งเตือน">
+            <article><span>ยังไม่อ่าน</span><strong>{unreadNotifications.length}</strong></article>
+            <article className="quest"><span>เควสที่เปิดอยู่</span><strong>{questNotificationCount}</strong></article>
+            <button type="button" disabled={!unreadNotifications.length} onClick={() => void markNotificationsRead(unreadNotifications.map((item) => item.id))}>อ่านทั้งหมด</button>
+          </section>
+          <nav className="notification-tabs" aria-label="กรองการแจ้งเตือน">
+            <button type="button" className={notificationFilter === "all" ? "active" : ""} onClick={() => setNotificationFilter("all")}>ทั้งหมด <span>{notifications.length}</span></button>
+            <button type="button" className={notificationFilter === "unread" ? "active" : ""} onClick={() => setNotificationFilter("unread")}>ยังไม่อ่าน <span>{unreadNotifications.length}</span></button>
+            <button type="button" className={notificationFilter === "quest" ? "active" : ""} onClick={() => setNotificationFilter("quest")}>เควส <span>{questNotificationCount}</span></button>
+          </nav>
+          <div className="notification-list">
+            {visibleNotifications.length ? visibleNotifications.map((notification) => {
+              const meta = notificationKindMeta[notification.kind];
+              const isUnread = !notificationReadIds.has(notification.id);
+              return <button type="button" key={notification.id} className={`notification-card ${notification.kind} ${isUnread ? "unread" : ""}`} onClick={() => openNotification(notification)}>
+                <span className="notification-kind-icon" aria-hidden="true">{meta.icon}</span>
+                <span className="notification-card-copy">
+                  <span><em>{meta.label}</em><time>{formatNotificationTime(notification.createdAt)}</time></span>
+                  <strong>{notification.title}</strong>
+                  <small>{notification.message}</small>
+                  <b>{notification.actionLabel} →</b>
+                </span>
+                {isUnread && <i className="notification-unread-dot" aria-label="ยังไม่อ่าน" />}
+              </button>;
+            }) : <div className="notification-empty"><span>✓</span><strong>{notificationFilter === "quest" ? "ยังไม่มีเควสที่เปิดอยู่" : "อ่านครบแล้ว"}</strong><p>เมื่อมีเควส งานใกล้กำหนด หรืองานรอตรวจ ระบบจะแจ้งที่นี่</p></div>}
+          </div>
+          <footer className="notification-center-footer"><span className="live-dot" /> แจ้งเตือนจากงานและเควสตามสิทธิ์ของคุณ</footer>
+        </aside>
+      </div>}
 
       <section className="dashboard">
         {dataWarning && <div className="data-warning" role="status"><span>!</span>{dataWarning}</div>}

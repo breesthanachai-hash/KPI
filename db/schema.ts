@@ -39,6 +39,16 @@ export const userAccounts = sqliteTable("user_accounts", {
   index("user_accounts_role_status_idx").on(table.role, table.status),
 ]);
 
+export const notificationReads = sqliteTable("notification_reads", {
+  id: text("id").primaryKey(),
+  userKey: text("user_key").notNull(),
+  notificationId: text("notification_id").notNull(),
+  readAt: text("read_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("notification_reads_user_notification_unique").on(table.userKey, table.notificationId),
+  index("notification_reads_user_read_idx").on(table.userKey, table.readAt),
+]);
+
 export const evaluations = sqliteTable("evaluations", {
   id: text("id").primaryKey(),
   employeeId: text("employee_id").notNull().references(() => employees.id, { onDelete: "cascade" }),

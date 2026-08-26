@@ -189,6 +189,13 @@ export type WorkItemRecord = {
   updatedAt: string;
 };
 
+export type NotificationReadRecord = {
+  id: string;
+  userKey: string;
+  notificationId: string;
+  readAt: string;
+};
+
 export type RewardRecord = {
   id: string;
   title: string;
