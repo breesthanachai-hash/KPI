@@ -27,13 +27,17 @@ import {
   calculateSkillScore,
   getRole,
   makeInitials,
+  monthlyEvaluationPoints,
   periods,
+  pointEconomyPolicy,
   pointEventRules,
   roleSalaryBands,
   roles,
   scoreStatus,
   skillCategories,
   skillAllowanceFor,
+  workPointAwards,
+  workPointValue,
 } from "../lib/kpi-data";
 
 const Office3D = lazy(() => import("./office-3d"));
@@ -540,6 +544,7 @@ export default function Home() {
   const [toast, setToast] = useState("");
   const [showAiAssistant, setShowAiAssistant] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
   const [notificationFilter, setNotificationFilter] = useState<NotificationFilter>("all");
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -578,7 +583,7 @@ export default function Home() {
   const [officeClock, setOfficeClock] = useState("--:--");
   const [employeeForm, setEmployeeForm] = useState({ name: "", email: "", roleId: roles[0].id, manager: "" });
   const [hrForm, setHrForm] = useState({ actionId: "", currentSalary: 0, salaryReviewMonth: "มกราคม 2570", planType: "upskill" as TalentActionRecord["type"], title: "", dueDate: "2026-09-30", targetRoleId: roles[0].id });
-  const [workForm, setWorkForm] = useState({ projectId: "", assigneeEmployeeId: "", kind: "task" as WorkItemRecord["kind"], title: "", description: "", priority: "medium" as WorkItemRecord["priority"], status: "todo" as WorkItemRecord["status"], progress: 0, points: 100, dueDate: "2026-09-05" });
+  const [workForm, setWorkForm] = useState({ projectId: "", assigneeEmployeeId: "", kind: "task" as WorkItemRecord["kind"], title: "", description: "", priority: "medium" as WorkItemRecord["priority"], status: "todo" as WorkItemRecord["status"], progress: 0, points: workPointValue("task", "medium"), dueDate: "2026-09-05" });
   const [submissionForm, setSubmissionForm] = useState({ submissionType: "document" as WorkSubmissionRecord["submissionType"], title: "", linkUrl: "", note: "" });
   const [projectForm, setProjectForm] = useState({ name: "", description: "", ownerEmployeeId: "", status: "active" as ProjectRecord["status"], dueDate: "2026-10-30", color: "forest" });
   const [rewardEmployeeId, setRewardEmployeeId] = useState("");
@@ -664,7 +669,7 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (!selectedEmployee && !skillProfileEmployee && !hrEmployee && !showAddEmployee && !showWorkForm && !showProjectForm && !submissionWorkItem && !rewardToRedeem && !showProfileEditor && !showContractForm && !contractToSign && !showNotifications) return;
+    if (!selectedEmployee && !skillProfileEmployee && !hrEmployee && !showAddEmployee && !showWorkForm && !showProjectForm && !submissionWorkItem && !rewardToRedeem && !showProfileEditor && !showContractForm && !contractToSign && !showNotifications && !showUserMenu) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setSelectedEmployee(null);
@@ -679,11 +684,12 @@ export default function Home() {
         setShowContractForm(false);
         setContractToSign(null);
         setShowNotifications(false);
+        setShowUserMenu(false);
       }
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [selectedEmployee, skillProfileEmployee, hrEmployee, showAddEmployee, showWorkForm, showProjectForm, submissionWorkItem, rewardToRedeem, showProfileEditor, showContractForm, contractToSign, showNotifications]);
+  }, [selectedEmployee, skillProfileEmployee, hrEmployee, showAddEmployee, showWorkForm, showProjectForm, submissionWorkItem, rewardToRedeem, showProfileEditor, showContractForm, contractToSign, showNotifications, showUserMenu]);
 
   const evaluationsByEmployee = useMemo(
     () => new Map(evaluations.filter((evaluation) => evaluation.period === period).map((evaluation) => [evaluation.employeeId, evaluation])),
@@ -1319,7 +1325,7 @@ export default function Home() {
       priority: "medium",
       status: "todo",
       progress: 0,
-      points: 100,
+      points: workPointValue("task", "medium"),
       dueDate: "2026-09-05",
     });
     setShowWorkForm(true);
@@ -1840,6 +1846,7 @@ export default function Home() {
   const isAdmin = currentUser?.role === "admin";
   const isEmployeeUser = currentUser?.role === "employee";
   const currentUserRoleLabel = currentUser?.role === "admin" ? "HR / Admin" : currentUser?.role === "manager" ? "หัวหน้าทีม" : "พนักงาน";
+  const currentUserEmployee = currentUser?.employeeId ? employeesById.get(currentUser.employeeId) ?? null : null;
   const activeViewTitle = isEmployeeUser && view === "work" ? "งานของฉัน" : isEmployeeUser && view === "portfolio" ? "แฟ้มผลงานของฉัน" : viewMeta[view].title;
   const activeViewDescription = isEmployeeUser && view === "work" ? "ดูสิ่งที่ต้องทำ เริ่มงาน และส่งหลักฐานได้ในไม่กี่ขั้นตอน" : isEmployeeUser && view === "portfolio" ? "ดูงานและหลักฐานที่ส่งไว้ พร้อมสถานะตรวจผลงานของคุณ" : viewMeta[view].description;
   const peopleAiContext: PeopleAiContext = {
@@ -1953,23 +1960,39 @@ export default function Home() {
             <span className="period-label">รอบประเมิน</span>
             <select value={period} onChange={(event) => { setIsLoading(true); setPeriod(event.target.value); }}>{periods.map((item) => <option key={item}>{item}</option>)}</select>
           </label>}
-          <button
-            className={`notification-bell-button ${showNotifications ? "active" : ""}`}
-            onClick={() => { setShowAiAssistant(false); setShowNotifications((open) => !open); }}
-            aria-label={`กล่องข้อความและแจ้งเตือน มี ${unreadNotifications.length} รายการที่ยังไม่อ่าน`}
-            aria-expanded={showNotifications}
-            aria-controls="notification-center"
-          >
-            <span className="notification-bell-glyph" aria-hidden="true" />
-            {unreadNotifications.length > 0 && <b>{unreadNotifications.length > 99 ? "99+" : unreadNotifications.length}</b>}
-          </button>
           {!isEmployeeUser && <button className="icon-button evaluation-alert-button" onClick={() => pendingEmployees.length ? setView("employees") : showToast("ไม่มีรายการรอประเมิน")} aria-label={`${pendingEmployees.length} รายการรอประเมิน`}>
             <span aria-hidden="true">●</span>{pendingEmployees.length > 0 && <i />}
           </button>}
-          <div className="current-user-chip"><span>{currentUser?.displayName ? makeInitials(currentUser.displayName) : "PP"}</span><p><strong>{currentUser?.displayName ?? "ผู้ใช้งาน"}</strong><small>{currentUserRoleLabel}</small></p></div>
-          <a className="profile-button" href="/signout-with-chatgpt?return_to=/" aria-label="ออกจากระบบ">↗</a>
         </div>
       </header>
+
+      {showUserMenu && <button type="button" className="user-menu-backdrop" onClick={() => setShowUserMenu(false)} aria-label="ปิดเมนูโปรไฟล์" />}
+      <div className="top-right-utilities" aria-label="แจ้งเตือนและโปรไฟล์">
+        <button
+          className={`notification-bell-button ${showNotifications ? "active" : ""}`}
+          onClick={() => { setShowAiAssistant(false); setShowUserMenu(false); setShowNotifications((open) => !open); }}
+          aria-label={`กล่องข้อความและแจ้งเตือน มี ${unreadNotifications.length} รายการที่ยังไม่อ่าน`}
+          aria-expanded={showNotifications}
+          aria-controls="notification-center"
+        >
+          <span className="notification-bell-glyph" aria-hidden="true" />
+          {unreadNotifications.length > 0 && <b>{unreadNotifications.length > 99 ? "99+" : unreadNotifications.length}</b>}
+        </button>
+        <button type="button" className={`top-profile-button ${showUserMenu ? "active" : ""}`} onClick={() => { setShowNotifications(false); setShowUserMenu((open) => !open); }} aria-label="เปิดเมนูจัดการโปรไฟล์" aria-expanded={showUserMenu}>
+          <span className="top-profile-avatar">{currentUser?.displayName ? makeInitials(currentUser.displayName) : "PP"}</span>
+          <span className="top-profile-copy"><strong>{currentUser?.displayName ?? "ผู้ใช้งาน"}</strong><small>{currentUserRoleLabel}</small></span>
+          <i aria-hidden="true">⌄</i>
+        </button>
+        {showUserMenu && <aside className="top-profile-menu" aria-label="จัดการโปรไฟล์">
+          <div className="top-profile-menu-head"><span>{currentUser?.displayName ? makeInitials(currentUser.displayName) : "PP"}</span><p><strong>{currentUser?.displayName ?? "ผู้ใช้งาน"}</strong><small>{currentUser?.email}</small><b>{currentUserRoleLabel}</b></p></div>
+          {currentUserEmployee && <div className="top-profile-work-summary"><span><small>ตำแหน่ง</small><strong>{getRole(currentUserEmployee.roleId).name}</strong></span><span><small>แต้มคงเหลือ</small><strong>{formatMoney(pointBalances.get(currentUserEmployee.id) ?? 0)}</strong></span></div>}
+          <nav>
+            <button type="button" onClick={() => { setShowUserMenu(false); if (isAdmin) { if (currentUser?.employeeId) setProfileEmployeeId(currentUser.employeeId); setView("profiles"); } else { setPortfolioEmployeeId(currentUser?.employeeId ?? "all"); setView("portfolio"); } }}><span>▣</span><p><strong>{isAdmin ? "จัดการโปรไฟล์" : "โปรไฟล์และแฟ้มผลงาน"}</strong><small>{isAdmin ? "ข้อมูล เอกสาร และสัญญา" : "ดูผลงานและหลักฐานของฉัน"}</small></p></button>
+            <button type="button" onClick={() => { setShowUserMenu(false); setView("work"); setWorkSection("tasks"); setWorkAssigneeFilter(currentUser?.employeeId ?? "all"); }}><span>✓</span><p><strong>งานของฉัน</strong><small>เปิดรายการสิ่งที่ต้องทำ</small></p></button>
+            <a href="/signout-with-chatgpt?return_to=/"><span>↗</span><p><strong>ออกจากระบบ</strong><small>เปลี่ยนบัญชีผู้ใช้งาน</small></p></a>
+          </nav>
+        </aside>}
+      </div>
 
       {showNotifications && <div className="notification-layer" role="presentation" onMouseDown={() => setShowNotifications(false)}>
         <aside id="notification-center" className="notification-center" role="dialog" aria-modal="true" aria-labelledby="notification-center-title" onMouseDown={(event) => event.stopPropagation()}>
@@ -2891,18 +2914,36 @@ export default function Home() {
               </div>
 
               {!isEmployeeUser && <div className="monthly-points-panel">
-                <div><span>◎</span><p><strong>แต้มประเมินประจำเดือน</strong><small>ใช้คะแนนรวม × 10 สูงสุด 1,000 แต้มต่อคน และบันทึกซ้ำเดือนเดิมไม่ได้</small></p></div>
+                <div><span>◎</span><p><strong>แต้มประเมินประจำเดือน</strong><small>ต้องผ่าน 70 คะแนน · คำนวณ (คะแนน − 60) × 6 · สูงสุด 240 แต้ม และบันทึกซ้ำไม่ได้</small></p></div>
                 <label><span>เดือนที่ประมวลผล</span><input type="month" value={monthlyPointMonth} onChange={(event) => setMonthlyPointMonth(event.target.value)} /></label>
                 <span className="monthly-run-status"><strong>{monthlyPointRecipients}</strong><small>คนได้รับแต้มแล้ว</small></span>
                 <button disabled={isSaving} onClick={() => void runMonthlyPointCycle()}>{isSaving ? "กำลังประมวลผล..." : "ประมวลผลจากผลประเมิน"}</button>
               </div>}
+
+              <section className="point-balance-charter">
+                <div className="point-balance-heading"><div><p className="eyebrow">FAIR POINT ECONOMY</p><h3>แต้มมีคุณค่า เพราะต้องพิสูจน์และตรวจสอบได้</h3><p>ระบบกำหนดเพดาน ป้องกันการให้ซ้ำ และมอบแต้มงานหลังหัวหน้าอนุมัติหลักฐานเท่านั้น</p></div><span><strong>70+</strong><small>เกณฑ์รับแต้มประเมิน</small></span></div>
+                <div className="point-policy-grid">
+                  <article><span>01</span><p><strong>มีหลักฐานก่อนรับแต้ม</strong><small>งาน เควสต์ และโบนัสต้องมีลิงก์หรือไฟล์ แล้วผ่านการตรวจ</small></p></article>
+                  <article><span>02</span><p><strong>ไม่มีการรับแต้มซ้ำ</strong><small>งานหนึ่งรายการรับได้ครั้งเดียว เวลาเข้างานบันทึกได้วันละครั้ง</small></p></article>
+                  <article><span>03</span><p><strong>มีเพดานที่สมดุล</strong><small>ประเมินสูงสุด {pointEconomyPolicy.monthlyEvaluationCap} แต้ม โบนัสและเควสต์อย่างละ {pointEconomyPolicy.positiveManualEventsPerMonth} ครั้ง/เดือน</small></p></article>
+                  <article><span>04</span><p><strong>หักแต้มอย่างเป็นธรรม</strong><small>ต้องระบุเหตุผล ผู้บันทึก และเปิดให้ตรวจสอบย้อนหลังได้</small></p></article>
+                </div>
+                <div className="work-point-matrix">
+                  <div><strong>แต้มงานมาตรฐาน</strong><small>ระบบคำนวณอัตโนมัติตามประเภทและความสำคัญ</small></div>
+                  <div className="work-point-table" role="table" aria-label="อัตราแต้มงานมาตรฐาน">
+                    <span className="table-head">ประเภท</span><span className="table-head">ทั่วไป</span><span className="table-head">ปานกลาง</span><span className="table-head">สำคัญ</span><span className="table-head">เร่งด่วน</span>
+                    {(["task", "request", "mission"] as WorkItemRecord["kind"][]).map((kind) => <div className="work-point-row" role="row" key={kind}><strong>{workKindLabel(kind)}</strong>{(["low", "medium", "high", "urgent"] as WorkItemRecord["priority"][]).map((priority) => <span key={priority}>+{workPointAwards[kind][priority]}</span>)}</div>)}
+                  </div>
+                </div>
+                <p className="point-example-line">ตัวอย่างผลประเมิน 85 คะแนน ได้ {monthlyEvaluationPoints(85)} แต้ม · ส่งภารกิจสำคัญพร้อมหลักฐาน ได้ {workPointValue("mission", "high")} แต้ม · ส่งก่อนกำหนดเพิ่ม {pointEventRules.early_finish.points} แต้ม</p>
+              </section>
 
               {!isEmployeeUser && <div className="point-rules-section">
                 <div className="point-rules-heading"><div><p className="eyebrow">POINT RULES</p><h3>กติกาการได้และเสียแต้ม</h3></div><small>ค่าตั้งต้นขององค์กร</small></div>
                 <div className="point-rule-grid">
                   {(Object.entries(pointEventRules) as [PointEventType, (typeof pointEventRules)[PointEventType]][]).map(([eventType, rule]) => (
                     <article key={eventType} className={rule.points === null || rule.points >= 0 ? "positive" : "negative"}>
-                      <span>{rule.points === null ? "×10" : `${rule.points > 0 ? "+" : ""}${formatMoney(rule.points)}`}</span>
+                      <span>{rule.points === null ? "70+" : `${rule.points > 0 ? "+" : ""}${formatMoney(rule.points)}`}</span>
                       <div><strong>{rule.label}</strong><p>{rule.description}</p></div>
                     </article>
                   ))}
@@ -2917,7 +2958,7 @@ export default function Home() {
                     <label><span>พนักงาน</span><select required value={pointEventForm.employeeId} onChange={(event) => setPointEventForm((form) => ({ ...form, employeeId: event.target.value }))}>{employees.filter((employee) => employee.status === "active").map((employee) => <option key={employee.id} value={employee.id}>{employee.name} · {getRole(employee.roleId).shortName}</option>)}</select></label>
                     <label><span>ประเภทเหตุการณ์</span><select value={pointEventForm.eventType} onChange={(event) => setPointEventForm((form) => ({ ...form, eventType: event.target.value as PointEventType }))}>{manualPointEventTypes.map((eventType) => <option key={eventType} value={eventType}>{pointEventRules[eventType].label} ({(pointEventRules[eventType].points ?? 0) > 0 ? "+" : ""}{pointEventRules[eventType].points ?? 0})</option>)}</select></label>
                     <label><span>วันที่เกิดเหตุการณ์</span><input required type="date" value={pointEventForm.eventDate} onChange={(event) => setPointEventForm((form) => ({ ...form, eventDate: event.target.value }))} /></label>
-                    <label><span>ลิงก์หลักฐาน (ถ้ามี)</span><input type="url" value={pointEventForm.evidenceUrl} onChange={(event) => setPointEventForm((form) => ({ ...form, evidenceUrl: event.target.value }))} placeholder="https://..." /></label>
+                    <label><span>ลิงก์หลักฐาน {pointEventForm.eventType === "bonus" || pointEventForm.eventType === "quest" ? "(จำเป็น)" : "(ถ้ามี)"}</span><input required={pointEventForm.eventType === "bonus" || pointEventForm.eventType === "quest"} type="url" value={pointEventForm.evidenceUrl} onChange={(event) => setPointEventForm((form) => ({ ...form, evidenceUrl: event.target.value }))} placeholder="https://..." /></label>
                     <label className="wide"><span>เหตุผล / รายละเอียด</span><textarea required value={pointEventForm.note} onChange={(event) => setPointEventForm((form) => ({ ...form, note: event.target.value }))} placeholder="ระบุข้อเท็จจริง ผลกระทบ และเอกสารอ้างอิง โดยหลีกเลี่ยงข้อมูลส่วนบุคคลที่ไม่จำเป็น" /></label>
                   </div>
                   <button className={selectedPointEventRule.points !== null && selectedPointEventRule.points < 0 ? "penalty" : ""} disabled={isSaving}>{isSaving ? "กำลังบันทึก..." : selectedPointEventRule.points !== null && selectedPointEventRule.points < 0 ? `ยืนยันหัก ${Math.abs(selectedPointEventRule.points)} แต้ม` : `บันทึก ${selectedPointEventRule.points ?? 0} แต้ม`}</button>
@@ -3025,24 +3066,24 @@ export default function Home() {
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setShowWorkForm(false)}>
           <form className="work-form-modal" onSubmit={saveWorkItem} role="dialog" aria-modal="true" aria-labelledby="work-form-title">
             <div className="work-form-hero">
-              <div><p className="eyebrow">MISSION CONTROL</p><h2 id="work-form-title">{editingWorkItem ? "อัปเดตงานและความคืบหน้า" : "เพิ่มงานหรือภารกิจใหม่"}</h2><p>กำหนดผู้รับผิดชอบ เป้าหมาย และแต้มที่จะได้รับเมื่อทำสำเร็จ</p></div>
+              <div><p className="eyebrow">MISSION CONTROL</p><h2 id="work-form-title">{editingWorkItem ? "อัปเดตงานและความคืบหน้า" : "เพิ่มงานหรือภารกิจใหม่"}</h2><p>กำหนดผู้รับผิดชอบและเป้าหมาย ระบบจะคำนวณแต้มมาตรฐานให้อัตโนมัติ</p></div>
               <button type="button" className="modal-close dark" onClick={() => setShowWorkForm(false)} aria-label="ปิดหน้าต่าง">×</button>
               <div className="work-form-preview"><span className={`work-kind ${workForm.kind}`}>{workKindLabel(workForm.kind)}</span><strong>{workForm.title || "ชื่องานหรือภารกิจ"}</strong><small>{projectsById.get(workForm.projectId)?.name ?? "เลือกโปรเจกต์"}</small><b>★ {workForm.points} แต้ม</b></div>
             </div>
             <div className="work-form-body">
               <div className="form-grid work-form-grid">
                 <label className="wide"><span>ชื่องาน / รีเควสต์ / ภารกิจ</span><input required value={workForm.title} onChange={(event) => setWorkForm((form) => ({ ...form, title: event.target.value }))} placeholder="เช่น สรุปข้อมูลลูกค้าเพื่อส่งทีมขาย" /></label>
-                <label><span>ประเภท</span><select value={workForm.kind} onChange={(event) => setWorkForm((form) => ({ ...form, kind: event.target.value as WorkItemRecord["kind"] }))}><option value="task">งาน</option><option value="request">รีเควสต์</option><option value="mission">ภารกิจ</option></select></label>
-                <label><span>ระดับความสำคัญ</span><select value={workForm.priority} onChange={(event) => setWorkForm((form) => ({ ...form, priority: event.target.value as WorkItemRecord["priority"] }))}><option value="low">ทั่วไป</option><option value="medium">ปานกลาง</option><option value="high">สำคัญ</option><option value="urgent">เร่งด่วน</option></select></label>
+                <label><span>ประเภท</span><select value={workForm.kind} onChange={(event) => { const kind = event.target.value as WorkItemRecord["kind"]; setWorkForm((form) => ({ ...form, kind, points: workPointValue(kind, form.priority) })); }}><option value="task">งาน</option><option value="request">รีเควสต์</option><option value="mission">ภารกิจ</option></select></label>
+                <label><span>ระดับความสำคัญ</span><select value={workForm.priority} onChange={(event) => { const priority = event.target.value as WorkItemRecord["priority"]; setWorkForm((form) => ({ ...form, priority, points: workPointValue(form.kind, priority) })); }}><option value="low">ทั่วไป</option><option value="medium">ปานกลาง</option><option value="high">สำคัญ</option><option value="urgent">เร่งด่วน</option></select></label>
                 <label><span>โปรเจกต์</span><select required value={workForm.projectId} onChange={(event) => setWorkForm((form) => ({ ...form, projectId: event.target.value }))}>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
                 <label><span>ผู้รับผิดชอบ</span><select required value={workForm.assigneeEmployeeId} onChange={(event) => setWorkForm((form) => ({ ...form, assigneeEmployeeId: event.target.value }))}>{employees.filter((employee) => employee.status === "active").map((employee) => <option key={employee.id} value={employee.id}>{employee.name} · {getRole(employee.roleId).shortName}</option>)}</select></label>
                 <label><span>สถานะ</span><select value={workForm.status} onChange={(event) => { const status = event.target.value as WorkItemRecord["status"]; setWorkForm((form) => ({ ...form, status, progress: status === "done" ? 100 : status === "todo" ? Math.min(form.progress, 20) : form.progress })); }}><option value="todo">ต้องทำ</option><option value="in_progress">กำลังทำ</option><option value="review">รอตรวจ</option><option value="done">เสร็จแล้ว</option></select></label>
                 <label><span>กำหนดเสร็จ</span><input required type="date" value={workForm.dueDate} onChange={(event) => setWorkForm((form) => ({ ...form, dueDate: event.target.value }))} /></label>
-                <label><span>แต้มเมื่อสำเร็จ</span><input required type="number" min="0" max="5000" step="10" value={workForm.points} onChange={(event) => setWorkForm((form) => ({ ...form, points: Number(event.target.value) }))} /></label>
+                <label className="auto-point-field"><span>แต้มมาตรฐานอัตโนมัติ</span><input readOnly value={`${workForm.points} แต้ม`} /><small>แก้เองไม่ได้ เพื่อให้ทุกคนได้รับแต้มตามกติกาเดียวกัน</small></label>
                 <label className="wide work-progress-field"><span>ความคืบหน้า <b>{workForm.progress}%</b></span><input type="range" min="0" max="100" step="5" value={workForm.progress} onChange={(event) => { const progress = Number(event.target.value); setWorkForm((form) => ({ ...form, progress, status: progress === 100 ? "done" : form.status === "done" ? "in_progress" : form.status })); }} style={{ "--range-value": `${workForm.progress}%` } as React.CSSProperties} /></label>
                 <label className="wide"><span>รายละเอียดและเกณฑ์สำเร็จ</span><textarea value={workForm.description} onChange={(event) => setWorkForm((form) => ({ ...form, description: event.target.value }))} placeholder="อธิบายสิ่งที่ต้องส่งมอบ หรือเงื่อนไขที่ถือว่าภารกิจสำเร็จ" /></label>
               </div>
-              <div className="mission-point-note"><span>★</span><p><strong>แต้มจะมอบเมื่อสถานะเป็น “เสร็จแล้ว”</strong> งานเดิมจะได้รับแต้มเพียงครั้งเดียว แม้มีการแก้ไขภายหลัง</p></div>
+              <div className="mission-point-note"><span>★</span><p><strong>แต้มจะมอบหลังส่งหลักฐานและหัวหน้าอนุมัติ</strong> การเปลี่ยนสถานะเป็น “เสร็จแล้ว” อย่างเดียวจะยังไม่ได้แต้ม และงานเดิมรับแต้มได้เพียงครั้งเดียว</p></div>
             </div>
             <div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setShowWorkForm(false)}>ยกเลิก</button><button className="primary-button" disabled={isSaving}>{isSaving ? "กำลังบันทึก..." : editingWorkItem ? "บันทึกความคืบหน้า" : "สร้างรายการ"}</button></div>
           </form>

@@ -9,7 +9,9 @@ import {
   calculateSkillScore,
   getRole,
   makeInitials,
+  monthlyEvaluationPoints,
   periods,
+  pointEconomyPolicy,
   pointEventRules,
   roleSalaryBands,
   roles,
@@ -27,6 +29,7 @@ import {
   seedTalentActions,
   seedWorkItems,
   skillAllowanceFor,
+  workPointValue,
   type PointEventRecord,
   type PointEventType,
   type PointLedgerRecord,
@@ -205,7 +208,9 @@ export async function GET(request: Request) {
       return currentUser.role === "manager" && Boolean(currentUser.departmentId) && getRole(employee.roleId).departmentId === currentUser.departmentId;
     }).map((employee) => employee.id));
     const scopedEmployees = employeeRows.filter((employee) => visibleEmployeeIds.has(employee.id));
-    const scopedWorkItems = workItemRows.filter((item) => visibleEmployeeIds.has(item.assigneeEmployeeId));
+    const scopedWorkItems = workItemRows
+      .filter((item) => visibleEmployeeIds.has(item.assigneeEmployeeId))
+      .map((item) => ({ ...item, points: workPointValue(item.kind, item.priority) }));
     const visibleProjectIds = new Set(scopedWorkItems.map((item) => item.projectId));
     projectRows.filter((project) => visibleEmployeeIds.has(project.ownerEmployeeId)).forEach((project) => visibleProjectIds.add(project.id));
     const permissions = {
@@ -844,7 +849,7 @@ export async function POST(request: Request) {
         const progress = Math.min(90, Math.max(0, Math.round(Number(payload.progress) || assignedWorkItem.progress)));
         const now = new Date().toISOString();
         await db.update(workItems).set({ status, progress, updatedAt: now }).where(eq(workItems.id, workItemId));
-        return Response.json({ workItem: { ...assignedWorkItem, status, progress, updatedAt: now }, pointEntry: null });
+        return Response.json({ workItem: { ...assignedWorkItem, status, progress, points: workPointValue(assignedWorkItem.kind, assignedWorkItem.priority), updatedAt: now }, pointEntry: null });
       }
       const projectId = payload.projectId ?? "";
       const assigneeEmployeeId = payload.assigneeEmployeeId ?? "";
@@ -861,17 +866,19 @@ export async function POST(request: Request) {
       if (existingWorkItem && !(await canAccessEmployee(currentUser, existingWorkItem.assigneeEmployeeId))) return Response.json({ error: "ไม่มีสิทธิ์แก้ไขงานนี้" }, { status: 403 });
       const status = payload.status ?? existingWorkItem?.status ?? "todo";
       const progress = status === "done" ? 100 : Math.min(99, Math.max(0, Math.round(Number(payload.progress) || 0)));
+      const kind = payload.kind === "request" || payload.kind === "mission" ? payload.kind : "task";
+      const priority = payload.priority === "low" || payload.priority === "high" || payload.priority === "urgent" ? payload.priority : "medium";
       const workItem = {
         id: existingWorkItem?.id ?? workItemId,
         projectId,
         assigneeEmployeeId,
-        kind: payload.kind ?? "task" as const,
+        kind,
         title,
         description: payload.description?.trim().slice(0, 1200) ?? "",
-        priority: payload.priority ?? "medium" as const,
+        priority,
         status,
         progress,
-        points: Math.min(5000, Math.max(0, Math.round(Number(payload.points) || 0))),
+        points: workPointValue(kind, priority),
         dueDate: /^\d{4}-\d{2}-\d{2}$/.test(payload.dueDate ?? "") ? payload.dueDate as string : now.slice(0, 10),
         createdAt: existingWorkItem?.createdAt ?? now,
         updatedAt: now,
@@ -881,14 +888,7 @@ export async function POST(request: Request) {
         set: { projectId: workItem.projectId, assigneeEmployeeId: workItem.assigneeEmployeeId, kind: workItem.kind, title: workItem.title, description: workItem.description, priority: workItem.priority, status: workItem.status, progress: workItem.progress, points: workItem.points, dueDate: workItem.dueDate, updatedAt: now },
       });
 
-      let pointEntry = null;
-      if (status === "done" && workItem.points > 0) {
-        const sourceType = workItem.kind === "mission" ? "mission" as const : "task" as const;
-        const pointId = `points-${workItem.id}`;
-        await db.insert(pointLedger).values({ id: pointId, employeeId: assigneeEmployeeId, sourceType, sourceId: workItem.id, points: workItem.points, note: `สำเร็จ${workItem.kind === "mission" ? "ภารกิจ" : "งาน"}: ${workItem.title}`, createdAt: now }).onConflictDoNothing();
-        [pointEntry] = await db.select().from(pointLedger).where(eq(pointLedger.id, pointId)).limit(1);
-      }
-      return Response.json({ workItem, pointEntry });
+      return Response.json({ workItem, pointEntry: null, pointPolicy: "award_after_approved_evidence" });
     }
 
     if (payload.action === "reviewWorkSubmission") {
@@ -906,18 +906,20 @@ export async function POST(request: Request) {
       const reviewedSubmission = { ...submission, status, reviewedBy: actor.name, reviewedAt: now, reviewerNote };
       await db.update(workSubmissions).set({ status, reviewedBy: actor.name, reviewedAt: now, reviewerNote }).where(eq(workSubmissions.id, submissionId));
 
+      const balancedWorkPoints = workPointValue(workItem.kind, workItem.priority);
       const updatedWorkItem = status === "approved"
-        ? { ...workItem, status: "done" as const, progress: 100, updatedAt: now }
-        : { ...workItem, status: "in_progress" as const, progress: Math.min(90, workItem.progress), updatedAt: now };
-      await db.update(workItems).set({ status: updatedWorkItem.status, progress: updatedWorkItem.progress, updatedAt: now }).where(eq(workItems.id, workItem.id));
+        ? { ...workItem, points: balancedWorkPoints, status: "done" as const, progress: 100, updatedAt: now }
+        : { ...workItem, points: balancedWorkPoints, status: "in_progress" as const, progress: Math.min(90, workItem.progress), updatedAt: now };
+      await db.update(workItems).set({ status: updatedWorkItem.status, progress: updatedWorkItem.progress, points: balancedWorkPoints, updatedAt: now }).where(eq(workItems.id, workItem.id));
 
       let pointEntry = null;
       let deadlinePointEntry = null;
       let deadlinePointEvent = null;
-      if (status === "approved" && workItem.points > 0) {
+      const approvedWorkPoints = balancedWorkPoints;
+      if (status === "approved" && approvedWorkPoints > 0) {
         const sourceType = workItem.kind === "mission" ? "mission" as const : "task" as const;
         const pointId = `points-${workItem.id}`;
-        await db.insert(pointLedger).values({ id: pointId, employeeId: workItem.assigneeEmployeeId, sourceType, sourceId: workItem.id, points: workItem.points, note: `อนุมัติหลักฐานและปิด${workItem.kind === "mission" ? "ภารกิจ" : "งาน"}: ${workItem.title}`, createdAt: now }).onConflictDoNothing();
+        await db.insert(pointLedger).values({ id: pointId, employeeId: workItem.assigneeEmployeeId, sourceType, sourceId: workItem.id, points: approvedWorkPoints, note: `อนุมัติหลักฐานและปิด${workItem.kind === "mission" ? "ภารกิจ" : "งาน"}: ${workItem.title}`, createdAt: now }).onConflictDoNothing();
         [pointEntry] = await db.select().from(pointLedger).where(eq(pointLedger.id, pointId)).limit(1);
       }
       const completionDate = now.slice(0, 10);
@@ -949,6 +951,15 @@ export async function POST(request: Request) {
       if (!employee) return Response.json({ error: "ไม่พบพนักงานที่เลือก" }, { status: 404 });
       const rule = pointEventRules[eventType];
       if (rule.points === null) return Response.json({ error: "รายการนี้ต้องประมวลผลจากรอบประเมิน" }, { status: 400 });
+      if ((eventType === "bonus" || eventType === "quest") && !evidenceUrl) return Response.json({ error: "โบนัสและเควสต์ต้องแนบลิงก์หลักฐานก่อนให้แต้ม" }, { status: 400 });
+      const employeeEventRows = await db.select().from(pointEvents).where(eq(pointEvents.employeeId, employeeId));
+      const attendanceTypes: PointEventType[] = ["attendance_on_time", "attendance_late", "absence", "approved_leave"];
+      if (attendanceTypes.includes(eventType) && employeeEventRows.some((event) => attendanceTypes.includes(event.eventType) && event.eventDate === eventDate)) {
+        return Response.json({ error: "วันนี้มีรายการเวลาเข้างานของพนักงานคนนี้แล้ว จึงไม่สามารถรับหรือหักแต้มซ้ำได้" }, { status: 409 });
+      }
+      if ((eventType === "bonus" || eventType === "quest") && employeeEventRows.filter((event) => event.eventType === eventType && event.eventDate.startsWith(eventDate.slice(0, 7))).length >= pointEconomyPolicy.positiveManualEventsPerMonth) {
+        return Response.json({ error: `${rule.label} ให้ได้สูงสุด ${pointEconomyPolicy.positiveManualEventsPerMonth} ครั้งต่อเดือน` }, { status: 409 });
+      }
       const actor = authenticatedActor(request);
       const now = new Date().toISOString();
       const eventId = `point-event-${crypto.randomUUID()}`;
@@ -967,14 +978,16 @@ export async function POST(request: Request) {
         db.select({ id: employees.id }).from(employees).where(eq(employees.status, "active")),
       ]);
       const activeIds = new Set(activeEmployeeRows.map((employee) => employee.id));
-      const eligible = evaluationRows.filter((evaluation) => activeIds.has(evaluation.employeeId));
-      if (!eligible.length) return Response.json({ error: "ยังไม่มีผลประเมินสำหรับรอบที่เลือก" }, { status: 409 });
+      const eligible = evaluationRows.filter((evaluation) => activeIds.has(evaluation.employeeId) && evaluation.totalScore >= pointEconomyPolicy.monthlyEvaluationMinimumScore);
+      if (!eligible.length) return Response.json({ error: `ยังไม่มีผลประเมินที่ผ่านเกณฑ์ ${pointEconomyPolicy.monthlyEvaluationMinimumScore} คะแนน` }, { status: 409 });
+      const existingMonthlyEvents = await db.select({ id: pointEvents.id }).from(pointEvents).where(and(eq(pointEvents.eventDate, `${month}-01`), eq(pointEvents.eventType, "monthly_evaluation")));
+      if (existingMonthlyEvents.length) return Response.json({ error: "เดือนนี้ประมวลผลแต้มประเมินแล้ว ไม่สามารถบันทึกซ้ำได้" }, { status: 409 });
       const actor = authenticatedActor(request);
       const now = new Date().toISOString();
       const pointEntryRows: PointLedgerRecord[] = [];
       const pointEventRows: PointEventRecord[] = [];
       for (const evaluation of eligible) {
-        const monthlyPoints = Math.min(1000, Math.max(0, Math.round(evaluation.totalScore * 10)));
+        const monthlyPoints = monthlyEvaluationPoints(evaluation.totalScore);
         const monthlySourceId = `monthly-evaluation-${month}:${evaluation.employeeId}`;
         const event = {
           id: `point-event-${monthlySourceId}`,

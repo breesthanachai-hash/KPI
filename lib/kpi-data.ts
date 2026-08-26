@@ -233,19 +233,46 @@ export type PointEventRecord = {
   createdAt: string;
 };
 
+export const pointEconomyPolicy = {
+  monthlyEvaluationMinimumScore: 70,
+  monthlyEvaluationBaseScore: 60,
+  monthlyEvaluationMultiplier: 6,
+  monthlyEvaluationCap: 240,
+  positiveManualEventsPerMonth: 2,
+  attendanceDaysPerMonth: 22,
+} as const;
+
+export const workPointAwards: Record<WorkItemRecord["kind"], Record<WorkItemRecord["priority"], number>> = {
+  task: { low: 10, medium: 20, high: 35, urgent: 50 },
+  request: { low: 15, medium: 25, high: 40, urgent: 60 },
+  mission: { low: 40, medium: 60, high: 90, urgent: 120 },
+};
+
+export function workPointValue(kind: WorkItemRecord["kind"], priority: WorkItemRecord["priority"]) {
+  return workPointAwards[kind]?.[priority] ?? workPointAwards.task.medium;
+}
+
+export function monthlyEvaluationPoints(totalScore: number) {
+  if (totalScore < pointEconomyPolicy.monthlyEvaluationMinimumScore) return 0;
+  return Math.min(
+    pointEconomyPolicy.monthlyEvaluationCap,
+    Math.max(0, Math.round((totalScore - pointEconomyPolicy.monthlyEvaluationBaseScore) * pointEconomyPolicy.monthlyEvaluationMultiplier)),
+  );
+}
+
 export const pointEventRules: Record<PointEventType, { label: string; points: number | null; description: string; sourceType: PointLedgerRecord["sourceType"] }> = {
-  monthly_evaluation: { label: "แต้มประเมินประจำเดือน", points: null, description: "คะแนนรวม × 10 สูงสุด 1,000 แต้มต่อเดือน", sourceType: "evaluation" },
-  attendance_on_time: { label: "เข้างานตรงเวลา", points: 20, description: "บันทึกตามรอบเวลาทำงานที่บริษัทกำหนด", sourceType: "attendance" },
-  attendance_late: { label: "มาสาย", points: -50, description: "หักแต้มเมื่อมาสายตามข้อมูลลงเวลา", sourceType: "attendance" },
-  absence: { label: "ขาดงานโดยไม่ได้รับอนุมัติ", points: -200, description: "ใช้เฉพาะกรณีขาดงานที่ตรวจสอบแล้ว", sourceType: "attendance" },
+  monthly_evaluation: { label: "แต้มประเมินประจำเดือน", points: null, description: "ผ่านเกณฑ์ 70 คะแนน แล้วคำนวณ (คะแนน − 60) × 6 สูงสุด 240 แต้ม", sourceType: "evaluation" },
+  attendance_on_time: { label: "เข้างานตรงเวลา", points: 5, description: "ให้ได้วันละครั้ง สูงสุด 22 วัน หรือ 110 แต้มต่อเดือน", sourceType: "attendance" },
+  attendance_late: { label: "มาสาย", points: -20, description: "หักแต้มเมื่อมาสายตามข้อมูลลงเวลาที่ตรวจสอบแล้ว", sourceType: "attendance" },
+  absence: { label: "ขาดงานโดยไม่ได้รับอนุมัติ", points: -120, description: "ใช้เฉพาะกรณีขาดงานที่ตรวจสอบแล้ว", sourceType: "attendance" },
   approved_leave: { label: "ลาที่ได้รับอนุมัติ", points: 0, description: "บันทึกไว้ตรวจสอบโดยไม่หักแต้ม", sourceType: "attendance" },
-  early_finish: { label: "ส่งงานก่อนกำหนด", points: 100, description: "โบนัสเมื่อผลงานผ่านการตรวจและเสร็จก่อนวันกำหนด", sourceType: "deadline" },
-  on_time_finish: { label: "ส่งงานตรงกำหนด", points: 50, description: "โบนัสเมื่อผลงานผ่านการตรวจภายในวันกำหนด", sourceType: "deadline" },
-  work_error: { label: "งานผิดพลาด", points: -100, description: "หักแต้มพร้อมระบุข้อผิดพลาดและแนวทางแก้ไข", sourceType: "quality" },
-  warning: { label: "ได้รับใบเตือน", points: -500, description: "ต้องมีเหตุผล ผู้บันทึก และหลักฐานอ้างอิง", sourceType: "discipline" },
-  rule_violation: { label: "ผิดกฎระเบียบการทำงาน", points: -300, description: "บันทึกหลังตรวจสอบข้อเท็จจริงตามระเบียบบริษัท", sourceType: "discipline" },
-  bonus: { label: "โบนัสพิเศษ", points: 100, description: "แต้มยกย่องผลงานหรือพฤติกรรมที่สร้างคุณค่า", sourceType: "bonus" },
-  quest: { label: "ทำเควสต์สำเร็จ", points: 150, description: "แต้มจากเควสต์หรือภารกิจพิเศษที่ผ่านการตรวจ", sourceType: "quest" },
+  early_finish: { label: "ส่งงานก่อนกำหนด", points: 25, description: "โบนัสอัตโนมัติเมื่อหลักฐานผ่านการตรวจและเสร็จก่อนกำหนด", sourceType: "deadline" },
+  on_time_finish: { label: "ส่งงานตรงกำหนด", points: 15, description: "โบนัสอัตโนมัติเมื่อหลักฐานผ่านการตรวจภายในวันกำหนด", sourceType: "deadline" },
+  work_error: { label: "งานผิดพลาด", points: -40, description: "หักแต้มพร้อมระบุข้อผิดพลาด ผลกระทบ และแนวทางแก้ไข", sourceType: "quality" },
+  warning: { label: "ได้รับใบเตือน", points: -150, description: "ต้องมีเหตุผล ผู้บันทึก และหลักฐานอ้างอิง", sourceType: "discipline" },
+  rule_violation: { label: "ผิดกฎระเบียบการทำงาน", points: -100, description: "บันทึกหลังตรวจสอบข้อเท็จจริงตามระเบียบบริษัท", sourceType: "discipline" },
+  bonus: { label: "โบนัสพิเศษ", points: 50, description: "ต้องมีหลักฐาน และให้ได้ไม่เกิน 2 ครั้งต่อเดือน", sourceType: "bonus" },
+  quest: { label: "ทำเควสต์สำเร็จ", points: 75, description: "ต้องมีหลักฐาน ผ่านการตรวจ และให้ได้ไม่เกิน 2 ครั้งต่อเดือน", sourceType: "quest" },
 };
 
 export type RewardRedemptionRecord = {

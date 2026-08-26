@@ -188,6 +188,9 @@ test("builds the People Pulse KPI product bundle", async () => {
   assert.match(styles, /Notification center/);
   assert.match(styles, /notification-bell-button/);
   assert.match(styles, /notification-center/);
+  assert.match(styles, /top-right-utilities/);
+  assert.match(styles, /top-profile-menu/);
+  assert.match(styles, /point-balance-charter/);
   assert.match(styles, /--on-dark-secondary: #e7f1ff/);
   assert.match(styles, /\.skill-profile-hero \.profile-identity h2/);
   assert.match(styles, /\.role-fit-panel \.fit-disclaimer/);
@@ -304,6 +307,9 @@ test("ships durable role-based access and scoped people, work, portfolio and rew
   assert.match(page, /runMonthlyPointCycle/);
   assert.match(dashboardRoute, /recordPointEvent/);
   assert.match(dashboardRoute, /runMonthlyPointCycle/);
+  assert.match(dashboardRoute, /award_after_approved_evidence/);
+  assert.match(dashboardRoute, /positiveManualEventsPerMonth/);
+  assert.match(dashboardRoute, /monthlyEvaluationMinimumScore/);
   assert.match(dashboardRoute, /saveAttendance/);
   assert.match(dashboardRoute, /approveAttendance/);
   assert.match(dashboardRoute, /verifySkillAchievement/);
@@ -317,6 +323,9 @@ test("ships durable role-based access and scoped people, work, portfolio and rew
   assert.match(accessControl, /authenticateRequest/);
   assert.match(accessControl, /canAccessEmployee/);
   assert.match(data, /pointEventRules/);
+  assert.match(data, /pointEconomyPolicy/);
+  assert.match(data, /workPointAwards/);
+  assert.match(data, /monthlyEvaluationPoints/);
   assert.match(data, /coreCompetencies/);
   assert.match(data, /core-discipline/);
   assert.match(data, /core-respect-manners/);
