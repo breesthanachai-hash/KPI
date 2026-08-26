@@ -25,7 +25,12 @@ test("builds the People Pulse KPI product bundle", async () => {
   assert.match(pageAsset, /PEOPLE &amp; WORK OS|PEOPLE & WORK OS/);
   assert.match(pageAsset, /saveEvaluation/);
   assert.match(pageAsset, /สกิลรายบุคคล/);
-  assert.match(pageAsset, /ประเมินรอบด้านมากกว่า 20 สมรรถนะ/);
+  assert.match(pageAsset, /ประเมินรอบด้าน 22–24 สมรรถนะ/);
+  assert.match(pageAsset, /6 หมวดมาตรฐาน/);
+  assert.match(pageAsset, /AI SKILL PATH/);
+  assert.match(pageAsset, /เส้นทางการใช้ AI จากพื้นฐานสู่ขั้นสูง/);
+  assert.match(pageAsset, /ระดับ 1–2/);
+  assert.match(pageAsset, /ระดับ 4–5/);
   assert.match(pageAsset, /ผู้จัดการทีมหน้าบ้านและการเติบโต/);
   assert.match(pageAsset, /นักการตลาดด้าน Customer Insight/);
   assert.match(pageAsset, /นักการตลาดด้าน Offer &amp; Conversion|นักการตลาดด้าน Offer & Conversion/);
@@ -39,6 +44,15 @@ test("builds the People Pulse KPI product bundle", async () => {
   assert.match(kpiData, /นรินทร์ กิตติคุณ/);
   assert.match(kpiData, /growth-commerce-manager/);
   assert.match(kpiData, /seedEmployeeLegacyRoleIds/);
+  assert.match(kpiData, /core-ai-work-mastery/);
+  assert.match(kpiData, /การใช้ AI ในงาน: พื้นฐาน → เชิงลึก → ผู้เชี่ยวชาญ/);
+  assert.match(kpiData, /ห้ามใส่ข้อมูลลับ/);
+  assert.match(kpiData, /มีมนุษย์กำกับ/);
+  assert.match(kpiData, /eligibleForAllowance: false/);
+  assert.equal((kpiData.match(/\], aiWorkMastery\(/g) ?? []).length, 8, "expected a role-specific AI target for every current role");
+  const skillCategoryBlock = kpiData.match(/export const skillCategories:[\s\S]*?\n\];/)?.[0] ?? "";
+  const skillCategoryWeightTotal = [...skillCategoryBlock.matchAll(/weight: (\d+)/g)].reduce((sum, match) => sum + Number(match[1]), 0);
+  assert.equal(skillCategoryWeightTotal, 100, "competency category weights must total 100");
   assert.match(dashboardRoute, /isUnmodifiedDemoEmployee/);
   assert.match(pageAsset, /วินัยและความตรงต่อเวลา/);
   assert.match(pageAsset, /ความรับผิดชอบและการเป็นเจ้าของงาน/);
@@ -199,6 +213,7 @@ test("builds the People Pulse KPI product bundle", async () => {
   assert.match(styles, /work-section-tabs/);
   assert.match(styles, /Competency framework/);
   assert.match(styles, /competency-framework-card/);
+  assert.match(styles, /ai-level-guide/);
   assert.match(styles, /skill-category-tabs/);
   assert.match(styles, /Accessibility contrast lock/);
   assert.match(styles, /Notification center/);

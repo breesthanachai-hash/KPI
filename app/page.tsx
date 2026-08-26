@@ -24,6 +24,7 @@ import {
   type UserAccountRecord,
   type WorkItemRecord,
   type WorkSubmissionRecord,
+  aiSkillLevelGuide,
   calculateSkillScore,
   getRole,
   makeInitials,
@@ -167,6 +168,12 @@ const talentDimensions: { id: TalentDimensionId; label: string; shortLabel: stri
   { id: "execution", label: "การลงมือทำ", shortLabel: "ลงมือทำ" },
 ];
 
+const aiSkillStages = [
+  { label: "ขั้นพื้นฐาน", levels: "ระดับ 1–2", title: "ใช้ AI อย่างปลอดภัยและตรวจคำตอบ", description: `${aiSkillLevelGuide[1]} ${aiSkillLevelGuide[2]}` },
+  { label: "ขั้นเชิงลึก", levels: "ระดับ 3", title: "ใช้ AI ใน Workflow ของตำแหน่ง", description: aiSkillLevelGuide[3] },
+  { label: "ขั้นสูง", levels: "ระดับ 4–5", title: "สร้างระบบใช้ซ้ำและยกระดับทีม", description: `${aiSkillLevelGuide[4]} ${aiSkillLevelGuide[5]}` },
+] as const;
+
 const roleTalentProfiles: Record<string, Record<TalentDimensionId, number>> = {
   "sales-manager": { analysis: 4, communication: 5, problemSolving: 4, leadership: 5, execution: 4 },
   marketing: { analysis: 5, communication: 4, problemSolving: 4, leadership: 3, execution: 4 },
@@ -288,6 +295,7 @@ const skillDimensionWeights: Record<string, Partial<Record<TalentDimensionId, nu
   "core-adaptability": { problemSolving: .55, execution: .45 },
   "core-learning": { analysis: .55, problemSolving: .45 },
   "core-initiative": { problemSolving: .55, leadership: .25, execution: .2 },
+  "core-ai-work-mastery": { analysis: .3, communication: .1, problemSolving: .3, execution: .3 },
 };
 
 const submissionTypeLabels: Record<WorkSubmissionRecord["submissionType"], string> = {
@@ -2422,7 +2430,7 @@ export default function Home() {
               <div className="skill-matrix">
                 {roleStats.filter(({ role }) => activeDepartment === "all" || role.departmentId === activeDepartment).map(({ role, people, skill }) => (
                   <button key={role.id} className="skill-role" onClick={() => { setActiveDepartment(role.departmentId); setView("employees"); }}>
-                    <span className="skill-role-title"><i>{role.shortName.slice(0, 2)}</i><span><strong>{role.name}</strong><small>{people} คน · {role.skills.length} สมรรถนะ · 5 หมวด</small></span></span>
+                    <span className="skill-role-title"><i>{role.shortName.slice(0, 2)}</i><span><strong>{role.name}</strong><small>{people} คน · {role.skills.length} สมรรถนะ · 6 หมวด</small></span></span>
                     <span className="skill-bar"><i><b className={skill > 0 && skill < 80 ? "develop" : ""} style={{ width: `${skill}%` }} /></i><em>{skill ? skill.toFixed(0) : "—"}</em></span>
                     <span className={`skill-readiness ${skill > 0 && skill < 80 ? "develop" : ""}`}>{skill >= 80 ? "พร้อมใช้งาน" : skill > 0 ? "ควรพัฒนา" : "รอข้อมูล"}</span>
                   </button>
@@ -2431,8 +2439,8 @@ export default function Home() {
             </div>
             <section className="competency-framework-card">
               <div className="competency-framework-heading">
-                <div><p className="eyebrow">COMPETENCY FRAMEWORK</p><h2>ประเมินรอบด้านมากกว่า 20 สมรรถนะ</h2><p>ครอบคลุมทั้งความสามารถเฉพาะตำแหน่ง วิธีทำงาน การร่วมงาน ความเป็นมืออาชีพ และการเติบโต</p></div>
-                <span>5 หมวดมาตรฐาน</span>
+                <div><p className="eyebrow">COMPETENCY FRAMEWORK</p><h2>ประเมินรอบด้าน 22–24 สมรรถนะ</h2><p>ครอบคลุมความสามารถเฉพาะตำแหน่ง การใช้ AI วิธีทำงาน การร่วมงาน ความเป็นมืออาชีพ และการเติบโต</p></div>
+                <span>6 หมวดมาตรฐาน</span>
               </div>
               <div className="competency-category-grid">
                 {skillCategories.map((category, index) => {
@@ -2447,6 +2455,18 @@ export default function Home() {
                   );
                 })}
               </div>
+              <div className="ai-skill-path">
+                <div className="ai-skill-path-heading"><div><p className="eyebrow">AI SKILL PATH · ทุกตำแหน่ง</p><h3>เส้นทางการใช้ AI จากพื้นฐานสู่ขั้นสูง</h3><p>ทุกคนเริ่มจากการใช้อย่างปลอดภัย ก่อนพัฒนาเป็น Workflow ที่ใช้ซ้ำได้ และต่อยอดสู่ระบบอัตโนมัติที่วัดผลทางธุรกิจได้</p></div><span>น้ำหนักรวม 10%</span></div>
+                <div className="ai-skill-stage-grid">
+                  {aiSkillStages.map((stage, index) => (
+                    <article key={stage.label} className={`stage-${index + 1}`}>
+                      <span>{String(index + 1).padStart(2, "0")}</span>
+                      <div><small>{stage.label}</small><strong>{stage.title}</strong><p>{stage.description}</p></div>
+                      <b>{stage.levels}</b>
+                    </article>
+                  ))}
+                </div>
+              </div>
               <div className="competency-fairness-note"><span>i</span><p><strong>ประเมินจากพฤติกรรมที่สังเกตได้และหลักฐานการทำงาน</strong> ใช้ตัวอย่างเหตุการณ์จริง ไม่ตัดสินนิสัยส่วนตัวหรือความชอบของผู้ประเมิน</p></div>
             </section>
             <div className="development-card">
@@ -2459,7 +2479,7 @@ export default function Home() {
             </div>
             <div className="individual-skills-card">
               <div className="individual-skills-heading">
-                <div><p className="eyebrow">INDIVIDUAL SKILL PROFILE</p><h2>สมรรถนะและสกิลรายบุคคล</h2><p>ดูคะแนน 5 หมวดในบัตรเดียว แล้วเปิดรายละเอียดครบทุกด้านตามตำแหน่งเพื่อวางแผนพัฒนา</p></div>
+                <div><p className="eyebrow">INDIVIDUAL SKILL PROFILE</p><h2>สมรรถนะและสกิลรายบุคคล</h2><p>ดูคะแนน 6 หมวดในบัตรเดียว รวมเส้นทาง AI 3 ขั้น แล้วเปิดรายละเอียดครบทุกด้านตามตำแหน่งเพื่อวางแผนพัฒนา</p></div>
                 <label className="search-field"><span aria-hidden="true">⌕</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="ค้นหาพนักงานหรือตำแหน่ง" /><span className="sr-only">ค้นหาโปรไฟล์สกิล</span></label>
               </div>
               <div className="individual-skill-grid">
@@ -3281,7 +3301,7 @@ export default function Home() {
               <button className="modal-close dark" onClick={() => setSkillProfileEmployee(null)} aria-label="ปิดหน้าต่าง">×</button>
               <div className="profile-score-block">
                 <div><small>คะแนนสมรรถนะรวม</small><strong>{skillProfileScore !== null ? skillProfileScore.toFixed(0) : "—"}</strong><span>/ 100</span></div>
-                <div className="profile-score-copy"><b>{skillProfileScore !== null ? scoreStatus(skillProfileScore) : `ประเมินแล้ว ${skillProfileAssessedCount}/${skillProfileRole.skills.length}`}</b><p>{period}<br />ประเมินรอบด้าน {skillProfileRole.skills.length} สมรรถนะ · 5 หมวด</p></div>
+                <div className="profile-score-copy"><b>{skillProfileScore !== null ? scoreStatus(skillProfileScore) : `ประเมินแล้ว ${skillProfileAssessedCount}/${skillProfileRole.skills.length}`}</b><p>{period}<br />ประเมินรอบด้าน {skillProfileRole.skills.length} สมรรถนะ · 6 หมวด</p></div>
               </div>
             </div>
             <div className="skill-profile-body">
@@ -3311,7 +3331,7 @@ export default function Home() {
                   <div className="talent-empty"><span>◎</span><div><strong>ยังสร้างกราฟไม่ได้</strong><p>เริ่มประเมินระดับสกิล 1–5 เพื่อดูกราฟความถนัดและตำแหน่งที่เหมาะสม</p></div><button onClick={() => editSkillProfile(skillProfileEmployee)}>เริ่มประเมินสกิล</button></div>
                 )}
               </section>
-              <div className="profile-section-heading"><div><p className="eyebrow">COMPETENCY DETAIL</p><h3>รายละเอียดสมรรถนะ 5 หมวด</h3></div><span><i />ระดับปัจจุบัน <i className="target" />เป้าหมาย</span></div>
+              <div className="profile-section-heading"><div><p className="eyebrow">COMPETENCY DETAIL</p><h3>รายละเอียดสมรรถนะ 6 หมวด</h3></div><span><i />ระดับปัจจุบัน <i className="target" />เป้าหมาย</span></div>
               <div className="profile-skill-categories">
                 {skillCategories.map((category) => {
                   const summary = skillCategorySummary(skillProfileRole, skillProfileEvaluation, category.id);
@@ -3329,6 +3349,7 @@ export default function Home() {
                                 {[1, 2, 3, 4, 5].map((item) => <span key={item} className={`${level !== null && item <= level ? "filled" : ""} ${item === skill.targetLevel ? "target" : ""}`}><i />{item}</span>)}
                               </div>
                               <div className={`gap-pill ${gap !== null && gap <= 0 ? "ready" : ""}`}>{gap === null ? "รอประเมิน" : gap > 0 ? `ขาด ${gap} ระดับ` : gap === 0 ? "ตรงเป้าหมาย" : `เกิน ${Math.abs(gap)} ระดับ`}</div>
+                              {skill.levelGuide && <div className="ai-level-guide profile-guide">{Object.entries(skill.levelGuide).map(([guideLevel, copy]) => <div key={guideLevel} className={`${Number(guideLevel) === level ? "current" : ""} ${Number(guideLevel) === skill.targetLevel ? "target" : ""}`}><b>{guideLevel}</b><span>{copy}</span></div>)}</div>}
                             </article>
                           );
                         })}
@@ -3440,7 +3461,7 @@ export default function Home() {
                   {selectedCategorySkills.map((skill) => (
                     <fieldset key={skill.id}><legend><strong>{skill.name}</strong><small>{skill.description}<br />หลักฐาน: {skill.evidence} · เป้าหมาย {skill.target}</small></legend><div className="level-picker">
                       {[1, 2, 3, 4, 5].map((level) => <button type="button" key={level} className={skillScores[skill.id] === level ? "active" : ""} onClick={() => setSkillScores((scores) => ({ ...scores, [skill.id]: level }))} aria-label={`${skill.name} ระดับ ${level}`}>{level}</button>)}
-                    </div></fieldset>
+                    </div>{skill.levelGuide && <div className="ai-level-guide evaluation-guide">{Object.entries(skill.levelGuide).map(([guideLevel, copy]) => <button type="button" key={guideLevel} className={skillScores[skill.id] === Number(guideLevel) ? "current" : ""} onClick={() => setSkillScores((scores) => ({ ...scores, [skill.id]: Number(guideLevel) }))}><b>{guideLevel}</b><span>{copy}</span></button>)}</div>}</fieldset>
                   ))}
                 </div>
                 <div className="skill-evaluation-note"><span>i</span><p>ให้คะแนนจากหลักฐานและพฤติกรรมที่สังเกตได้ในการทำงาน ไม่ใช้ความชอบหรือความเห็นต่อนิสัยส่วนตัว</p></div>

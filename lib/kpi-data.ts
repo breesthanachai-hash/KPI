@@ -10,7 +10,7 @@ export type KpiTemplate = MetricTemplate & {
   weight: number;
 };
 
-export type SkillCategoryId = "role" | "execution" | "collaboration" | "professionalism" | "growth";
+export type SkillCategoryId = "role" | "ai" | "execution" | "collaboration" | "professionalism" | "growth";
 
 export type SkillTemplate = MetricTemplate & {
   targetLevel: number;
@@ -18,15 +18,39 @@ export type SkillTemplate = MetricTemplate & {
   description?: string;
   evidence?: string;
   eligibleForAllowance?: boolean;
+  levelGuide?: Record<number, string>;
 };
 
 export const skillCategories: { id: SkillCategoryId; label: string; shortLabel: string; description: string; weight: number }[] = [
-  { id: "role", label: "สกิลตามตำแหน่ง", shortLabel: "ตามตำแหน่ง", description: "ความรู้และความสามารถเฉพาะที่ต้องใช้เพื่อส่งมอบงานในบทบาทปัจจุบัน", weight: 40 },
+  { id: "role", label: "สกิลตามตำแหน่ง", shortLabel: "ตามตำแหน่ง", description: "ความรู้และความสามารถเฉพาะที่ต้องใช้เพื่อส่งมอบงานในบทบาทปัจจุบัน", weight: 35 },
+  { id: "ai", label: "การใช้ AI ในการทำงาน", shortLabel: "AI", description: "ใช้ AI ตั้งแต่พื้นฐานไปถึงการออกแบบ Workflow และระบบขั้นสูงอย่างปลอดภัย ตรวจสอบได้ และสร้างผลลัพธ์จริง", weight: 10 },
   { id: "execution", label: "การทำงานและความรับผิดชอบ", shortLabel: "การทำงาน", description: "วินัย ความรับผิดชอบ การบริหารเวลา และมาตรฐานคุณภาพงาน", weight: 20 },
   { id: "collaboration", label: "การทำงานกับผู้อื่น", shortLabel: "การร่วมงาน", description: "การสื่อสาร ทีมเวิร์ก มารยาท และการใส่ใจผู้รับบริการ", weight: 15 },
-  { id: "professionalism", label: "ความเป็นมืออาชีพ", shortLabel: "มืออาชีพ", description: "ความซื่อสัตย์ การรักษากฎและข้อมูล รวมถึงการจัดการอารมณ์", weight: 15 },
+  { id: "professionalism", label: "ความเป็นมืออาชีพ", shortLabel: "มืออาชีพ", description: "ความซื่อสัตย์ การรักษากฎและข้อมูล รวมถึงการจัดการอารมณ์", weight: 10 },
   { id: "growth", label: "การเติบโตและพัฒนาตน", shortLabel: "การเติบโต", description: "การปรับตัว เรียนรู้สิ่งใหม่ และริเริ่มแก้ปัญหาอย่างสร้างสรรค์", weight: 10 },
 ];
+
+export const aiSkillLevelGuide: Record<number, string> = {
+  1: "เริ่มต้น · ใช้ตามตัวอย่าง รู้ว่าห้ามใส่ข้อมูลลับ และขอให้ผู้มีประสบการณ์ตรวจผล",
+  2: "พื้นฐาน · เขียน Prompt พร้อมบริบท ตรวจข้อเท็จจริง และแก้ผลลัพธ์ก่อนใช้งาน",
+  3: "เชิงลึกตามตำแหน่ง · ใช้ AI ใน Workflow งานจริงครบขั้นและวัดเวลา คุณภาพ หรือผลลัพธ์ได้",
+  4: "ขั้นสูง · สร้าง Prompt Template หรือ Automation ที่ใช้ซ้ำ ทดสอบคุณภาพ และควบคุมความเสี่ยง",
+  5: "ผู้เชี่ยวชาญ · ออกแบบมาตรฐาน AI ของทีม โค้ชผู้อื่น และสร้างผลลัพธ์ทางธุรกิจที่ตรวจสอบได้",
+};
+
+function aiWorkMastery(targetLevel = 3, evidence = "ผลทดสอบ พร้อมตัวอย่าง Prompt หรือ Workflow ที่ปกปิดข้อมูลอ่อนไหว มีวิธีตรวจผล และผลก่อน–หลังที่วัดได้"): SkillTemplate {
+  return {
+    id: "core-ai-work-mastery",
+    name: "การใช้ AI ในงาน: พื้นฐาน → เชิงลึก → ผู้เชี่ยวชาญ",
+    target: `ระดับ ${targetLevel} จาก 5`,
+    targetLevel,
+    category: "ai",
+    description: "ใช้ AI อย่างปลอดภัยและตรวจสอบได้ ตั้งแต่การเขียน Prompt ไปจนถึง Workflow, Automation และการตัดสินใจที่มีมนุษย์กำกับ",
+    evidence,
+    eligibleForAllowance: false,
+    levelGuide: aiSkillLevelGuide,
+  };
+}
 
 export const coreCompetencies: SkillTemplate[] = [
   { id: "core-discipline", name: "วินัยและความตรงต่อเวลา", target: "ระดับ 4 จาก 5", targetLevel: 4, category: "execution", description: "รักษาเวลา ข้อตกลง และขั้นตอนการทำงานอย่างสม่ำเสมอ", evidence: "เวลาเข้างาน การเข้าประชุม และประวัติทำตามข้อตกลง", eligibleForAllowance: false },
@@ -45,7 +69,7 @@ export const coreCompetencies: SkillTemplate[] = [
   { id: "core-initiative", name: "ความคิดริเริ่มและการแก้ปัญหา", target: "ระดับ 3 จาก 5", targetLevel: 3, category: "growth", description: "มองเห็นปัญหา เสนอทางเลือก และลงมือปรับปรุงโดยไม่ต้องรอคำสั่งทุกขั้น", evidence: "ข้อเสนอปรับปรุง การทดลอง และผลลัพธ์ที่วัดได้", eligibleForAllowance: false },
 ];
 
-function completeSkillFramework(roleSkills: SkillTemplate[]) {
+function completeSkillFramework(roleSkills: SkillTemplate[], aiSkill = aiWorkMastery()) {
   return [
     ...roleSkills.map((skill) => ({
       ...skill,
@@ -55,6 +79,7 @@ function completeSkillFramework(roleSkills: SkillTemplate[]) {
       eligibleForAllowance: skill.eligibleForAllowance ?? true,
     })),
     ...coreCompetencies,
+    aiSkill,
   ];
 }
 
@@ -528,7 +553,7 @@ export const roles: RoleTemplate[] = [
       { id: "team-coaching", name: "การโค้ชและยกระดับคนในทีม", target: "ระดับ 4 จาก 5", targetLevel: 4 },
       { id: "work-prioritization", name: "การจัดลำดับงานตามผลกระทบ", target: "ระดับ 5 จาก 5", targetLevel: 5 },
       { id: "cross-functional-leadership", name: "การนำทีมข้ามสายงาน", target: "ระดับ 4 จาก 5", targetLevel: 4 },
-    ]),
+    ], aiWorkMastery(4, "AI Forecast, Funnel หรือ Experiment Decision Brief พร้อม SOP ของทีม จุดอนุมัติของมนุษย์ และผลต่อรายได้หรือกำไร")),
   },
   {
     id: "customer-insight-marketer",
@@ -551,7 +576,7 @@ export const roles: RoleTemplate[] = [
       { id: "hook-storytelling", name: "การหา Hook และเล่าเรื่องให้ตรงกลุ่ม", target: "ระดับ 4 จาก 5", targetLevel: 4 },
       { id: "creative-briefing", name: "การเขียน Creative Brief ที่นำไปผลิตได้", target: "ระดับ 4 จาก 5", targetLevel: 4 },
       { id: "content-performance-analysis", name: "การอ่านผลคอนเทนต์และสรุปบทเรียน", target: "ระดับ 4 จาก 5", targetLevel: 4 },
-    ]),
+    ], aiWorkMastery(3, "Workflow วิเคราะห์ VOC หรือจัดกลุ่ม Insight ที่ย้อนกลับไปหาแหล่งข้อมูลได้ พร้อม Creative Brief ที่ทีมได้นำไปใช้")),
   },
   {
     id: "offer-conversion-marketer",
@@ -575,7 +600,7 @@ export const roles: RoleTemplate[] = [
       { id: "ab-testing", name: "การออกแบบ A/B Test ที่สรุปผลได้", target: "ระดับ 4 จาก 5", targetLevel: 4 },
       { id: "pricing-margin", name: "ความเข้าใจราคา ต้นทุน และกำไร", target: "ระดับ 4 จาก 5", targetLevel: 4 },
       { id: "sales-page-optimization", name: "การปรับหน้าขายและเส้นทางสั่งซื้อ", target: "ระดับ 4 จาก 5", targetLevel: 4 },
-    ]),
+    ], aiWorkMastery(3, "ชุด Copy หรือ Offer Variation ที่มี Human Review พร้อมผล A/B Test, Conversion และกำไรเปรียบเทียบก่อน–หลัง")),
   },
   {
     id: "crm-retention-marketer",
@@ -599,7 +624,7 @@ export const roles: RoleTemplate[] = [
       { id: "retention-campaign-design", name: "การออกแบบแคมเปญรักษาลูกค้า", target: "ระดับ 4 จาก 5", targetLevel: 4 },
       { id: "cohort-ltv-analysis", name: "การวิเคราะห์ Cohort และ LTV", target: "ระดับ 4 จาก 5", targetLevel: 4 },
       { id: "customer-data-hygiene", name: "การดูแลคุณภาพและความยินยอมของข้อมูล", target: "ระดับ 4 จาก 5", targetLevel: 4 },
-    ]),
+    ], aiWorkMastery(4, "Workflow แบ่ง Segment หรือ Lifecycle Automation ที่คุ้มครองข้อมูลและความยินยอม พร้อมผลต่อยอดซื้อซ้ำหรือ LTV")),
   },
   {
     id: "performance-video-editor",
@@ -622,8 +647,8 @@ export const roles: RoleTemplate[] = [
       { id: "creative-variation-production", name: "การผลิต Creative Variation อย่างเป็นระบบ", target: "ระดับ 4 จาก 5", targetLevel: 4 },
       { id: "video-retention-analysis", name: "การอ่าน Retention, CTR และผลโฆษณา", target: "ระดับ 4 จาก 5", targetLevel: 4 },
       { id: "caption-sound-design", name: "ซับไตเติล Motion และ Sound Design", target: "ระดับ 4 จาก 5", targetLevel: 4 },
-      { id: "ai-assisted-video-editing", name: "การใช้ AI ช่วยผลิตและตัดต่อวิดีโอ", target: "ระดับ 3 จาก 5", targetLevel: 3 },
-    ]),
+      { id: "ai-assisted-video-editing", name: "เครื่องมือ AI สำหรับ Video Production", target: "ระดับ 3 จาก 5", targetLevel: 3 },
+    ], aiWorkMastery(4, "Workflow AI สำหรับ Script, Hook, Caption หรือ Creative Variation พร้อมไฟล์ก่อน–หลังและผล Retention, CTR หรือ CPA")),
   },
   {
     id: "brand-content-video-editor",
@@ -646,8 +671,8 @@ export const roles: RoleTemplate[] = [
       { id: "brand-sound-design", name: "Sound Design และการเลือกดนตรี", target: "ระดับ 4 จาก 5", targetLevel: 4 },
       { id: "multi-platform-production", name: "การผลิตหลายสัดส่วนและหลายแพลตฟอร์ม", target: "ระดับ 4 จาก 5", targetLevel: 4 },
       { id: "asset-version-management", name: "การจัดการไฟล์ต้นฉบับและเวอร์ชัน", target: "ระดับ 4 จาก 5", targetLevel: 4 },
-      { id: "ai-assisted-content-production", name: "การใช้ AI ช่วยงาน Creative Production", target: "ระดับ 3 จาก 5", targetLevel: 3 },
-    ]),
+      { id: "ai-assisted-content-production", name: "เครื่องมือ AI สำหรับ Creative Production", target: "ระดับ 3 จาก 5", targetLevel: 3 },
+    ], aiWorkMastery(3, "Workflow AI สำหรับ Storyboard, Asset, Voice หรือ Color ที่ผ่าน Brand QA พร้อมไฟล์ก่อน–หลังและผลคอนเทนต์")),
   },
   {
     id: "marketplace-commerce-specialist",
@@ -672,7 +697,7 @@ export const roles: RoleTemplate[] = [
       { id: "stock-order-sync", name: "การประสานสต็อก คำสั่งซื้อ และ Fulfillment", target: "ระดับ 4 จาก 5", targetLevel: 4 },
       { id: "marketplace-account-health-skill", name: "การดูแลคะแนนร้านและ Account Health", target: "ระดับ 5 จาก 5", targetLevel: 5 },
       { id: "marketplace-analytics", name: "การวิเคราะห์ยอดขายและ Conversion ราย SKU", target: "ระดับ 4 จาก 5", targetLevel: 4 },
-    ]),
+    ], aiWorkMastery(4, "Workflow AI สำหรับ Listing, Keyword, Demand หรือคำตอบลูกค้าที่ผ่าน Policy Check พร้อมผล Conversion และความแม่นยำของสต็อก")),
   },
   {
     id: "facebook-media-buyer",
@@ -697,7 +722,7 @@ export const roles: RoleTemplate[] = [
       { id: "meta-unit-economics", name: "CAC, CPA, ROAS, MER และกำไรจริง", target: "ระดับ 5 จาก 5", targetLevel: 5 },
       { id: "meta-performance-forecast", name: "การพยากรณ์ผลและวางแผน Media", target: "ระดับ 4 จาก 5", targetLevel: 4 },
       { id: "meta-policy-risk", name: "นโยบายโฆษณาและการจัดการความเสี่ยงบัญชี", target: "ระดับ 4 จาก 5", targetLevel: 4 },
-    ]),
+    ], aiWorkMastery(4, "AI Creative Analysis, Brief หรือ Budget Scenario ที่ตรวจ Tracking แล้ว พร้อม CPA/MER และหลักฐานการอนุมัติก่อนเปลี่ยนงบจริง")),
   },
 ];
 
