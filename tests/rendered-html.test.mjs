@@ -430,7 +430,14 @@ test("ships a private employee portal with safe team overview and self-only acti
   assert.match(workSubmissionRoute, /งานนี้ส่งตรวจหรือปิดแล้ว/);
   assert.match(workSubmissionRoute, /งานนี้มีหลักฐานรอตรวจอยู่แล้ว/);
 
-  assert.match(styles, /Employee portal: a focused, private workspace/);
+  const employeePortalStyles = styles.match(/\/\* Employee portal: the same blue-and-orange visual language as the HR workspace \*\/[\s\S]*?(?=\n@media \(max-width: 1180px\))/)?.[0] ?? "";
+  assert.ok(employeePortalStyles, "expected the employee portal palette block");
+  assert.match(employeePortalStyles, /var\(--forest\)/, "employee portal should inherit the HR blue primary palette");
+  assert.match(employeePortalStyles, /var\(--mustard\)/, "employee portal should use the HR orange accent");
+  assert.match(employeePortalStyles, /color: #fff !important/);
+  assert.match(employeePortalStyles, /color: #c9dbef !important/);
+  assert.match(employeePortalStyles, /color: #ffb467 !important/);
+  assert.doesNotMatch(employeePortalStyles, /#123f4b|#165a62|#184d64|#17645f|#26766c|#2c7c6d|#176859|#8ee2cf|#dff5ed|#66bca6/i, "employee portal must not restore the old teal-green theme");
   assert.match(styles, /\.employee-portal-shell/);
   assert.match(styles, /\.employee-growth-portal/);
   assert.match(styles, /\.reward-owner-lock/);
