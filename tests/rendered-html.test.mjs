@@ -435,3 +435,49 @@ test("ships a private employee portal with safe team overview and self-only acti
   assert.match(styles, /\.employee-growth-portal/);
   assert.match(styles, /\.reward-owner-lock/);
 });
+
+test("ships a secure admin-only, read-only employee preview link", async () => {
+  const [page, dashboardRoute] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/dashboard/route.ts", import.meta.url), "utf8"),
+  ]);
+
+  // The public-facing query key is deliberately translated to the API key;
+  // the API remains the authority that decides whether previewing is allowed.
+  assert.match(page, /get\("employee_preview"\)/);
+  assert.match(page, /dashboardParams\.set\("previewEmployeeId", previewEmployeeId\)/);
+  assert.match(page, /setEmployeePreview\(body\.employeePreview \?\? null\)/);
+  assert.match(page, /const isEmployeePreview = Boolean\(employeePreview\?\.readOnly\)/);
+
+  // A preview can only be activated by an already-authenticated admin. It
+  // becomes an employee-scoped identity in memory and never changes an account.
+  assert.match(dashboardRoute, /const authenticatedUser = await authenticateRequest\(request\)/);
+  assert.match(dashboardRoute, /const requestedPreviewEmployeeId = url\.searchParams\.get\("previewEmployeeId"\)/);
+  assert.match(dashboardRoute, /const isEmployeePreviewRequest = authenticatedUser\.role === "admin" && Boolean\(requestedPreviewEmployeeId\)/);
+  assert.match(dashboardRoute, /let currentUser = authenticatedUser/);
+  assert.match(dashboardRoute, /id: `employee-preview:\$\{previewEmployee\.id\}`/);
+  assert.match(dashboardRoute, /role: "employee"/);
+  assert.match(dashboardRoute, /employeeId: previewEmployee\.id/);
+  assert.match(dashboardRoute, /employeePreview = \{[\s\S]*?employeeId: previewEmployee\.id,[\s\S]*?readOnly: true,[\s\S]*?launchedBy: authenticatedUser\.displayName/);
+  assert.match(dashboardRoute, /ไม่พบโปรไฟล์พนักงานที่ใช้งานอยู่สำหรับโหมดทดลอง/);
+
+  // Admin account data and persisted notification state must not cross the
+  // employee-preview boundary, including at the database-read layer.
+  assert.match(dashboardRoute, /authenticatedUser\.role === "admin" && !isEmployeePreviewRequest \? db\.select\(\)\.from\(userAccounts\) : Promise\.resolve\(\[\]\)/);
+  assert.match(dashboardRoute, /isEmployeePreviewRequest \? Promise\.resolve\(\[\]\) : db\.select\(\)\.from\(notificationReads\)/);
+  assert.match(dashboardRoute, /userAccounts: currentUser\.role === "admin" \? userAccountRows : \[\]/);
+  assert.match(dashboardRoute, /notificationReads: employeePreview \? \[\] : notificationReadRows/);
+
+  // The UI makes the simulation obvious and blocks every employee mutation
+  // available from this portal while preserving read-only inspection.
+  assert.match(page, /className="employee-preview-banner"/);
+  assert.match(page, /โหมดทดลองมุมมองพนักงาน/);
+  assert.match(page, /โหมดนี้อ่านอย่างเดียว/);
+  assert.match(page, /กลับมุมมองผู้ดูแล/);
+  assert.match(page, /const guardEmployeePreviewMutation/);
+  assert.match(page, /if \(isEmployeePreview\) return;/);
+  assert.match(page, /guardEmployeePreviewMutation\("เริ่มหรืออัปเดตงาน"\)/);
+  assert.match(page, /guardEmployeePreviewMutation\("ส่งหลักฐานใหม่"\)/);
+  assert.match(page, /guardEmployeePreviewMutation\("ส่งคำขอแลกรางวัล"\)/);
+  assert.match(page, /disabled=\{isEmployeePreview \|\| !unreadNotifications\.length\}/);
+});

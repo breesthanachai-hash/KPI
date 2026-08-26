@@ -233,13 +233,15 @@ function isSafeOptionalUrl(value: string) {
 export async function GET(request: Request) {
   try {
     await ensureSeedData();
-    const currentUser = await authenticateRequest(request);
-    if (!currentUser) {
+    const authenticatedUser = await authenticateRequest(request);
+    if (!authenticatedUser) {
       const identity = authenticatedIdentity(request);
       return Response.json({ error: "บัญชีนี้ยังไม่ได้รับสิทธิ์ใช้งาน", accessDenied: true, identity: identity ? { email: identity.email, name: identity.name } : null }, { status: 403 });
     }
     const url = new URL(request.url);
     const period = url.searchParams.get("period") ?? periods[0];
+    const requestedPreviewEmployeeId = url.searchParams.get("previewEmployeeId")?.trim() ?? "";
+    const isEmployeePreviewRequest = authenticatedUser.role === "admin" && Boolean(requestedPreviewEmployeeId);
     const db = getDb();
     const [employeeRows, evaluationRows, hrProfileRows, attendanceRows, skillAchievementRows, talentActionRows, projectRows, workItemRows, workSubmissionRows, rewardRows, pointRows, pointEventRows, redemptionRows, employeeProfileRows, applicationDocumentRows, employmentContractRows, userAccountRows, notificationReadRows] = await Promise.all([
       db.select().from(employees),
@@ -258,9 +260,37 @@ export async function GET(request: Request) {
       db.select().from(employeeProfiles),
       db.select().from(applicationDocuments),
       db.select().from(employmentContracts),
-      currentUser.role === "admin" ? db.select().from(userAccounts) : Promise.resolve([]),
-      db.select().from(notificationReads).where(eq(notificationReads.userKey, currentUser.id)),
+      authenticatedUser.role === "admin" && !isEmployeePreviewRequest ? db.select().from(userAccounts) : Promise.resolve([]),
+      isEmployeePreviewRequest ? Promise.resolve([]) : db.select().from(notificationReads).where(eq(notificationReads.userKey, authenticatedUser.id)),
     ]);
+    let currentUser = authenticatedUser;
+    let employeePreview: { employeeId: string; readOnly: true; launchedBy: string } | null = null;
+    if (isEmployeePreviewRequest) {
+      const previewEmployee = employeeRows.find((employee) => employee.id === requestedPreviewEmployeeId && employee.status === "active");
+      if (!previewEmployee) {
+        return Response.json({ error: "ไม่พบโปรไฟล์พนักงานที่ใช้งานอยู่สำหรับโหมดทดลอง" }, { status: 404 });
+      }
+      currentUser = {
+        id: `employee-preview:${previewEmployee.id}`,
+        authUserId: "",
+        email: previewEmployee.email,
+        displayName: previewEmployee.name,
+        role: "employee",
+        employeeId: previewEmployee.id,
+        departmentId: getRole(previewEmployee.roleId).departmentId,
+        status: "active",
+        lastLoginAt: null,
+        createdBy: "โหมดทดลอง",
+        createdAt: previewEmployee.createdAt,
+        updatedAt: previewEmployee.updatedAt,
+        authenticatedName: previewEmployee.name,
+      };
+      employeePreview = {
+        employeeId: previewEmployee.id,
+        readOnly: true,
+        launchedBy: authenticatedUser.displayName,
+      };
+    }
     const visibleEmployeeIds = new Set(employeeRows.filter((employee) => {
       if (currentUser.role === "admin") return true;
       if (employee.id === currentUser.employeeId) return true;
@@ -318,6 +348,7 @@ export async function GET(request: Request) {
     } : { employees: [], evaluations: [], workItems: [] };
     return Response.json({
       currentUser,
+      employeePreview,
       permissions,
       teamOverview: employeePortalTeamOverview,
       employees: scopedEmployees,
@@ -336,8 +367,8 @@ export async function GET(request: Request) {
       employeeProfiles: currentUser.role === "admin" ? employeeProfileRows.filter((row) => visibleEmployeeIds.has(row.employeeId)) : visibleProfileImages,
       applicationDocuments: currentUser.role === "admin" ? applicationDocumentRows.filter((row) => visibleEmployeeIds.has(row.employeeId)) : [],
       employmentContracts: currentUser.role === "admin" ? employmentContractRows.filter((row) => visibleEmployeeIds.has(row.employeeId)) : [],
-      userAccounts: userAccountRows,
-      notificationReads: notificationReadRows,
+      userAccounts: currentUser.role === "admin" ? userAccountRows : [],
+      notificationReads: employeePreview ? [] : notificationReadRows,
       period,
     });
   } catch (error) {

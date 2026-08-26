@@ -59,6 +59,12 @@ type AppPermissions = {
 };
 type EmployeeTeamOverview = { employees: EmployeeRecord[]; evaluations: EvaluationRecord[]; workItems: WorkItemRecord[] };
 
+type EmployeePreview = {
+  employeeId: string;
+  readOnly: true;
+  launchedBy: string;
+};
+
 type OfficeLoadLevel = "available" | "steady" | "busy" | "overloaded";
 
 type OfficeLoadFilter = "all" | OfficeLoadLevel;
@@ -648,6 +654,8 @@ export default function Home() {
   const [userAccounts, setUserAccounts] = useState<UserAccountRecord[]>([]);
   const [notificationReads, setNotificationReads] = useState<NotificationReadRecord[]>([]);
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
+  const [employeePreview, setEmployeePreview] = useState<EmployeePreview | null>(null);
+  const isEmployeePreview = Boolean(employeePreview?.readOnly);
   const [permissions, setPermissions] = useState<AppPermissions>({ canManageAccounts: false, canManagePeople: false, canManageWork: false, canReviewWork: false, canViewTeam: false, canViewTeamOverview: false, canViewOwnGrowth: false, canViewOwnRewards: false });
   const [teamOverview, setTeamOverview] = useState<EmployeeTeamOverview>({ employees: [], evaluations: [], workItems: [] });
   const [accessDenied, setAccessDenied] = useState<{ email: string; name: string } | null>(null);
@@ -715,12 +723,16 @@ export default function Home() {
 
   useEffect(() => {
     const controller = new AbortController();
-    fetch(`/api/dashboard?period=${encodeURIComponent(period)}`, { signal: controller.signal })
+    const previewEmployeeId = new URLSearchParams(window.location.search).get("employee_preview")?.trim() ?? "";
+    const dashboardParams = new URLSearchParams({ period });
+    if (previewEmployeeId) dashboardParams.set("previewEmployeeId", previewEmployeeId);
+    fetch(`/api/dashboard?${dashboardParams.toString()}`, { signal: controller.signal })
       .then(async (response) => {
-        const body = await response.json() as { currentUser?: CurrentUser; permissions?: AppPermissions; teamOverview?: EmployeeTeamOverview; userAccounts?: UserAccountRecord[]; notificationReads?: NotificationReadRecord[]; employees?: EmployeeRecord[]; evaluations?: EvaluationRecord[]; hrProfiles?: HrProfileRecord[]; attendanceRecords?: AttendanceRecord[]; skillAchievements?: SkillAchievementRecord[]; talentActions?: TalentActionRecord[]; projects?: ProjectRecord[]; workItems?: WorkItemRecord[]; workSubmissions?: WorkSubmissionRecord[]; rewards?: RewardRecord[]; pointLedger?: PointLedgerRecord[]; pointEvents?: PointEventRecord[]; rewardRedemptions?: RewardRedemptionRecord[]; employeeProfiles?: EmployeeProfileRecord[]; applicationDocuments?: ApplicationDocumentRecord[]; employmentContracts?: EmploymentContractRecord[]; accessDenied?: boolean; identity?: { email: string; name: string } | null; error?: string };
+        const body = await response.json() as { currentUser?: CurrentUser; employeePreview?: EmployeePreview | null; permissions?: AppPermissions; teamOverview?: EmployeeTeamOverview; userAccounts?: UserAccountRecord[]; notificationReads?: NotificationReadRecord[]; employees?: EmployeeRecord[]; evaluations?: EvaluationRecord[]; hrProfiles?: HrProfileRecord[]; attendanceRecords?: AttendanceRecord[]; skillAchievements?: SkillAchievementRecord[]; talentActions?: TalentActionRecord[]; projects?: ProjectRecord[]; workItems?: WorkItemRecord[]; workSubmissions?: WorkSubmissionRecord[]; rewards?: RewardRecord[]; pointLedger?: PointLedgerRecord[]; pointEvents?: PointEventRecord[]; rewardRedemptions?: RewardRedemptionRecord[]; employeeProfiles?: EmployeeProfileRecord[]; applicationDocuments?: ApplicationDocumentRecord[]; employmentContracts?: EmploymentContractRecord[]; accessDenied?: boolean; identity?: { email: string; name: string } | null; error?: string };
         if (response.status === 403 && body.accessDenied) {
           setAccessDenied(body.identity ?? { email: "ไม่พบอีเมล", name: "ผู้ใช้งาน" });
           setCurrentUser(null);
+          setEmployeePreview(null);
           setEmployees([]);
           setWorkItems([]);
           setTeamOverview({ employees: [], evaluations: [], workItems: [] });
@@ -728,6 +740,7 @@ export default function Home() {
         }
         if (!response.ok) throw new Error(body.error ?? "โหลดข้อมูลไม่สำเร็จ");
         setCurrentUser(body.currentUser ?? null);
+        setEmployeePreview(body.employeePreview ?? null);
         setPermissions(body.permissions ?? { canManageAccounts: false, canManagePeople: false, canManageWork: false, canReviewWork: false, canViewTeam: false, canViewTeamOverview: false, canViewOwnGrowth: false, canViewOwnRewards: false });
         setTeamOverview(body.teamOverview ?? { employees: [], evaluations: [], workItems: [] });
         setUserAccounts(body.userAccounts ?? []);
@@ -1239,7 +1252,14 @@ export default function Home() {
     window.setTimeout(() => setToast(""), 2800);
   };
 
+  const guardEmployeePreviewMutation = (actionLabel: string) => {
+    if (!isEmployeePreview) return false;
+    showToast(`โหมดทดลองเป็นแบบอ่านอย่างเดียว จึงไม่สามารถ${actionLabel}ได้`);
+    return true;
+  };
+
   const markNotificationsRead = async (notificationIds: string[]) => {
+    if (isEmployeePreview) return;
     const unreadIds = [...new Set(notificationIds)].filter((id) => !notificationReadIds.has(id));
     if (!unreadIds.length || !currentUser) return;
     const previousReads = notificationReads;
@@ -1505,6 +1525,7 @@ export default function Home() {
   };
 
   const startWorkItem = async (item: WorkItemRecord) => {
+    if (guardEmployeePreviewMutation("เริ่มหรืออัปเดตงาน")) return;
     setQuickUpdatingWorkId(item.id);
     try {
       const response = await fetch("/api/dashboard", {
@@ -1547,6 +1568,7 @@ export default function Home() {
 
   const submitWorkProof = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (guardEmployeePreviewMutation("ส่งหลักฐานใหม่")) return;
     if (!submissionWorkItem) return;
     setIsSaving(true);
     try {
@@ -1651,6 +1673,7 @@ export default function Home() {
 
   const redeemReward = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (guardEmployeePreviewMutation("ส่งคำขอแลกรางวัล")) return;
     if (!rewardToRedeem) return;
     const redemptionEmployeeId = currentUser?.role === "employee" ? currentUser.employeeId ?? "" : rewardEmployeeId;
     if (!redemptionEmployeeId) return showToast("บัญชีนี้ยังไม่ได้ผูกกับพนักงาน");
@@ -2173,7 +2196,7 @@ export default function Home() {
             <button type="button" onClick={() => { setShowUserMenu(false); setView("work"); setWorkSection("tasks"); setWorkAssigneeFilter(currentUser?.employeeId ?? "all"); }}><span>✓</span><p><strong>งานของฉัน</strong><small>เปิดรายการสิ่งที่ต้องทำ</small></p></button>
             {isEmployeeUser && <button type="button" onClick={() => { setShowUserMenu(false); setView("peopleOps"); }}><span>↗</span><p><strong>การเติบโตและเงินเดือน</strong><small>ดูเป้าหมาย สกิล และค่าตอบแทนของฉัน</small></p></button>}
             {isEmployeeUser && <button type="button" onClick={() => { setShowUserMenu(false); setView("work"); setWorkSection("points"); }}><span>★</span><p><strong>แต้มและรางวัล</strong><small>ดูยอดแต้มและเลือกรางวัล</small></p></button>}
-            <a href="/signout-with-chatgpt?return_to=/"><span>↗</span><p><strong>ออกจากระบบ</strong><small>เปลี่ยนบัญชีผู้ใช้งาน</small></p></a>
+            {isEmployeePreview ? <button type="button" onClick={() => window.location.assign("/")}><span>←</span><p><strong>กลับมุมมองผู้ดูแล</strong><small>ออกจากโหมดทดลองพนักงาน</small></p></button> : <a href="/signout-with-chatgpt?return_to=/"><span>↗</span><p><strong>ออกจากระบบ</strong><small>เปลี่ยนบัญชีผู้ใช้งาน</small></p></a>}
           </nav>
         </aside>}
       </div>
@@ -2187,7 +2210,7 @@ export default function Home() {
           <section className="notification-summary" aria-label="สรุปการแจ้งเตือน">
             <article><span>ยังไม่อ่าน</span><strong>{unreadNotifications.length}</strong></article>
             <article className="quest"><span>เควสที่เปิดอยู่</span><strong>{questNotificationCount}</strong></article>
-            <button type="button" disabled={!unreadNotifications.length} onClick={() => void markNotificationsRead(unreadNotifications.map((item) => item.id))}>อ่านทั้งหมด</button>
+            <button type="button" disabled={isEmployeePreview || !unreadNotifications.length} onClick={() => void markNotificationsRead(unreadNotifications.map((item) => item.id))}>{isEmployeePreview ? "อ่านอย่างเดียว" : "อ่านทั้งหมด"}</button>
           </section>
           <nav className="notification-tabs" aria-label="กรองการแจ้งเตือน">
             <button type="button" className={notificationFilter === "all" ? "active" : ""} onClick={() => setNotificationFilter("all")}>ทั้งหมด <span>{notifications.length}</span></button>
@@ -2210,12 +2233,22 @@ export default function Home() {
               </button>;
             }) : <div className="notification-empty"><span>✓</span><strong>{notificationFilter === "quest" ? "ยังไม่มีเควสที่เปิดอยู่" : "อ่านครบแล้ว"}</strong><p>เมื่อมีเควส งานใกล้กำหนด หรืองานรอตรวจ ระบบจะแจ้งที่นี่</p></div>}
           </div>
-          <footer className="notification-center-footer"><span className="live-dot" /> แจ้งเตือนจากงานและเควสตามสิทธิ์ของคุณ</footer>
+          <footer className="notification-center-footer"><span className="live-dot" /> {isEmployeePreview ? "โหมดทดลองจะไม่บันทึกสถานะการอ่าน" : "แจ้งเตือนจากงานและเควสตามสิทธิ์ของคุณ"}</footer>
         </aside>
       </div>}
 
       <section className="dashboard">
         {dataWarning && <div className="data-warning" role="status"><span>!</span>{dataWarning}</div>}
+        {employeePreview && (
+          <section className="employee-preview-banner" role="status" aria-label="โหมดทดลองมุมมองพนักงาน">
+            <span className="employee-preview-badge">TEST VIEW</span>
+            <div>
+              <strong>กำลังทดลองมุมมองของ {currentUserEmployee?.name ?? "พนักงาน"}</strong>
+              <p>โหมดนี้อ่านอย่างเดียว · ดูงาน หลักฐาน แต้ม และการเติบโตได้ โดยไม่เปลี่ยนข้อมูลจริง</p>
+            </div>
+            <button type="button" onClick={() => window.location.assign("/")}>กลับมุมมองผู้ดูแล <span aria-hidden="true">→</span></button>
+          </section>
+        )}
         {isEmployeeUser && currentUserEmployee && view === "work" && workSection === "tasks" && (
           <section className="employee-portal-welcome">
             <div className="employee-welcome-person">
@@ -3063,9 +3096,9 @@ export default function Home() {
                     <article className="portfolio-archive-row" role="row" key={entry.item.id}>
                       <span className="portfolio-person">{entry.employee ? <EmployeeAvatar employee={entry.employee} profile={employeeProfilesById.get(entry.employee.id)} className="avatar-portfolio-row" /> : <i className="avatar-media avatar-portfolio-row">PP</i>}<span><strong>{entry.employee?.name ?? "ไม่ระบุพนักงาน"}</strong><small>{role?.name ?? "ไม่ระบุตำแหน่ง"}</small></span></span>
                       <span className="portfolio-work"><b>{workKindLabel(entry.item.kind)} · {entry.project?.name ?? "ไม่ระบุโปรเจกต์"}</b><strong>{entry.item.title}</strong><small>{entry.item.description}</small></span>
-                      <span className="portfolio-assets">{linkEvidence && <a href={linkEvidence.linkUrl} target="_blank" rel="noreferrer"><b>↗</b><span>เปิดลิงก์<small>{submissionTypeLabels[linkEvidence.submissionType]}</small></span></a>}{fileEvidence && <a href={`/api/work-submissions?id=${encodeURIComponent(fileEvidence.id)}`}><b>↓</b><span>{fileEvidence.fileName}<small>{formatFileSize(fileEvidence.sizeBytes)}</small></span></a>}{!linkEvidence && !fileEvidence && <button onClick={() => openSubmissionCenter(entry.item)}><b>＋</b><span>เพิ่มหลักฐาน<small>ไฟล์หรือลิงก์ผลงาน</small></span></button>}</span>
+                      <span className="portfolio-assets">{linkEvidence && <a href={linkEvidence.linkUrl} target="_blank" rel="noreferrer"><b>↗</b><span>เปิดลิงก์<small>{submissionTypeLabels[linkEvidence.submissionType]}</small></span></a>}{fileEvidence && <a href={`/api/work-submissions?id=${encodeURIComponent(fileEvidence.id)}`}><b>↓</b><span>{fileEvidence.fileName}<small>{formatFileSize(fileEvidence.sizeBytes)}</small></span></a>}{!linkEvidence && !fileEvidence && <button onClick={() => openSubmissionCenter(entry.item)}><b>{isEmployeePreview ? "⌕" : "＋"}</b><span>{isEmployeePreview ? "ดูรายละเอียด" : "เพิ่มหลักฐาน"}<small>{isEmployeePreview ? "ยังไม่มีหลักฐาน" : "ไฟล์หรือลิงก์ผลงาน"}</small></span></button>}</span>
                       <span className="portfolio-evaluation"><b>{entry.evaluation?.totalScore.toFixed(0) ?? "—"}<small>คะแนนรวม</small></b><span><small>KPI {entry.evaluation?.kpiScore.toFixed(0) ?? "—"}</small><small>สกิล {entry.evaluation?.skillScore.toFixed(0) ?? "—"}</small><small>★ {entry.item.points} แต้ม</small></span></span>
-                      <span className="portfolio-state"><b className={entry.status}>{portfolioStatusLabel(entry.status)}</b><small>{entry.approvedSubmission?.reviewedBy ? `ตรวจโดย ${entry.approvedSubmission.reviewedBy}` : entry.latestSubmission ? `ส่ง ${formatUpdatedAt(entry.latestSubmission.submittedAt)}` : `เสร็จ ${formatUpdatedAt(entry.item.updatedAt)}`}</small><button onClick={() => openSubmissionCenter(entry.item)}>{entry.submissions.length ? `ดูหลักฐาน ${entry.submissions.length} รายการ` : "จัดเก็บผลงาน"}</button></span>
+                      <span className="portfolio-state"><b className={entry.status}>{portfolioStatusLabel(entry.status)}</b><small>{entry.approvedSubmission?.reviewedBy ? `ตรวจโดย ${entry.approvedSubmission.reviewedBy}` : entry.latestSubmission ? `ส่ง ${formatUpdatedAt(entry.latestSubmission.submittedAt)}` : `เสร็จ ${formatUpdatedAt(entry.item.updatedAt)}`}</small><button onClick={() => openSubmissionCenter(entry.item)}>{entry.submissions.length ? `ดูหลักฐาน ${entry.submissions.length} รายการ` : isEmployeePreview ? "ดูรายละเอียด" : "จัดเก็บผลงาน"}</button></span>
                     </article>
                   );
                 })}
@@ -3130,6 +3163,7 @@ export default function Home() {
                   const submissions = workSubmissionsByItem.get(item.id) ?? [];
                   const dueState = item.status === "done" ? "done" : item.dueDate < todayDate ? "overdue" : item.dueDate === todayDate ? "today" : "upcoming";
                   const actionLabel = item.status === "todo" ? "เริ่มงาน" : item.status === "in_progress" ? "ส่งงาน" : item.status === "review" && isEmployeeUser ? "ดูงานที่ส่ง" : item.status === "review" ? "ตรวจงาน" : "ดูผลงาน";
+                  const visibleActionLabel = isEmployeePreview ? (submissions.length ? `ดูหลักฐาน ${submissions.length}` : "ดูรายละเอียด") : actionLabel;
                   return (
                     <article className={`simple-task-row ${dueState}`} key={item.id}>
                       <span className={`simple-task-check ${item.status}`} aria-hidden="true">{item.status === "done" ? "✓" : item.status === "review" ? "⌕" : item.status === "in_progress" ? "→" : ""}</span>
@@ -3147,7 +3181,7 @@ export default function Home() {
                         <div className="simple-task-owner">{assignee ? <EmployeeAvatar employee={assignee} profile={employeeProfilesById.get(assignee.id)} className="avatar-simple-task" /> : <i className="avatar-media avatar-simple-task">PP</i>}<span><small>ผู้รับผิดชอบ</small><strong>{assignee?.name ?? "ยังไม่ระบุ"}</strong></span></div>
                         <div className="simple-task-progress"><span><small>ความคืบหน้า</small><strong>{item.progress}%</strong></span><i><b style={{ width: `${item.progress}%` }} /></i></div>
                       </div>
-                      <div className="simple-task-actions">{!isEmployeeUser && <button onClick={() => openWorkItemForm(item)}>แก้ไขงาน</button>}<button className="primary" disabled={quickUpdatingWorkId === item.id} onClick={() => item.status === "todo" ? void startWorkItem(item) : openSubmissionCenter(item)}>{quickUpdatingWorkId === item.id ? "กำลังเริ่ม..." : actionLabel}</button></div>
+                      <div className="simple-task-actions">{!isEmployeeUser && <button onClick={() => openWorkItemForm(item)}>แก้ไขงาน</button>}<button className="primary" disabled={quickUpdatingWorkId === item.id} onClick={() => isEmployeePreview ? openSubmissionCenter(item) : item.status === "todo" ? void startWorkItem(item) : openSubmissionCenter(item)}>{quickUpdatingWorkId === item.id ? "กำลังเริ่ม..." : visibleActionLabel}</button></div>
                     </article>
                   );
                 })}
@@ -3257,7 +3291,7 @@ export default function Home() {
               <div className="reward-center-heading"><div><p className="eyebrow">REWARD STORE</p><h2>สะสมแต้ม แลกกิฟต์วอเชอร์และรางวัล</h2><p>มีตั้งแต่คูปองเงินสด 100 บาท ราคา 1,000 แต้ม ไปจนถึง iPhone 18 ราคา 500,000 แต้ม</p></div><span><strong>{formatMoney(totalPoints)}</strong> แต้มในระบบ</span></div>
               <div className="reward-center-grid">
                 <div className="reward-catalog">
-                  {rewards.filter((reward) => reward.isActive).map((reward) => <article key={reward.id}><span className={`reward-icon ${reward.category}`}>{reward.icon}</span><div><b>{reward.title}</b><p>{reward.description}</p><small>เหลือ {reward.stock} สิทธิ์</small></div><div className="reward-cost"><strong>{formatMoney(reward.costPoints)}</strong><small>แต้ม</small><button disabled={reward.stock <= 0} onClick={() => { setRewardToRedeem(reward); setRewardEmployeeId(isEmployeeUser ? currentUser?.employeeId ?? "" : leaderboard[0]?.employee.id ?? employees[0]?.id ?? ""); }}>{reward.stock > 0 ? "แลกรางวัล" : "หมดแล้ว"}</button></div></article>)}
+                  {rewards.filter((reward) => reward.isActive).map((reward) => <article key={reward.id}><span className={`reward-icon ${reward.category}`}>{reward.icon}</span><div><b>{reward.title}</b><p>{reward.description}</p><small>เหลือ {reward.stock} สิทธิ์</small></div><div className="reward-cost"><strong>{formatMoney(reward.costPoints)}</strong><small>แต้ม</small><button disabled={isEmployeePreview || reward.stock <= 0} onClick={() => { setRewardToRedeem(reward); setRewardEmployeeId(isEmployeeUser ? currentUser?.employeeId ?? "" : leaderboard[0]?.employee.id ?? employees[0]?.id ?? ""); }}>{isEmployeePreview ? "ทดลองดู" : reward.stock > 0 ? "แลกรางวัล" : "หมดแล้ว"}</button></div></article>)}
                 </div>
                 <aside className="redemption-history">
                   <div><p className="eyebrow">RECENT REQUESTS</p><h3>คำขอแลกล่าสุด</h3></div>
@@ -3370,7 +3404,7 @@ export default function Home() {
           <section className="work-submission-modal" role="dialog" aria-modal="true" aria-labelledby="work-submission-title">
             <div className="submission-hero">
               <EmployeeAvatar employee={submissionAssignee} profile={employeeProfilesById.get(submissionAssignee.id)} className="avatar-submission" />
-              <div><p className="eyebrow">WORK PROOF CENTER</p><h2 id="work-submission-title">ส่งหลักฐานงาน</h2><p>{submissionWorkItem.title} · {submissionAssignee.name}</p></div>
+              <div><p className="eyebrow">WORK PROOF CENTER</p><h2 id="work-submission-title">{isEmployeePreview ? "ดูหลักฐานงาน" : "ส่งหลักฐานงาน"}</h2><p>{submissionWorkItem.title} · {submissionAssignee.name}</p></div>
               <button className="modal-close dark" onClick={() => setSubmissionWorkItem(null)} aria-label="ปิดหน้าต่าง">×</button>
             </div>
             <div className="submission-body">
@@ -3395,10 +3429,10 @@ export default function Home() {
                         {submission.status === "submitted" && permissions.canReviewWork && <div className="submission-review"><input value={reviewerNote} onChange={(event) => setReviewerNote(event.target.value)} placeholder="หมายเหตุจากผู้ตรวจ (ถ้ามี)" /><button disabled={isSaving} onClick={() => void reviewWorkProof(submission, "revision")}>ส่งกลับแก้ไข</button><button className="approve" disabled={isSaving} onClick={() => void reviewWorkProof(submission, "approved")}>อนุมัติและปิดงาน ✓</button></div>}
                       </article>
                     ))}
-                    {!activeWorkSubmissions.length && <div className="submission-empty"><span>↗</span><strong>ยังไม่มีหลักฐานงาน</strong><p>เพิ่มลิงก์หรือแนบไฟล์ด้วยแบบฟอร์มด้านล่าง</p></div>}
+                    {!activeWorkSubmissions.length && <div className="submission-empty"><span>↗</span><strong>ยังไม่มีหลักฐานงาน</strong><p>{isEmployeePreview ? "บัญชีพนักงานจริงจะสามารถเพิ่มลิงก์หรือแนบไฟล์ได้จากหน้านี้" : "เพิ่มลิงก์หรือแนบไฟล์ด้วยแบบฟอร์มด้านล่าง"}</p></div>}
                   </div>
                 </section>
-                {submissionWorkItem.status === "review" || submissionWorkItem.status === "done" ? <div className="submission-locked"><span>{submissionWorkItem.status === "done" ? "✓" : "⌕"}</span><div><strong>{submissionWorkItem.status === "done" ? "งานนี้ปิดเรียบร้อยแล้ว" : "หลักฐานกำลังรอตรวจ"}</strong><p>{submissionWorkItem.status === "done" ? "ดูหรือดาวน์โหลดหลักฐานเดิมได้จากประวัติด้านบน" : "หากผู้ตรวจส่งกลับแก้ไข ระบบจะเปิดแบบฟอร์มให้ส่งเวอร์ชันใหม่อีกครั้ง"}</p></div></div> : <form className="submission-form" onSubmit={submitWorkProof}>
+                {isEmployeePreview || submissionWorkItem.status === "review" || submissionWorkItem.status === "done" ? <div className={`submission-locked ${isEmployeePreview ? "preview-read-only" : ""}`}><span>{isEmployeePreview ? "◉" : submissionWorkItem.status === "done" ? "✓" : "⌕"}</span><div><strong>{isEmployeePreview ? "โหมดทดลองเป็นแบบอ่านอย่างเดียว" : submissionWorkItem.status === "done" ? "งานนี้ปิดเรียบร้อยแล้ว" : "หลักฐานกำลังรอตรวจ"}</strong><p>{isEmployeePreview ? "เปิดดูลิงก์และดาวน์โหลดหลักฐานเดิมได้ แต่จะไม่สร้างหรือเปลี่ยนข้อมูลใดๆ" : submissionWorkItem.status === "done" ? "ดูหรือดาวน์โหลดหลักฐานเดิมได้จากประวัติด้านบน" : "หากผู้ตรวจส่งกลับแก้ไข ระบบจะเปิดแบบฟอร์มให้ส่งเวอร์ชันใหม่อีกครั้ง"}</p></div></div> : <form className="submission-form" onSubmit={submitWorkProof}>
                   <div className="submission-section-heading"><div><p className="eyebrow">NEW SUBMISSION</p><h3>เพิ่มหลักฐาน</h3></div><span>รอตรวจ</span></div>
                   <div className="submission-form-grid">
                     <label><span>ประเภทหลักฐาน</span><select value={submissionForm.submissionType} onChange={(event) => setSubmissionForm((form) => ({ ...form, submissionType: event.target.value as WorkSubmissionRecord["submissionType"] }))}>{(Object.entries(submissionTypeLabels) as [WorkSubmissionRecord["submissionType"], string][]).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
