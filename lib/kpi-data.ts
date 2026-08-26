@@ -382,7 +382,7 @@ export const periods = [
   "ไตรมาส 1 · ปี 2569",
 ];
 
-export const roles: RoleTemplate[] = [
+const legacyRoles: RoleTemplate[] = [
   {
     id: "sales-manager",
     name: "ผู้จัดการฝ่ายขาย",
@@ -505,6 +505,202 @@ export const roles: RoleTemplate[] = [
   },
 ];
 
+export const roles: RoleTemplate[] = [
+  {
+    id: "growth-commerce-manager",
+    name: "ผู้จัดการทีมหน้าบ้านและการเติบโต",
+    shortName: "Growth Lead",
+    department: "ทีมหน้าบ้านและการเติบโต",
+    departmentId: "growth-commerce",
+    trend: 4.8,
+    kpis: [
+      { id: "growth-team-revenue", name: "รายได้สุทธิของทีมเทียบเป้าหมาย", weight: 30, target: "ตามเป้ารายเดือนที่อนุมัติ" },
+      { id: "growth-contribution-margin", name: "กำไรส่วนเพิ่มหลังหักค่าโฆษณา", weight: 25, target: "ดีขึ้นจากฐานเดิม" },
+      { id: "growth-experiment-velocity", name: "การทดลองที่สรุปผลและนำไปใช้", weight: 20, target: "≥ 4 การทดลอง/เดือน" },
+      { id: "growth-team-readiness", name: "ความพร้อมและการพัฒนาสกิลทีม", weight: 25, target: "≥ 85%" },
+    ],
+    skills: completeSkillFramework([
+      { id: "growth-strategy", name: "การวางกลยุทธ์ Growth", target: "ระดับ 5 จาก 5", targetLevel: 5, description: "แปลงเป้ารายได้เป็นกลยุทธ์ ช่องทาง และแผนลงมือทำของทีม" },
+      { id: "funnel-management", name: "การบริหาร Funnel ตั้งแต่เข้าชมถึงซื้อซ้ำ", target: "ระดับ 4 จาก 5", targetLevel: 4, description: "มองเห็นคอขวดและเชื่อมงานคอนเทนต์ โฆษณา ร้านค้า และ CRM เข้าด้วยกัน" },
+      { id: "revenue-profit-analysis", name: "การวิเคราะห์รายได้ กำไร และ Unit Economics", target: "ระดับ 4 จาก 5", targetLevel: 4 },
+      { id: "forecast-budget", name: "การพยากรณ์ยอดและจัดสรรงบ", target: "ระดับ 4 จาก 5", targetLevel: 4 },
+      { id: "experiment-management", name: "การออกแบบและบริหารการทดลอง", target: "ระดับ 4 จาก 5", targetLevel: 4 },
+      { id: "team-coaching", name: "การโค้ชและยกระดับคนในทีม", target: "ระดับ 4 จาก 5", targetLevel: 4 },
+      { id: "work-prioritization", name: "การจัดลำดับงานตามผลกระทบ", target: "ระดับ 5 จาก 5", targetLevel: 5 },
+      { id: "cross-functional-leadership", name: "การนำทีมข้ามสายงาน", target: "ระดับ 4 จาก 5", targetLevel: 4 },
+    ]),
+  },
+  {
+    id: "customer-insight-marketer",
+    name: "นักการตลาดด้าน Customer Insight",
+    shortName: "Insight",
+    department: "ทีมหน้าบ้านและการเติบโต",
+    departmentId: "growth-commerce",
+    trend: 4.2,
+    kpis: [
+      { id: "insight-qualified-findings", name: "Insight ที่นำไปใช้กับแคมเปญได้", weight: 30, target: "≥ 4 ชุด/เดือน" },
+      { id: "insight-content-win-rate", name: "อัตราคอนเทนต์จาก Insight ที่ผ่านเกณฑ์", weight: 25, target: "ดีขึ้นจากฐานเดิม" },
+      { id: "insight-research-coverage", name: "ความครอบคลุมเสียงลูกค้าและคู่แข่ง", weight: 25, target: "ครบตามแผนรายเดือน" },
+      { id: "insight-brief-delivery", name: "ส่ง Creative Brief ตรงเวลาและครบถ้วน", weight: 20, target: "≥ 95%" },
+    ],
+    skills: completeSkillFramework([
+      { id: "voice-of-customer-research", name: "การวิจัยเสียงและปัญหาของลูกค้า", target: "ระดับ 4 จาก 5", targetLevel: 4 },
+      { id: "market-competitor-analysis", name: "การวิเคราะห์ตลาดและคู่แข่ง", target: "ระดับ 4 จาก 5", targetLevel: 4 },
+      { id: "customer-segmentation", name: "การแบ่งกลุ่มลูกค้าและ Persona", target: "ระดับ 4 จาก 5", targetLevel: 4 },
+      { id: "content-strategy", name: "กลยุทธ์คอนเทนต์ตาม Customer Journey", target: "ระดับ 4 จาก 5", targetLevel: 4 },
+      { id: "hook-storytelling", name: "การหา Hook และเล่าเรื่องให้ตรงกลุ่ม", target: "ระดับ 4 จาก 5", targetLevel: 4 },
+      { id: "creative-briefing", name: "การเขียน Creative Brief ที่นำไปผลิตได้", target: "ระดับ 4 จาก 5", targetLevel: 4 },
+      { id: "content-performance-analysis", name: "การอ่านผลคอนเทนต์และสรุปบทเรียน", target: "ระดับ 4 จาก 5", targetLevel: 4 },
+    ]),
+  },
+  {
+    id: "offer-conversion-marketer",
+    name: "นักการตลาดด้าน Offer & Conversion",
+    shortName: "Conversion",
+    department: "ทีมหน้าบ้านและการเติบโต",
+    departmentId: "growth-commerce",
+    trend: 4.5,
+    kpis: [
+      { id: "conversion-rate-lift", name: "อัตรา Conversion ดีขึ้นจากฐานเดิม", weight: 30, target: "ดีขึ้นต่อเนื่อง" },
+      { id: "average-order-value", name: "มูลค่าคำสั่งซื้อเฉลี่ย", weight: 25, target: "ตามเป้ากำไร" },
+      { id: "winning-offers", name: "ข้อเสนอที่ผ่านเกณฑ์และนำไปขยายผล", weight: 25, target: "≥ 2 ข้อเสนอ/เดือน" },
+      { id: "conversion-test-delivery", name: "การทดลองที่สรุปผลตามกำหนด", weight: 20, target: "≥ 90%" },
+    ],
+    skills: completeSkillFramework([
+      { id: "conversion-copywriting", name: "การเขียน Copy เพื่อสร้างยอดขาย", target: "ระดับ 4 จาก 5", targetLevel: 4 },
+      { id: "offer-design", name: "การออกแบบข้อเสนอ ราคา และคุณค่า", target: "ระดับ 5 จาก 5", targetLevel: 5 },
+      { id: "bundle-upsell-strategy", name: "การวาง Bundle, Upsell และ Cross-sell", target: "ระดับ 4 จาก 5", targetLevel: 4 },
+      { id: "landing-page-cro", name: "การปรับ Landing Page และ CRO", target: "ระดับ 4 จาก 5", targetLevel: 4 },
+      { id: "funnel-conversion-analysis", name: "การวิเคราะห์ Conversion Funnel", target: "ระดับ 4 จาก 5", targetLevel: 4 },
+      { id: "ab-testing", name: "การออกแบบ A/B Test ที่สรุปผลได้", target: "ระดับ 4 จาก 5", targetLevel: 4 },
+      { id: "pricing-margin", name: "ความเข้าใจราคา ต้นทุน และกำไร", target: "ระดับ 4 จาก 5", targetLevel: 4 },
+      { id: "sales-page-optimization", name: "การปรับหน้าขายและเส้นทางสั่งซื้อ", target: "ระดับ 4 จาก 5", targetLevel: 4 },
+    ]),
+  },
+  {
+    id: "crm-retention-marketer",
+    name: "นักการตลาดด้าน CRM & Retention",
+    shortName: "CRM",
+    department: "ทีมหน้าบ้านและการเติบโต",
+    departmentId: "growth-commerce",
+    trend: 4.1,
+    kpis: [
+      { id: "crm-repeat-revenue", name: "รายได้จากลูกค้าเดิม", weight: 30, target: "ดีขึ้นจากฐานเดิม" },
+      { id: "crm-repeat-purchase", name: "อัตราซื้อซ้ำและการรักษาลูกค้า", weight: 25, target: "ตามเป้ารายเดือน" },
+      { id: "crm-campaign-conversion", name: "Conversion จาก LINE / CRM", weight: 25, target: "ดีขึ้นต่อเนื่อง" },
+      { id: "crm-data-coverage", name: "ความครบถ้วนและคุณภาพข้อมูลลูกค้า", weight: 20, target: "≥ 95%" },
+    ],
+    skills: completeSkillFramework([
+      { id: "crm-segmentation", name: "การแบ่งกลุ่มลูกค้าจากข้อมูลจริง", target: "ระดับ 4 จาก 5", targetLevel: 4 },
+      { id: "customer-journey-design", name: "การออกแบบ Customer Journey", target: "ระดับ 4 จาก 5", targetLevel: 4 },
+      { id: "lifecycle-marketing", name: "Lifecycle Marketing และการซื้อซ้ำ", target: "ระดับ 4 จาก 5", targetLevel: 4 },
+      { id: "line-crm-operations", name: "การบริหาร LINE OA และ CRM", target: "ระดับ 4 จาก 5", targetLevel: 4 },
+      { id: "marketing-automation", name: "การสร้าง Marketing Automation", target: "ระดับ 4 จาก 5", targetLevel: 4 },
+      { id: "retention-campaign-design", name: "การออกแบบแคมเปญรักษาลูกค้า", target: "ระดับ 4 จาก 5", targetLevel: 4 },
+      { id: "cohort-ltv-analysis", name: "การวิเคราะห์ Cohort และ LTV", target: "ระดับ 4 จาก 5", targetLevel: 4 },
+      { id: "customer-data-hygiene", name: "การดูแลคุณภาพและความยินยอมของข้อมูล", target: "ระดับ 4 จาก 5", targetLevel: 4 },
+    ]),
+  },
+  {
+    id: "performance-video-editor",
+    name: "นักตัดต่อวิดีโอสาย Performance",
+    shortName: "Perf. Edit",
+    department: "ทีมหน้าบ้านและการเติบโต",
+    departmentId: "growth-commerce",
+    trend: 4.4,
+    kpis: [
+      { id: "performance-creative-win-rate", name: "อัตราคลิปโฆษณาที่ผ่านเกณฑ์ชนะ", weight: 30, target: "ดีขึ้นจากฐานเดิม" },
+      { id: "performance-hook-retention", name: "Retention ช่วง 1–3 วินาทีแรก", weight: 25, target: "ตามเกณฑ์แต่ละแพลตฟอร์ม" },
+      { id: "performance-edit-delivery", name: "ส่งคลิปและ Variation ตรงเวลา", weight: 25, target: "≥ 95%" },
+      { id: "performance-first-pass", name: "งานผ่านตรวจคุณภาพรอบแรก", weight: 20, target: "≥ 85%" },
+    ],
+    skills: completeSkillFramework([
+      { id: "direct-response-editing", name: "การตัดต่อแบบ Direct Response", target: "ระดับ 5 จาก 5", targetLevel: 5 },
+      { id: "three-second-hook", name: "การสร้าง Hook ใน 1–3 วินาทีแรก", target: "ระดับ 4 จาก 5", targetLevel: 4 },
+      { id: "short-form-pacing", name: "จังหวะการเล่าเรื่องสำหรับวิดีโอสั้น", target: "ระดับ 4 จาก 5", targetLevel: 4 },
+      { id: "platform-video-adaptation", name: "การปรับงานให้เหมาะกับแต่ละแพลตฟอร์ม", target: "ระดับ 4 จาก 5", targetLevel: 4 },
+      { id: "creative-variation-production", name: "การผลิต Creative Variation อย่างเป็นระบบ", target: "ระดับ 4 จาก 5", targetLevel: 4 },
+      { id: "video-retention-analysis", name: "การอ่าน Retention, CTR และผลโฆษณา", target: "ระดับ 4 จาก 5", targetLevel: 4 },
+      { id: "caption-sound-design", name: "ซับไตเติล Motion และ Sound Design", target: "ระดับ 4 จาก 5", targetLevel: 4 },
+      { id: "ai-assisted-video-editing", name: "การใช้ AI ช่วยผลิตและตัดต่อวิดีโอ", target: "ระดับ 3 จาก 5", targetLevel: 3 },
+    ]),
+  },
+  {
+    id: "brand-content-video-editor",
+    name: "นักตัดต่อวิดีโอสาย Brand & Content",
+    shortName: "Brand Edit",
+    department: "ทีมหน้าบ้านและการเติบโต",
+    departmentId: "growth-commerce",
+    trend: 3.9,
+    kpis: [
+      { id: "brand-content-performance", name: "ผลงานคอนเทนต์หลังเผยแพร่", weight: 30, target: "ตามเป้าแต่ละคอนเทนต์" },
+      { id: "brand-consistency", name: "ความสม่ำเสมอของภาพและแบรนด์", weight: 25, target: "≥ 90%" },
+      { id: "brand-edit-delivery", name: "ส่งงานตัดต่อตรงเวลา", weight: 25, target: "≥ 95%" },
+      { id: "brand-first-pass", name: "งานผ่านคุณภาพรอบแรก", weight: 20, target: "≥ 85%" },
+    ],
+    skills: completeSkillFramework([
+      { id: "brand-storytelling", name: "การเล่าเรื่องและถ่ายทอดตัวตนแบรนด์", target: "ระดับ 4 จาก 5", targetLevel: 4 },
+      { id: "visual-composition", name: "องค์ประกอบภาพและ Visual Language", target: "ระดับ 4 จาก 5", targetLevel: 4 },
+      { id: "motion-graphics-brand", name: "Motion Graphics สำหรับงานแบรนด์", target: "ระดับ 4 จาก 5", targetLevel: 4 },
+      { id: "color-grading", name: "Color Grading และความสม่ำเสมอของภาพ", target: "ระดับ 4 จาก 5", targetLevel: 4 },
+      { id: "brand-sound-design", name: "Sound Design และการเลือกดนตรี", target: "ระดับ 4 จาก 5", targetLevel: 4 },
+      { id: "multi-platform-production", name: "การผลิตหลายสัดส่วนและหลายแพลตฟอร์ม", target: "ระดับ 4 จาก 5", targetLevel: 4 },
+      { id: "asset-version-management", name: "การจัดการไฟล์ต้นฉบับและเวอร์ชัน", target: "ระดับ 4 จาก 5", targetLevel: 4 },
+      { id: "ai-assisted-content-production", name: "การใช้ AI ช่วยงาน Creative Production", target: "ระดับ 3 จาก 5", targetLevel: 3 },
+    ]),
+  },
+  {
+    id: "marketplace-commerce-specialist",
+    name: "ผู้ดูแล TikTok Shop / Shopee / Lazada",
+    shortName: "Marketplace",
+    department: "ทีมหน้าบ้านและการเติบโต",
+    departmentId: "growth-commerce",
+    trend: 4.6,
+    kpis: [
+      { id: "marketplace-net-sales", name: "ยอดขายสุทธิรวม Marketplace", weight: 30, target: "ตามเป้ารายเดือน" },
+      { id: "marketplace-conversion", name: "อัตรา Conversion ของหน้าร้าน", weight: 25, target: "ดีขึ้นจากฐานเดิม" },
+      { id: "marketplace-margin", name: "กำไรหลังหักค่าธรรมเนียมและโปรโมชัน", weight: 20, target: "ไม่ต่ำกว่าเป้ากำไร" },
+      { id: "marketplace-account-health", name: "คุณภาพร้าน คำสั่งซื้อ และ Account Health", weight: 25, target: "≥ 95%" },
+    ],
+    skills: completeSkillFramework([
+      { id: "marketplace-operations", name: "การบริหาร TikTok Shop, Shopee และ Lazada", target: "ระดับ 5 จาก 5", targetLevel: 5 },
+      { id: "marketplace-seo-listing", name: "การทำ Listing, Keyword และ Marketplace SEO", target: "ระดับ 4 จาก 5", targetLevel: 4 },
+      { id: "marketplace-pricing-margin", name: "การตั้งราคา ค่าธรรมเนียม และกำไร", target: "ระดับ 4 จาก 5", targetLevel: 4 },
+      { id: "marketplace-promotion", name: "การวางโปรโมชัน Flash Sale และ Campaign", target: "ระดับ 4 จาก 5", targetLevel: 4 },
+      { id: "marketplace-ads", name: "การบริหารโฆษณาภายใน Marketplace", target: "ระดับ 4 จาก 5", targetLevel: 4 },
+      { id: "affiliate-live-commerce", name: "Affiliate, Creator และ Live Commerce", target: "ระดับ 4 จาก 5", targetLevel: 4 },
+      { id: "stock-order-sync", name: "การประสานสต็อก คำสั่งซื้อ และ Fulfillment", target: "ระดับ 4 จาก 5", targetLevel: 4 },
+      { id: "marketplace-account-health-skill", name: "การดูแลคะแนนร้านและ Account Health", target: "ระดับ 5 จาก 5", targetLevel: 5 },
+      { id: "marketplace-analytics", name: "การวิเคราะห์ยอดขายและ Conversion ราย SKU", target: "ระดับ 4 จาก 5", targetLevel: 4 },
+    ]),
+  },
+  {
+    id: "facebook-media-buyer",
+    name: "ผู้เชี่ยวชาญโฆษณา Facebook",
+    shortName: "Meta Ads",
+    department: "ทีมหน้าบ้านและการเติบโต",
+    departmentId: "growth-commerce",
+    trend: 5.0,
+    kpis: [
+      { id: "meta-profitable-revenue", name: "รายได้และกำไรจาก Facebook Ads", weight: 30, target: "ตามเป้ากำไรที่อนุมัติ" },
+      { id: "meta-acquisition-cost", name: "CPA / CAC เทียบเป้าหมาย", weight: 25, target: "ไม่เกินเพดานที่กำหนด" },
+      { id: "meta-winning-tests", name: "จำนวน Creative / Audience Test ที่ชนะ", weight: 25, target: "≥ 4 ชุด/เดือน" },
+      { id: "meta-tracking-budget-accuracy", name: "ความถูกต้องของ Tracking และงบ", weight: 20, target: "≥ 98%" },
+    ],
+    skills: completeSkillFramework([
+      { id: "meta-campaign-structure", name: "การวางโครงสร้างแคมเปญ Meta Ads", target: "ระดับ 5 จาก 5", targetLevel: 5 },
+      { id: "meta-audience-strategy", name: "Audience Strategy และ Retargeting", target: "ระดับ 4 จาก 5", targetLevel: 4 },
+      { id: "meta-creative-testing", name: "Creative Testing Framework", target: "ระดับ 5 จาก 5", targetLevel: 5 },
+      { id: "meta-budget-scaling", name: "การจัดงบและ Scale อย่างควบคุมความเสี่ยง", target: "ระดับ 5 จาก 5", targetLevel: 5 },
+      { id: "meta-pixel-capi", name: "Pixel, CAPI และ Event Tracking", target: "ระดับ 4 จาก 5", targetLevel: 4 },
+      { id: "meta-attribution", name: "Attribution และการอ่านข้อมูลข้ามช่องทาง", target: "ระดับ 4 จาก 5", targetLevel: 4 },
+      { id: "meta-unit-economics", name: "CAC, CPA, ROAS, MER และกำไรจริง", target: "ระดับ 5 จาก 5", targetLevel: 5 },
+      { id: "meta-performance-forecast", name: "การพยากรณ์ผลและวางแผน Media", target: "ระดับ 4 จาก 5", targetLevel: 4 },
+      { id: "meta-policy-risk", name: "นโยบายโฆษณาและการจัดการความเสี่ยงบัญชี", target: "ระดับ 4 จาก 5", targetLevel: 4 },
+    ]),
+  },
+];
+
 export const roleSalaryBands: Record<string, { min: number; mid: number; max: number }> = {
   "sales-manager": { min: 55000, mid: 70000, max: 90000 },
   marketing: { min: 30000, mid: 42000, max: 58000 },
@@ -512,6 +708,14 @@ export const roleSalaryBands: Record<string, { min: number; mid: number; max: nu
   developer: { min: 45000, mid: 65000, max: 90000 },
   "video-editor": { min: 28000, mid: 40000, max: 60000 },
   hr: { min: 32000, mid: 45000, max: 62000 },
+  "growth-commerce-manager": { min: 55000, mid: 75000, max: 100000 },
+  "customer-insight-marketer": { min: 30000, mid: 42000, max: 58000 },
+  "offer-conversion-marketer": { min: 32000, mid: 45000, max: 62000 },
+  "crm-retention-marketer": { min: 30000, mid: 43000, max: 60000 },
+  "performance-video-editor": { min: 28000, mid: 42000, max: 60000 },
+  "brand-content-video-editor": { min: 28000, mid: 40000, max: 60000 },
+  "marketplace-commerce-specialist": { min: 32000, mid: 48000, max: 75000 },
+  "facebook-media-buyer": { min: 38000, mid: 58000, max: 85000 },
 };
 
 const roleSkillPayMultiplier: Record<string, number> = {
@@ -521,6 +725,14 @@ const roleSkillPayMultiplier: Record<string, number> = {
   developer: 1.5,
   "video-editor": 1.2,
   hr: 1,
+  "growth-commerce-manager": 1.3,
+  "customer-insight-marketer": 1,
+  "offer-conversion-marketer": 1.1,
+  "crm-retention-marketer": 1.1,
+  "performance-video-editor": 1.2,
+  "brand-content-video-editor": 1.1,
+  "marketplace-commerce-specialist": 1.2,
+  "facebook-media-buyer": 1.3,
 };
 
 export const skillAllowanceByLevel: Record<number, number> = { 1: 0, 2: 500, 3: 800, 4: 1200, 5: 1800 };
@@ -531,15 +743,26 @@ export function skillAllowanceFor(roleId: string, level: number) {
   return Math.round(base * multiplier / 100) * 100;
 }
 
+export const seedEmployeeLegacyRoleIds: Record<string, string> = {
+  "emp-narin": "sales-manager",
+  "emp-pimchanok": "marketing",
+  "emp-thanawat": "customer-service",
+  "emp-supakorn": "developer",
+  "emp-kanyarat": "hr",
+  "emp-nattapong": "sales-manager",
+  "emp-sirilak": "marketing",
+  "emp-pattarapon": "developer",
+};
+
 export const seedEmployees: EmployeeRecord[] = [
-  { id: "emp-narin", initials: "นก", name: "นรินทร์ กิตติคุณ", email: "narin@peoplepulse.co", roleId: "sales-manager", manager: "วารุณี ภักดี", status: "active", latestScore: 92, latestSkillScore: 88, latestPeriod: periods[0], updatedAt: "2026-08-02T09:30:00.000Z" },
-  { id: "emp-pimchanok", initials: "พส", name: "พิมพ์ชนก สุขใจ", email: "pimchanok@peoplepulse.co", roleId: "marketing", manager: "อรทัย ศรีสุข", status: "active", latestScore: 87, latestSkillScore: 84, latestPeriod: periods[0], updatedAt: "2026-08-01T08:20:00.000Z" },
-  { id: "emp-thanawat", initials: "ธพ", name: "ธนวัฒน์ พงศ์ศรี", email: "thanawat@peoplepulse.co", roleId: "customer-service", manager: "กมลชนก มั่นคง", status: "active", latestScore: 71, latestSkillScore: 74, latestPeriod: periods[0], updatedAt: "2026-07-28T04:10:00.000Z" },
-  { id: "emp-supakorn", initials: "ศว", name: "ศุภกร วัฒนะ", email: "supakorn@peoplepulse.co", roleId: "developer", manager: "ณัฐวุฒิ สายชล", status: "active", latestScore: 89, latestSkillScore: 91, latestPeriod: periods[0], updatedAt: "2026-08-03T03:45:00.000Z" },
-  { id: "emp-kanyarat", initials: "กช", name: "กัญญารัตน์ ชัยพร", email: "kanyarat@peoplepulse.co", roleId: "hr", manager: "วารุณี ภักดี", status: "active", latestScore: 82, latestSkillScore: 86, latestPeriod: periods[0], updatedAt: "2026-07-30T07:15:00.000Z" },
-  { id: "emp-nattapong", initials: "ณต", name: "ณัฐพงษ์ ตั้งใจ", email: "nattapong@peoplepulse.co", roleId: "sales-manager", manager: "วารุณี ภักดี", status: "active", latestScore: 84, latestSkillScore: 79, latestPeriod: periods[0], updatedAt: "2026-07-29T11:05:00.000Z" },
-  { id: "emp-sirilak", initials: "ศร", name: "ศิริลักษณ์ รุ่งเรือง", email: "sirilak@peoplepulse.co", roleId: "marketing", manager: "อรทัย ศรีสุข", status: "active", latestScore: null, latestSkillScore: null, latestPeriod: null, updatedAt: "2026-07-20T06:00:00.000Z" },
-  { id: "emp-pattarapon", initials: "ภพ", name: "ภัทรพล พูนทรัพย์", email: "pattarapon@peoplepulse.co", roleId: "developer", manager: "ณัฐวุฒิ สายชล", status: "active", latestScore: null, latestSkillScore: null, latestPeriod: null, updatedAt: "2026-07-18T05:50:00.000Z" },
+  { id: "emp-narin", initials: "นก", name: "นรินทร์ กิตติคุณ", email: "narin@peoplepulse.co", roleId: "growth-commerce-manager", manager: "ธนชัย ใจแสน", status: "active", latestScore: 92, latestSkillScore: 88, latestPeriod: periods[0], updatedAt: "2026-08-26T12:00:00.000Z" },
+  { id: "emp-pimchanok", initials: "พส", name: "พิมพ์ชนก สุขใจ", email: "pimchanok@peoplepulse.co", roleId: "customer-insight-marketer", manager: "นรินทร์ กิตติคุณ", status: "active", latestScore: 87, latestSkillScore: 84, latestPeriod: periods[0], updatedAt: "2026-08-26T12:00:00.000Z" },
+  { id: "emp-sirilak", initials: "ศร", name: "ศิริลักษณ์ รุ่งเรือง", email: "sirilak@peoplepulse.co", roleId: "offer-conversion-marketer", manager: "นรินทร์ กิตติคุณ", status: "active", latestScore: null, latestSkillScore: null, latestPeriod: null, updatedAt: "2026-08-26T12:00:00.000Z" },
+  { id: "emp-kanyarat", initials: "กช", name: "กัญญารัตน์ ชัยพร", email: "kanyarat@peoplepulse.co", roleId: "crm-retention-marketer", manager: "นรินทร์ กิตติคุณ", status: "active", latestScore: 82, latestSkillScore: 86, latestPeriod: periods[0], updatedAt: "2026-08-26T12:00:00.000Z" },
+  { id: "emp-thanawat", initials: "ธพ", name: "ธนวัฒน์ พงศ์ศรี", email: "thanawat@peoplepulse.co", roleId: "performance-video-editor", manager: "นรินทร์ กิตติคุณ", status: "active", latestScore: 71, latestSkillScore: 74, latestPeriod: periods[0], updatedAt: "2026-08-26T12:00:00.000Z" },
+  { id: "emp-pattarapon", initials: "ภพ", name: "ภัทรพล พูนทรัพย์", email: "pattarapon@peoplepulse.co", roleId: "brand-content-video-editor", manager: "นรินทร์ กิตติคุณ", status: "active", latestScore: null, latestSkillScore: null, latestPeriod: null, updatedAt: "2026-08-26T12:00:00.000Z" },
+  { id: "emp-supakorn", initials: "ศว", name: "ศุภกร วัฒนะ", email: "supakorn@peoplepulse.co", roleId: "marketplace-commerce-specialist", manager: "นรินทร์ กิตติคุณ", status: "active", latestScore: 89, latestSkillScore: 91, latestPeriod: periods[0], updatedAt: "2026-08-26T12:00:00.000Z" },
+  { id: "emp-nattapong", initials: "ณต", name: "ณัฐพงษ์ ตั้งใจ", email: "nattapong@peoplepulse.co", roleId: "facebook-media-buyer", manager: "นรินทร์ กิตติคุณ", status: "active", latestScore: 84, latestSkillScore: 79, latestPeriod: periods[0], updatedAt: "2026-08-26T12:00:00.000Z" },
 ];
 
 export const seedHrProfiles: HrProfileRecord[] = [
@@ -561,15 +784,15 @@ export const seedAttendanceRecords: AttendanceRecord[] = [
 ];
 
 export const seedSkillAchievements: SkillAchievementRecord[] = [
-  { id: "achievement-narin-negotiation-4", employeeId: "emp-narin", roleId: "sales-manager", skillId: "negotiation", skillName: "การเจรจาต่อรอง", level: 4, monthlyAllowance: 1400, verifiedBy: "ฝ่ายทรัพยากรบุคคล", verifiedAt: "2026-08-05T04:00:00.000Z", evidenceUrl: "", note: "ผ่านการทดสอบและมีผลงานปิดดีลตามเกณฑ์", createdAt: "2026-08-05T04:00:00.000Z" },
-  { id: "achievement-supakorn-engineering-4", employeeId: "emp-supakorn", roleId: "developer", skillId: "engineering", skillName: "ทักษะวิศวกรรมซอฟต์แวร์", level: 4, monthlyAllowance: 1800, verifiedBy: "ฝ่ายทรัพยากรบุคคล", verifiedAt: "2026-08-08T04:00:00.000Z", evidenceUrl: "", note: "ผ่านผลงานจริงและการทดสอบระดับ 4", createdAt: "2026-08-08T04:00:00.000Z" },
+  { id: "achievement-narin-negotiation-4", employeeId: "emp-narin", roleId: "growth-commerce-manager", skillId: "growth-strategy", skillName: "การวางกลยุทธ์ Growth", level: 4, monthlyAllowance: 1600, verifiedBy: "ฝ่ายทรัพยากรบุคคล", verifiedAt: "2026-08-05T04:00:00.000Z", evidenceUrl: "", note: "ผ่านการทดสอบและมีแผน Growth ที่นำไปใช้จริง", createdAt: "2026-08-05T04:00:00.000Z" },
+  { id: "achievement-supakorn-engineering-4", employeeId: "emp-supakorn", roleId: "marketplace-commerce-specialist", skillId: "marketplace-operations", skillName: "การบริหาร TikTok Shop, Shopee และ Lazada", level: 4, monthlyAllowance: 1400, verifiedBy: "ฝ่ายทรัพยากรบุคคล", verifiedAt: "2026-08-08T04:00:00.000Z", evidenceUrl: "", note: "ผ่านผลงานจริงและการทดสอบระดับ 4", createdAt: "2026-08-08T04:00:00.000Z" },
 ];
 
 export const seedTalentActions: TalentActionRecord[] = [
-  { id: "action-thanawat-test", employeeId: "emp-thanawat", type: "skill_test", title: "ทดสอบการแก้ปัญหาและความรู้ผลิตภัณฑ์", status: "planned", score: null, dueDate: "2026-08-28", targetRoleId: "customer-service", createdAt: "2026-08-04T03:00:00.000Z", updatedAt: "2026-08-04T03:00:00.000Z" },
-  { id: "action-nattapong-upskill", employeeId: "emp-nattapong", type: "upskill", title: "โปรแกรม Coaching for Performance", status: "in_progress", score: null, dueDate: "2026-09-15", targetRoleId: "sales-manager", createdAt: "2026-08-04T03:10:00.000Z", updatedAt: "2026-08-10T03:10:00.000Z" },
-  { id: "action-pim-role", employeeId: "emp-pimchanok", type: "role_review", title: "ประเมินความพร้อมสายงาน People Analytics", status: "planned", score: null, dueDate: "2026-09-05", targetRoleId: "hr", createdAt: "2026-08-04T03:20:00.000Z", updatedAt: "2026-08-04T03:20:00.000Z" },
-  { id: "action-narin-salary", employeeId: "emp-narin", type: "salary_review", title: "ทบทวนค่าตอบแทนตามผลงาน", status: "planned", score: null, dueDate: "2026-10-01", targetRoleId: "sales-manager", createdAt: "2026-08-04T03:30:00.000Z", updatedAt: "2026-08-04T03:30:00.000Z" },
+  { id: "action-thanawat-test", employeeId: "emp-thanawat", type: "skill_test", title: "ทดสอบ Direct Response Editing และ Video Retention", status: "planned", score: null, dueDate: "2026-08-28", targetRoleId: "performance-video-editor", createdAt: "2026-08-04T03:00:00.000Z", updatedAt: "2026-08-04T03:00:00.000Z" },
+  { id: "action-nattapong-upskill", employeeId: "emp-nattapong", type: "upskill", title: "พัฒนา CAPI, Attribution และ Creative Testing", status: "in_progress", score: null, dueDate: "2026-09-15", targetRoleId: "facebook-media-buyer", createdAt: "2026-08-04T03:10:00.000Z", updatedAt: "2026-08-10T03:10:00.000Z" },
+  { id: "action-pim-role", employeeId: "emp-pimchanok", type: "role_review", title: "ประเมินความพร้อม Senior Customer Insight Strategist", status: "planned", score: null, dueDate: "2026-09-05", targetRoleId: "customer-insight-marketer", createdAt: "2026-08-04T03:20:00.000Z", updatedAt: "2026-08-04T03:20:00.000Z" },
+  { id: "action-narin-salary", employeeId: "emp-narin", type: "salary_review", title: "ทบทวนค่าตอบแทนตามผลงาน Growth ของทีม", status: "planned", score: null, dueDate: "2026-10-01", targetRoleId: "growth-commerce-manager", createdAt: "2026-08-04T03:30:00.000Z", updatedAt: "2026-08-04T03:30:00.000Z" },
 ];
 
 export const seedProjects: ProjectRecord[] = [
@@ -640,7 +863,7 @@ export const seedEmploymentContracts: EmploymentContractRecord[] = [
 ];
 
 export function getRole(roleId: string) {
-  return roles.find((role) => role.id === roleId) ?? roles[0];
+  return roles.find((role) => role.id === roleId) ?? legacyRoles.find((role) => role.id === roleId) ?? roles[0];
 }
 
 export function scoreStatus(score: number | null): ScoreStatus | "รอประเมิน" {

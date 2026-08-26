@@ -19,6 +19,7 @@ import {
   seedEmployees,
   seedApplicationDocuments,
   seedEmployeeProfiles,
+  seedEmployeeLegacyRoleIds,
   seedEmploymentContracts,
   seedHrProfiles,
   seedPointLedger,
@@ -54,12 +55,42 @@ let seedInitialization: Promise<void> | null = null;
 async function initializeSeedData() {
   await ensureDatabase();
   const db = getDb();
-  const [existingEmployee] = await db.select({ id: employees.id }).from(employees).limit(1);
-  if (!existingEmployee) {
-    await db.insert(employees).values(seedEmployees.map((employee) => ({
-      ...employee,
-      createdAt: employee.updatedAt,
-    }))).onConflictDoNothing();
+  for (const employee of seedEmployees) {
+    const [existingEmployee] = await db.select().from(employees).where(eq(employees.id, employee.id)).limit(1);
+    if (!existingEmployee) {
+      await db.insert(employees).values({ ...employee, createdAt: employee.updatedAt }).onConflictDoNothing();
+      continue;
+    }
+
+    const legacyRoleId = seedEmployeeLegacyRoleIds[employee.id];
+    const isUnmodifiedDemoEmployee = Boolean(
+      legacyRoleId
+      && existingEmployee.roleId === legacyRoleId
+      && existingEmployee.name === employee.name
+      && existingEmployee.email === employee.email,
+    );
+    if (!isUnmodifiedDemoEmployee) continue;
+
+    await db.update(employees).set({
+      roleId: employee.roleId,
+      manager: employee.manager,
+      updatedAt: employee.updatedAt,
+    }).where(eq(employees.id, employee.id));
+
+    if (existingEmployee.latestPeriod && existingEmployee.latestScore !== null) {
+      const [seededEvaluation] = await db.select().from(evaluations).where(and(
+        eq(evaluations.employeeId, employee.id),
+        eq(evaluations.period, existingEmployee.latestPeriod),
+      )).limit(1);
+      if (seededEvaluation?.note === "ข้อมูลตั้งต้นสำหรับรอบประเมิน" && seededEvaluation.evaluator === "ฝ่ายทรัพยากรบุคคล") {
+        const role = getRole(employee.roleId);
+        const skillLevel = Math.max(1, Math.min(5, Math.round((existingEmployee.latestSkillScore ?? 80) / 20)));
+        await db.update(evaluations).set({
+          kpiScores: Object.fromEntries(role.kpis.map((kpi) => [kpi.id, existingEmployee.latestScore ?? 80])),
+          skillScores: Object.fromEntries(role.skills.map((skill) => [skill.id, skillLevel])),
+        }).where(eq(evaluations.id, seededEvaluation.id));
+      }
+    }
   }
 
   const [existingEvaluation] = await db.select({ id: evaluations.id }).from(evaluations).limit(1);
@@ -88,14 +119,42 @@ async function initializeSeedData() {
   const [existingHrProfile] = await db.select({ employeeId: hrProfiles.employeeId }).from(hrProfiles).limit(1);
   if (!existingHrProfile) await db.insert(hrProfiles).values(seedHrProfiles).onConflictDoNothing();
 
-  const [existingTalentAction] = await db.select({ id: talentActions.id }).from(talentActions).limit(1);
-  if (!existingTalentAction) await db.insert(talentActions).values(seedTalentActions).onConflictDoNothing();
+  for (const action of seedTalentActions) await db.insert(talentActions).values(action).onConflictDoNothing();
+  const legacyTalentActionRoles: Record<string, string> = {
+    "action-thanawat-test": "customer-service",
+    "action-nattapong-upskill": "sales-manager",
+    "action-pim-role": "hr",
+    "action-narin-salary": "sales-manager",
+  };
+  for (const action of seedTalentActions) {
+    const [existingAction] = await db.select().from(talentActions).where(eq(talentActions.id, action.id)).limit(1);
+    if (existingAction?.targetRoleId !== legacyTalentActionRoles[action.id]) continue;
+    await db.update(talentActions).set({
+      title: action.title,
+      targetRoleId: action.targetRoleId,
+      updatedAt: action.updatedAt,
+    }).where(eq(talentActions.id, action.id));
+  }
 
   const [existingAttendanceRecord] = await db.select({ id: attendanceRecords.id }).from(attendanceRecords).limit(1);
   if (!existingAttendanceRecord) await db.insert(attendanceRecords).values(seedAttendanceRecords).onConflictDoNothing();
 
-  const [existingSkillAchievement] = await db.select({ id: skillAchievements.id }).from(skillAchievements).limit(1);
-  if (!existingSkillAchievement) await db.insert(skillAchievements).values(seedSkillAchievements).onConflictDoNothing();
+  for (const achievement of seedSkillAchievements) await db.insert(skillAchievements).values(achievement).onConflictDoNothing();
+  const legacyAchievementSkills: Record<string, string> = {
+    "achievement-narin-negotiation-4": "negotiation",
+    "achievement-supakorn-engineering-4": "engineering",
+  };
+  for (const achievement of seedSkillAchievements) {
+    const [existingAchievement] = await db.select().from(skillAchievements).where(eq(skillAchievements.id, achievement.id)).limit(1);
+    if (existingAchievement?.skillId !== legacyAchievementSkills[achievement.id]) continue;
+    await db.update(skillAchievements).set({
+      roleId: achievement.roleId,
+      skillId: achievement.skillId,
+      skillName: achievement.skillName,
+      monthlyAllowance: achievement.monthlyAllowance,
+      note: achievement.note,
+    }).where(eq(skillAchievements.id, achievement.id));
+  }
 
   const [existingProject] = await db.select({ id: projects.id }).from(projects).limit(1);
   if (!existingProject) await db.insert(projects).values(seedProjects).onConflictDoNothing();

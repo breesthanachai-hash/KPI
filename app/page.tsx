@@ -174,6 +174,14 @@ const roleTalentProfiles: Record<string, Record<TalentDimensionId, number>> = {
   developer: { analysis: 5, communication: 3, problemSolving: 5, leadership: 3, execution: 5 },
   "video-editor": { analysis: 4, communication: 4, problemSolving: 4, leadership: 3, execution: 5 },
   hr: { analysis: 4, communication: 5, problemSolving: 4, leadership: 5, execution: 4 },
+  "growth-commerce-manager": { analysis: 5, communication: 4, problemSolving: 5, leadership: 5, execution: 4 },
+  "customer-insight-marketer": { analysis: 5, communication: 5, problemSolving: 4, leadership: 3, execution: 4 },
+  "offer-conversion-marketer": { analysis: 5, communication: 5, problemSolving: 5, leadership: 3, execution: 4 },
+  "crm-retention-marketer": { analysis: 5, communication: 4, problemSolving: 4, leadership: 3, execution: 5 },
+  "performance-video-editor": { analysis: 4, communication: 4, problemSolving: 4, leadership: 2, execution: 5 },
+  "brand-content-video-editor": { analysis: 3, communication: 5, problemSolving: 4, leadership: 2, execution: 5 },
+  "marketplace-commerce-specialist": { analysis: 5, communication: 4, problemSolving: 5, leadership: 3, execution: 5 },
+  "facebook-media-buyer": { analysis: 5, communication: 3, problemSolving: 5, leadership: 3, execution: 5 },
 };
 
 const skillDimensionWeights: Record<string, Partial<Record<TalentDimensionId, number>>> = {
@@ -201,6 +209,71 @@ const skillDimensionWeights: Record<string, Partial<Record<TalentDimensionId, nu
   "labor-practice": { execution: .7, analysis: .3 },
   facilitation: { communication: .7, leadership: .3 },
   "talent-development": { leadership: .6, communication: .4 },
+  "growth-strategy": { analysis: .45, leadership: .35, execution: .2 },
+  "funnel-management": { analysis: .5, problemSolving: .3, execution: .2 },
+  "revenue-profit-analysis": { analysis: .8, problemSolving: .2 },
+  "forecast-budget": { analysis: .6, execution: .4 },
+  "experiment-management": { analysis: .35, problemSolving: .4, execution: .25 },
+  "team-coaching": { leadership: .7, communication: .3 },
+  "work-prioritization": { analysis: .3, leadership: .25, execution: .45 },
+  "cross-functional-leadership": { leadership: .6, communication: .4 },
+  "voice-of-customer-research": { analysis: .55, communication: .45 },
+  "market-competitor-analysis": { analysis: .8, problemSolving: .2 },
+  "customer-segmentation": { analysis: .7, problemSolving: .3 },
+  "content-strategy": { analysis: .35, communication: .45, execution: .2 },
+  "hook-storytelling": { communication: .7, problemSolving: .3 },
+  "creative-briefing": { communication: .6, execution: .4 },
+  "content-performance-analysis": { analysis: .75, problemSolving: .25 },
+  "conversion-copywriting": { communication: .7, problemSolving: .3 },
+  "offer-design": { analysis: .3, communication: .3, problemSolving: .4 },
+  "bundle-upsell-strategy": { analysis: .5, problemSolving: .5 },
+  "landing-page-cro": { analysis: .4, problemSolving: .4, execution: .2 },
+  "funnel-conversion-analysis": { analysis: .7, problemSolving: .3 },
+  "ab-testing": { analysis: .55, problemSolving: .3, execution: .15 },
+  "pricing-margin": { analysis: .8, problemSolving: .2 },
+  "sales-page-optimization": { communication: .35, problemSolving: .35, execution: .3 },
+  "crm-segmentation": { analysis: .75, problemSolving: .25 },
+  "customer-journey-design": { analysis: .35, communication: .35, problemSolving: .3 },
+  "lifecycle-marketing": { analysis: .45, communication: .3, execution: .25 },
+  "line-crm-operations": { communication: .3, problemSolving: .2, execution: .5 },
+  "marketing-automation": { analysis: .3, problemSolving: .35, execution: .35 },
+  "retention-campaign-design": { analysis: .35, communication: .4, problemSolving: .25 },
+  "cohort-ltv-analysis": { analysis: .85, problemSolving: .15 },
+  "customer-data-hygiene": { analysis: .25, problemSolving: .15, execution: .6 },
+  "direct-response-editing": { analysis: .25, communication: .25, execution: .5 },
+  "three-second-hook": { communication: .45, problemSolving: .3, execution: .25 },
+  "short-form-pacing": { communication: .35, problemSolving: .2, execution: .45 },
+  "platform-video-adaptation": { analysis: .2, problemSolving: .25, execution: .55 },
+  "creative-variation-production": { problemSolving: .25, execution: .75 },
+  "video-retention-analysis": { analysis: .75, problemSolving: .25 },
+  "caption-sound-design": { communication: .25, problemSolving: .2, execution: .55 },
+  "ai-assisted-video-editing": { problemSolving: .35, execution: .65 },
+  "brand-storytelling": { communication: .7, problemSolving: .15, execution: .15 },
+  "visual-composition": { communication: .3, problemSolving: .25, execution: .45 },
+  "motion-graphics-brand": { problemSolving: .3, execution: .7 },
+  "color-grading": { analysis: .25, problemSolving: .15, execution: .6 },
+  "brand-sound-design": { communication: .25, problemSolving: .15, execution: .6 },
+  "multi-platform-production": { problemSolving: .25, execution: .75 },
+  "asset-version-management": { analysis: .15, problemSolving: .15, execution: .7 },
+  "ai-assisted-content-production": { problemSolving: .4, execution: .6 },
+  "marketplace-operations": { analysis: .2, problemSolving: .25, execution: .55 },
+  "marketplace-seo-listing": { analysis: .35, communication: .25, execution: .4 },
+  "marketplace-pricing-margin": { analysis: .75, problemSolving: .25 },
+  "marketplace-promotion": { analysis: .35, communication: .25, execution: .4 },
+  "marketplace-ads": { analysis: .55, problemSolving: .25, execution: .2 },
+  "affiliate-live-commerce": { communication: .55, leadership: .2, execution: .25 },
+  "stock-order-sync": { communication: .25, problemSolving: .25, execution: .5 },
+  "marketplace-account-health-skill": { problemSolving: .35, execution: .65 },
+  "marketplace-analytics": { analysis: .8, problemSolving: .2 },
+  "meta-campaign-structure": { analysis: .35, problemSolving: .25, execution: .4 },
+  "meta-audience-strategy": { analysis: .55, problemSolving: .3, execution: .15 },
+  "meta-creative-testing": { analysis: .45, problemSolving: .35, execution: .2 },
+  "meta-budget-scaling": { analysis: .5, problemSolving: .3, execution: .2 },
+  "meta-pixel-capi": { analysis: .35, problemSolving: .4, execution: .25 },
+  "meta-attribution": { analysis: .85, problemSolving: .15 },
+  "meta-unit-economics": { analysis: .85, problemSolving: .15 },
+  "meta-performance-forecast": { analysis: .65, problemSolving: .2, execution: .15 },
+  "meta-policy-risk": { analysis: .25, problemSolving: .35, execution: .4 },
   "core-discipline": { execution: 1 },
   "core-responsibility": { execution: .6, leadership: .4 },
   "core-time-management": { execution: .7, analysis: .3 },
@@ -251,6 +324,14 @@ const growthRoleNames: Record<string, string> = {
   developer: "Senior Software Developer",
   "video-editor": "Senior Video Editor",
   hr: "People Development Lead",
+  "growth-commerce-manager": "Head of Growth & Commerce",
+  "customer-insight-marketer": "Senior Customer Insight Strategist",
+  "offer-conversion-marketer": "Senior Conversion Strategist",
+  "crm-retention-marketer": "CRM & Retention Lead",
+  "performance-video-editor": "Senior Performance Video Editor",
+  "brand-content-video-editor": "Senior Brand Content Editor",
+  "marketplace-commerce-specialist": "Marketplace Growth Lead",
+  "facebook-media-buyer": "Senior Performance Marketing Specialist",
 };
 
 const roleProofGuides: Record<string, { defaultType: WorkSubmissionRecord["submissionType"]; headline: string; examples: string[] }> = {
@@ -260,6 +341,14 @@ const roleProofGuides: Record<string, { defaultType: WorkSubmissionRecord["submi
   "sales-manager": { defaultType: "sales", headline: "งานขายและบริหารลูกค้า", examples: ["เลขดีลหรือรายงานจาก CRM", "ใบเสนอราคา / PO / หลักฐานปิดการขาย", "บันทึกประชุมหรือการยืนยันจากลูกค้า"] },
   "customer-service": { defaultType: "service", headline: "งานบริการลูกค้า", examples: ["เลข Ticket หรือ Case ที่ปิดแล้ว", "บทสนทนาที่ปกปิดข้อมูลอ่อนไหว", "ผล CSAT หรือรายงานการแก้ปัญหา"] },
   hr: { defaultType: "hr", headline: "งานทรัพยากรบุคคล", examples: ["แบบฟอร์มหรือเอกสารที่อนุมัติแล้ว", "รายชื่อผู้เข้าอบรม / ผลประเมิน", "รายงานสรรหา Onboarding หรือนโยบาย"] },
+  "growth-commerce-manager": { defaultType: "document", headline: "กลยุทธ์และผลลัพธ์ Growth", examples: ["Growth Plan และเป้าหมายรายเดือน", "Dashboard รายได้ กำไร และ Funnel", "บันทึกผลทดลองพร้อมการตัดสินใจ"] },
+  "customer-insight-marketer": { defaultType: "document", headline: "Customer Insight และ Creative Brief", examples: ["สรุปเสียงลูกค้าพร้อมหลักฐาน", "รายงานคู่แข่งและโอกาสทางการตลาด", "Creative Brief ที่นำไปผลิตจริง"] },
+  "offer-conversion-marketer": { defaultType: "social", headline: "Offer และงานเพิ่ม Conversion", examples: ["หน้าขายหรือ Copy ที่เผยแพร่แล้ว", "ผล A/B Test ก่อนและหลัง", "สรุปราคา Bundle และกำไรต่อออเดอร์"] },
+  "crm-retention-marketer": { defaultType: "document", headline: "CRM และการรักษาลูกค้า", examples: ["Customer Journey และ Segment", "Flow LINE OA / CRM Automation", "รายงานยอดซื้อซ้ำ Cohort หรือ LTV"] },
+  "performance-video-editor": { defaultType: "video", headline: "วิดีโอเพื่อผลลัพธ์โฆษณา", examples: ["ลิงก์วิดีโอ Final และ Variation", "โฟลเดอร์ไฟล์ต้นฉบับ", "รายงาน Hook, Retention, CTR หรือผลโฆษณา"] },
+  "brand-content-video-editor": { defaultType: "video", headline: "วิดีโอแบรนด์และคอนเทนต์", examples: ["ลิงก์วิดีโอ Final", "โฟลเดอร์ Project และ Asset", "ลิงก์โพสต์พร้อมผลหลังเผยแพร่"] },
+  "marketplace-commerce-specialist": { defaultType: "social", headline: "ผลงาน TikTok Shop / Shopee / Lazada", examples: ["ลิงก์หน้าร้านหรือ Listing", "รายงานแคมเปญ ยอดขาย และกำไร", "หลักฐาน Account Health สต็อก หรือคำสั่งซื้อ"] },
+  "facebook-media-buyer": { defaultType: "document", headline: "ผลลัพธ์ Facebook Ads", examples: ["รายงานจาก Ads Manager", "Dashboard CPA, CAC, ROAS, MER และกำไร", "ผล Creative Test และหลักฐาน Pixel / CAPI"] },
 };
 
 const defaultProofGuide = { defaultType: "document" as const, headline: "หลักฐานการส่งมอบงาน", examples: ["ลิงก์ผลงานหรือระบบที่ใช้งานจริง", "ไฟล์รายงาน รูปภาพ หรือเอกสารยืนยัน", "ข้อความสรุปผลลัพธ์และเกณฑ์ที่ทำสำเร็จ"] };
@@ -327,7 +416,7 @@ function radarPolygon(values: Record<TalentDimensionId, number>) {
 
 const departmentFilters = [
   { id: "all", label: "ทุกแผนก" },
-  ...roles.map((role) => ({ id: role.departmentId, label: role.department })),
+  ...Array.from(new Map(roles.map((role) => [role.departmentId, { id: role.departmentId, label: role.department }])).values()),
 ];
 
 function fallbackEvaluation(employee: EmployeeRecord): EvaluationRecord | null {
@@ -462,6 +551,14 @@ const officeCapacityByRole: Record<string, number> = {
   developer: 4.5,
   "video-editor": 4,
   hr: 4.5,
+  "growth-commerce-manager": 4.5,
+  "customer-insight-marketer": 4,
+  "offer-conversion-marketer": 4,
+  "crm-retention-marketer": 4,
+  "performance-video-editor": 4,
+  "brand-content-video-editor": 4,
+  "marketplace-commerce-specialist": 4.5,
+  "facebook-media-buyer": 4.5,
 };
 
 const officeLevelMeta: Record<OfficeLoadLevel, { label: string; copy: string }> = {
@@ -472,6 +569,8 @@ const officeLevelMeta: Record<OfficeLoadLevel, { label: string; copy: string }> 
 };
 
 function officeSceneForRole(roleId: string): OfficeScene {
+  if (roleId === "performance-video-editor" || roleId === "brand-content-video-editor") return "edit";
+  if (roleId === "marketplace-commerce-specialist") return "sales";
   if (roleId === "sales-manager") return "sales";
   if (roleId === "customer-service") return "service";
   if (roleId === "developer") return "code";
@@ -2332,7 +2431,7 @@ export default function Home() {
             </div>
             <section className="competency-framework-card">
               <div className="competency-framework-heading">
-                <div><p className="eyebrow">COMPETENCY FRAMEWORK</p><h2>ประเมินรอบด้าน 18 สมรรถนะ</h2><p>ครอบคลุมทั้งความสามารถตามตำแหน่ง วิธีทำงาน การร่วมงาน ความเป็นมืออาชีพ และการเติบโต</p></div>
+                <div><p className="eyebrow">COMPETENCY FRAMEWORK</p><h2>ประเมินรอบด้านมากกว่า 20 สมรรถนะ</h2><p>ครอบคลุมทั้งความสามารถเฉพาะตำแหน่ง วิธีทำงาน การร่วมงาน ความเป็นมืออาชีพ และการเติบโต</p></div>
                 <span>5 หมวดมาตรฐาน</span>
               </div>
               <div className="competency-category-grid">
@@ -2360,7 +2459,7 @@ export default function Home() {
             </div>
             <div className="individual-skills-card">
               <div className="individual-skills-heading">
-                <div><p className="eyebrow">INDIVIDUAL SKILL PROFILE</p><h2>สมรรถนะและสกิลรายบุคคล</h2><p>ดูคะแนน 5 หมวดในบัตรเดียว แล้วเปิดรายละเอียดครบ 18 ด้านเพื่อวางแผนพัฒนา</p></div>
+                <div><p className="eyebrow">INDIVIDUAL SKILL PROFILE</p><h2>สมรรถนะและสกิลรายบุคคล</h2><p>ดูคะแนน 5 หมวดในบัตรเดียว แล้วเปิดรายละเอียดครบทุกด้านตามตำแหน่งเพื่อวางแผนพัฒนา</p></div>
                 <label className="search-field"><span aria-hidden="true">⌕</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="ค้นหาพนักงานหรือตำแหน่ง" /><span className="sr-only">ค้นหาโปรไฟล์สกิล</span></label>
               </div>
               <div className="individual-skill-grid">
@@ -2400,7 +2499,7 @@ export default function Home() {
                       <div className="person-skill-foot">
                         <span className={assessmentComplete ? "ready" : "develop"}>ประเมินแล้ว {assessedSkills.length}/{role.skills.length} ด้าน</span>
                         <small>{!assessmentComplete ? `รอประเมินเพิ่ม ${role.skills.length - assessedSkills.length} ด้าน` : biggestGap?.gap > 0 ? `เน้นพัฒนา: ${biggestGap.skill.name}` : `ถึงเป้าหมาย ${readiness}/${role.skills.length} ด้าน`}</small>
-                        <button onClick={() => setSkillProfileEmployee(employee)}>ดูกราฟและรายละเอียด 18 ด้าน →</button>
+                        <button onClick={() => setSkillProfileEmployee(employee)}>ดูกราฟและรายละเอียดทั้งหมด →</button>
                       </div>
                     </article>
                   );

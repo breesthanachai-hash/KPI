@@ -10,12 +10,14 @@ test("builds the People Pulse KPI product bundle", async () => {
   const pageAssetName = assetNames.find((name) => /^page-.*\.js$/.test(name));
   assert.ok(pageAssetName, "expected a built page asset");
 
-  const [pageAsset, layout, styles, office3D, aiAssistant, packageJson] = await Promise.all([
+  const [pageAsset, layout, styles, office3D, aiAssistant, kpiData, dashboardRoute, packageJson] = await Promise.all([
     readFile(new URL(pageAssetName, assetRoot), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../app/office-3d.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/ai-assistant.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../lib/kpi-data.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/dashboard/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../package.json", import.meta.url), "utf8"),
   ]);
   assert.match(pageAsset, /PEOPLE PULSE/);
@@ -23,7 +25,21 @@ test("builds the People Pulse KPI product bundle", async () => {
   assert.match(pageAsset, /PEOPLE &amp; WORK OS|PEOPLE & WORK OS/);
   assert.match(pageAsset, /saveEvaluation/);
   assert.match(pageAsset, /สกิลรายบุคคล/);
-  assert.match(pageAsset, /ประเมินรอบด้าน 18 สมรรถนะ/);
+  assert.match(pageAsset, /ประเมินรอบด้านมากกว่า 20 สมรรถนะ/);
+  assert.match(pageAsset, /ผู้จัดการทีมหน้าบ้านและการเติบโต/);
+  assert.match(pageAsset, /นักการตลาดด้าน Customer Insight/);
+  assert.match(pageAsset, /นักการตลาดด้าน Offer &amp; Conversion|นักการตลาดด้าน Offer & Conversion/);
+  assert.match(pageAsset, /นักการตลาดด้าน CRM &amp; Retention|นักการตลาดด้าน CRM & Retention/);
+  assert.match(pageAsset, /นักตัดต่อวิดีโอสาย Performance/);
+  assert.match(pageAsset, /นักตัดต่อวิดีโอสาย Brand &amp; Content|นักตัดต่อวิดีโอสาย Brand & Content/);
+  assert.match(pageAsset, /ผู้ดูแล TikTok Shop \/ Shopee \/ Lazada/);
+  assert.match(pageAsset, /ผู้เชี่ยวชาญโฆษณา Facebook/);
+  assert.match(pageAsset, /การบริหาร TikTok Shop, Shopee และ Lazada/);
+  assert.match(pageAsset, /Pixel, CAPI และ Event Tracking/);
+  assert.match(kpiData, /นรินทร์ กิตติคุณ/);
+  assert.match(kpiData, /growth-commerce-manager/);
+  assert.match(kpiData, /seedEmployeeLegacyRoleIds/);
+  assert.match(dashboardRoute, /isUnmodifiedDemoEmployee/);
   assert.match(pageAsset, /วินัยและความตรงต่อเวลา/);
   assert.match(pageAsset, /ความรับผิดชอบและการเป็นเจ้าของงาน/);
   assert.match(pageAsset, /มารยาท การให้เกียรติ และความเหมาะสม/);

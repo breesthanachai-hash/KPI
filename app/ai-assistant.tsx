@@ -55,6 +55,14 @@ const futureSkills: Record<string, string[]> = {
   developer: ["AI-assisted Development", "ความปลอดภัยของระบบ", "Workflow Automation"],
   "video-editor": ["AI-assisted Editing", "Short-form Storytelling", "Color Grading และ Sound Design"],
   hr: ["People Analytics", "Workforce Planning", "การโค้ชและพัฒนาคน"],
+  "growth-commerce-manager": ["Growth Modeling และ Forecast", "AI Decision Support", "การสร้างระบบทดลองและโค้ชทีม"],
+  "customer-insight-marketer": ["AI Voice of Customer Analysis", "Social Listening", "การวิเคราะห์ Creative Pattern"],
+  "offer-conversion-marketer": ["Advanced CRO", "Behavioral Economics", "AI Copy และ Offer Testing"],
+  "crm-retention-marketer": ["CRM Automation", "Predictive LTV", "Personalization ตาม Customer Journey"],
+  "performance-video-editor": ["AI-assisted Performance Editing", "Creative Analytics", "Dynamic Creative Variation"],
+  "brand-content-video-editor": ["AI Creative Production", "Advanced Motion & Color", "ระบบ Brand Asset Management"],
+  "marketplace-commerce-specialist": ["Marketplace Analytics", "Live Commerce Operations", "AI Listing และ Demand Planning"],
+  "facebook-media-buyer": ["Marketing Mix & Attribution", "CAPI และ Data Quality", "AI-assisted Creative Testing"],
 };
 
 const quickPrompts = [
