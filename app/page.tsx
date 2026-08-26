@@ -67,6 +67,8 @@ type PortfolioStatusFilter = "all" | "approved" | "submitted" | "revision" | "mi
 
 type WorkDueFilter = "all" | "today" | "overdue" | "week" | "review" | "done";
 
+type WorkSection = "tasks" | "projects" | "points" | "rewards";
+
 type TalentDimensionId = "analysis" | "communication" | "problemSolving" | "leadership" | "execution";
 
 type PowerStatId = "speed" | "technique" | "vision" | "teamwork" | "problemSolving" | "leadership";
@@ -488,6 +490,7 @@ export default function Home() {
   const [workFilter, setWorkFilter] = useState<"all" | WorkItemRecord["kind"]>("all");
   const [workSearch, setWorkSearch] = useState("");
   const [workDueFilter, setWorkDueFilter] = useState<WorkDueFilter>("all");
+  const [workSection, setWorkSection] = useState<WorkSection>("tasks");
   const [workAssigneeFilter, setWorkAssigneeFilter] = useState("all");
   const [officeLoadFilter, setOfficeLoadFilter] = useState<OfficeLoadFilter>("all");
   const [quickUpdatingWorkId, setQuickUpdatingWorkId] = useState("");
@@ -796,8 +799,8 @@ export default function Home() {
       const departmentMatches = activeDepartment === "all" || project?.departmentId === activeDepartment;
       const kindMatches = workFilter === "all" || item.kind === workFilter;
       const assigneeMatches = workAssigneeFilter === "all" || item.assigneeEmployeeId === workAssigneeFilter;
-      const dueMatches = workDueFilter === "all"
-        || (workDueFilter === "today" && item.dueDate === todayDate)
+      const dueMatches = (workDueFilter === "all" && item.status !== "done")
+        || (workDueFilter === "today" && item.status !== "done" && item.dueDate === todayDate)
         || (workDueFilter === "overdue" && item.status !== "done" && item.dueDate < todayDate)
         || (workDueFilter === "week" && item.status !== "done" && item.dueDate >= todayDate && item.dueDate <= weekEndDate)
         || (workDueFilter === "review" && item.status === "review")
@@ -1665,12 +1668,15 @@ export default function Home() {
   const handlePeopleAiAction = (action: PeopleAiActionId) => {
     if (action === "open_today") {
       setView("work");
+      setWorkSection("tasks");
       setWorkDueFilter("today");
     } else if (action === "open_overdue") {
       setView("work");
+      setWorkSection("tasks");
       setWorkDueFilter("overdue");
     } else if (action === "create_task" && permissions.canManageWork) {
       setView("work");
+      setWorkSection("tasks");
       openWorkItemForm();
     } else if (action === "open_evaluations" && permissions.canManagePeople) {
       setView("employees");
@@ -1706,13 +1712,13 @@ export default function Home() {
   return (
     <main className="app-shell calm-shell">
       <header className="topbar">
-        <button className="brand" onClick={() => { setActiveDepartment("all"); setView("work"); }} aria-label="ไปที่รายการงาน">
+        <button className="brand" onClick={() => { setActiveDepartment("all"); setWorkSection("tasks"); setWorkDueFilter("all"); setWorkSearch(""); setView("work"); }} aria-label="ไปที่รายการงาน">
           <span className="brand-mark" aria-hidden="true"><i /><i /><i /></span>
           <span><strong>PEOPLE PULSE</strong><small>PEOPLE &amp; WORK OS</small></span>
         </button>
         <nav aria-label="เมนูหลัก">
           <span className="nav-section-label">พื้นที่ทำงาน</span>
-          <button className={view === "work" ? "active" : ""} onClick={() => { setActiveDepartment("all"); setView("work"); }}><span aria-hidden="true">✓</span><b>งาน</b><em>{workItems.filter((item) => item.status !== "done").length}</em></button>
+          <button className={view === "work" ? "active" : ""} onClick={() => { setActiveDepartment("all"); setWorkSection("tasks"); setWorkDueFilter("all"); setWorkSearch(""); setView("work"); }}><span aria-hidden="true">✓</span><b>งาน</b><em>{workItems.filter((item) => item.status !== "done").length}</em></button>
           <button className={view === "portfolio" ? "active" : ""} onClick={() => setView("portfolio")}><span aria-hidden="true">◇</span><b>แฟ้มผลงาน</b></button>
           <button className={showAiAssistant ? "active" : ""} onClick={() => setShowAiAssistant(true)}><span aria-hidden="true">AI</span><b>ผู้ช่วย AI</b><em>ใหม่</em></button>
           {!isEmployeeUser && <>
@@ -1839,6 +1845,7 @@ export default function Home() {
               setWorkAssigneeFilter(employeeId);
               setWorkDueFilter("all");
               setWorkSearch("");
+              setWorkSection("tasks");
               setView("work");
             }} /></Suspense> : <div className="office-empty"><span>⌂</span><strong>ไม่มีพนักงานในกลุ่มนี้</strong><p>ลองเลือกสถานะหรือแผนกอื่นเพื่อเรียกทุกคนกลับเข้าสำนักงานจำลอง</p><button onClick={() => { setOfficeLoadFilter("all"); setActiveDepartment("all"); }}>แสดงทุกคน</button></div>}
           </section>
@@ -2490,7 +2497,22 @@ export default function Home() {
 
         {view === "work" && (
           <section className="mission-layout">
-            <section className="simple-todo-card" aria-labelledby="simple-todo-title">
+            <nav className="work-section-tabs" aria-label="เลือกส่วนจัดการงาน">
+              {([
+                { id: "tasks", icon: "✓", label: "รายการงาน", copy: "งานที่ต้องทำ", value: workItems.filter((item) => item.status !== "done").length },
+                { id: "projects", icon: "◇", label: "โปรเจกต์", copy: "ติดตามภาพรวม", value: projects.length },
+                { id: "points", icon: "★", label: "แต้ม", copy: "รับและตรวจสอบ", value: totalPoints },
+                { id: "rewards", icon: "♢", label: "รางวัล", copy: "ใช้แต้มแลกของ", value: rewards.filter((reward) => reward.isActive).length },
+              ] as const).map((section) => (
+                <button key={section.id} className={workSection === section.id ? "active" : ""} onClick={() => setWorkSection(section.id)} aria-current={workSection === section.id ? "page" : undefined}>
+                  <span aria-hidden="true">{section.icon}</span>
+                  <p><strong>{section.label}</strong><small>{section.copy}</small></p>
+                  <b>{formatMoney(section.value)}</b>
+                </button>
+              ))}
+            </nav>
+
+            {workSection === "tasks" && <section className="simple-todo-card" aria-labelledby="simple-todo-title">
               <div className="simple-todo-heading">
                 <div><p className="eyebrow">งานของวันนี้</p><h2 id="simple-todo-title">{isEmployeeUser ? "ฉันต้องทำอะไรต่อ?" : "ทีมต้องทำอะไรต่อ?"}</h2><p>รายการเดียวจบ เรียงงานเร่งด่วนและกำหนดส่งให้แล้ว</p></div>
                 {permissions.canManageWork && <div className="simple-todo-create"><button className="secondary-button" onClick={() => setShowProjectForm(true)}>สร้างโปรเจกต์</button><button className="primary-button" onClick={() => openWorkItemForm()}><span>＋</span> เพิ่มงาน</button></div>}
@@ -2498,7 +2520,7 @@ export default function Home() {
 
               <div className="simple-todo-overview" aria-label="เลือกดูงานแบบรวดเร็ว">
                 {([
-                  { id: "all", label: "งานทั้งหมด", value: workItems.length, icon: "☷" },
+                  { id: "all", label: "งานที่ต้องทำ", value: workItems.filter((item) => item.status !== "done").length, icon: "☷" },
                   { id: "today", label: "กำหนดวันนี้", value: todayWorkItems.length, icon: "●" },
                   { id: "overdue", label: "เกินกำหนด", value: overdueWorkItems.length, icon: "!" },
                   { id: "review", label: "รอตรวจ", value: reviewQueueWorkItems.length, icon: "⌕" },
@@ -2529,7 +2551,7 @@ export default function Home() {
                   const actionLabel = item.status === "todo" ? "เริ่มงาน" : item.status === "in_progress" ? "ส่งงาน" : item.status === "review" && isEmployeeUser ? "ดูงานที่ส่ง" : item.status === "review" ? "ตรวจงาน" : "ดูผลงาน";
                   return (
                     <article className={`simple-task-row ${dueState}`} key={item.id}>
-                      <button className={`simple-task-check ${item.status}`} disabled={item.status === "done" || quickUpdatingWorkId === item.id} onClick={() => item.status === "todo" ? void startWorkItem(item) : openSubmissionCenter(item)} aria-label={`${workStatusLabel(item.status)}: ${item.title}`}>{item.status === "done" ? "✓" : item.status === "review" ? "⌕" : item.status === "in_progress" ? "→" : ""}</button>
+                      <span className={`simple-task-check ${item.status}`} aria-hidden="true">{item.status === "done" ? "✓" : item.status === "review" ? "⌕" : item.status === "in_progress" ? "→" : ""}</span>
                       <div className="simple-task-main">
                         <div className="simple-task-labels"><span className={`simple-task-status ${item.status}`}>{workStatusLabel(item.status)}</span><span className={`work-priority ${item.priority}`}>{workPriorityLabel(item.priority)}</span><small>{project?.name ?? "ไม่ระบุโปรเจกต์"}</small></div>
                         <h3>{item.title}</h3>
@@ -2544,15 +2566,15 @@ export default function Home() {
                         <div className="simple-task-owner">{assignee ? <EmployeeAvatar employee={assignee} profile={employeeProfilesById.get(assignee.id)} className="avatar-simple-task" /> : <i className="avatar-media avatar-simple-task">PP</i>}<span><small>ผู้รับผิดชอบ</small><strong>{assignee?.name ?? "ยังไม่ระบุ"}</strong></span></div>
                         <div className="simple-task-progress"><span><small>ความคืบหน้า</small><strong>{item.progress}%</strong></span><i><b style={{ width: `${item.progress}%` }} /></i></div>
                       </div>
-                      <div className="simple-task-actions">{!isEmployeeUser && <button onClick={() => openWorkItemForm(item)}>รายละเอียด</button>}<button className="primary" disabled={quickUpdatingWorkId === item.id} onClick={() => item.status === "todo" ? void startWorkItem(item) : openSubmissionCenter(item)}>{quickUpdatingWorkId === item.id ? "กำลังเริ่ม..." : actionLabel}</button></div>
+                      <div className="simple-task-actions">{!isEmployeeUser && <button onClick={() => openWorkItemForm(item)}>แก้ไขงาน</button>}<button className="primary" disabled={quickUpdatingWorkId === item.id} onClick={() => item.status === "todo" ? void startWorkItem(item) : openSubmissionCenter(item)}>{quickUpdatingWorkId === item.id ? "กำลังเริ่ม..." : actionLabel}</button></div>
                     </article>
                   );
                 })}
-                {!visibleWorkItems.length && <div className="simple-task-empty"><span>✓</span><strong>ไม่พบงานในรายการนี้</strong><p>ลองเลือก “งานทั้งหมด” หรือล้างตัวกรองเพื่อดูงานอีกครั้ง</p><button onClick={() => { setWorkSearch(""); setWorkFilter("all"); setWorkDueFilter("all"); setWorkAssigneeFilter("all"); }}>แสดงงานทั้งหมด</button></div>}
+                {!visibleWorkItems.length && <div className="simple-task-empty"><span>✓</span><strong>ไม่พบงานในรายการนี้</strong><p>ลองเลือก “งานที่ต้องทำ” หรือล้างตัวกรองเพื่อดูงานอีกครั้ง</p><button onClick={() => { setWorkSearch(""); setWorkFilter("all"); setWorkDueFilter("all"); setWorkAssigneeFilter("all"); }}>แสดงงานที่ต้องทำ</button></div>}
               </div>
-            </section>
+            </section>}
 
-            <div className="mission-command-grid">
+            {workSection === "projects" && <div className="mission-command-grid work-projects-only">
               <section className="project-pulse-card">
                 <div className="section-heading"><div><p className="eyebrow">PROJECT PULSE</p><h2>ความคืบหน้าโปรเจกต์</h2></div><span className="matrix-period">อัปเดตล่าสุด</span></div>
                 <div className="project-pulse-grid">
@@ -2577,9 +2599,9 @@ export default function Home() {
                 </div>
                 <p className="points-note">ยอดคงเหลือรวมแต้มประเมิน งาน เควสต์ เวลาเข้างาน โบนัส รายการหัก และแต้มที่ใช้แลกรางวัล</p>
               </aside>
-            </div>
+            </div>}
 
-            <section className="points-operations-card">
+            {workSection === "points" && <section className="points-operations-card">
               <div className="points-operations-heading">
                 <div><p className="eyebrow">{isEmployeeUser ? "MY POINTS" : "POINTS OPERATIONS"}</p><h2>{isEmployeeUser ? "แต้มและประวัติของฉัน" : "ศูนย์จัดการแต้มพนักงาน"}</h2><p>{isEmployeeUser ? "ดูแต้มที่ได้รับ แต้มที่ใช้ และเหตุผลของแต่ละรายการได้อย่างโปร่งใส" : "ประมวลผลแต้มจากการประเมิน งาน การเข้า–ออกงาน และเหตุการณ์ด้านวินัย พร้อมประวัติผู้บันทึก"}</p></div>
                 <div className="points-flow-summary"><span><small>แต้มที่ได้รับ</small><strong>+{formatMoney(pointsEarned)}</strong></span><span className="negative"><small>แต้มที่หัก/ใช้</small><strong>-{formatMoney(pointsDeducted)}</strong></span></div>
@@ -2630,9 +2652,9 @@ export default function Home() {
                 </section>
               </div>
               {!isEmployeeUser && <div className="points-policy-note"><span>!</span><p><strong>บทลงโทษต้องเป็นธรรมและตรวจสอบได้</strong> การลาที่อนุมัติแล้วไม่หักแต้ม ส่วนการมาสาย ขาดงาน งานผิดพลาด ใบเตือน และการผิดระเบียบควรบันทึกหลังตรวจสอบข้อเท็จจริง เปิดโอกาสให้พนักงานชี้แจง และใช้ตามนโยบายบริษัท</p></div>}
-            </section>
+            </section>}
 
-            <section className="reward-center-card">
+            {workSection === "rewards" && <section className="reward-center-card">
               <div className="reward-center-heading"><div><p className="eyebrow">REWARD STORE</p><h2>สะสมแต้ม แลกกิฟต์วอเชอร์และรางวัล</h2><p>มีตั้งแต่คูปองเงินสด 100 บาท ราคา 1,000 แต้ม ไปจนถึง iPhone 18 ราคา 500,000 แต้ม</p></div><span><strong>{formatMoney(totalPoints)}</strong> แต้มในระบบ</span></div>
               <div className="reward-center-grid">
                 <div className="reward-catalog">
@@ -2648,7 +2670,7 @@ export default function Home() {
                   {!rewardRedemptions.length && <div className="reward-empty"><span>★</span><strong>ยังไม่มีคำขอแลก</strong><p>เลือกรางวัล แล้วระบุพนักงานที่ต้องการใช้แต้ม</p></div>}
                 </aside>
               </div>
-            </section>
+            </section>}
           </section>
         )}
       </section>

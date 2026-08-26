@@ -89,7 +89,11 @@ test("builds the People Pulse KPI product bundle", async () => {
   assert.match(packageJson, /"three"/);
   assert.match(pageAsset, /งานของวันนี้/);
   assert.match(pageAsset, /simple-todo-card/);
-  assert.match(pageAsset, /งานทั้งหมด/);
+  assert.match(pageAsset, /เลือกส่วนจัดการงาน/);
+  assert.match(pageAsset, /รายการงาน/);
+  assert.match(pageAsset, /ติดตามภาพรวม/);
+  assert.match(pageAsset, /ใช้แต้มแลกของ/);
+  assert.match(pageAsset, /งานที่ต้องทำ/);
   assert.match(pageAsset, /เกินกำหนด/);
   assert.match(pageAsset, /งานภายใน 7 วัน/);
   assert.match(pageAsset, /สะสมแต้ม แลกกิฟต์วอเชอร์และรางวัล/);
@@ -160,6 +164,12 @@ test("builds the People Pulse KPI product bundle", async () => {
   assert.match(styles, /ai-assistant-panel/);
   assert.match(styles, /Unified Thai typography/);
   assert.match(styles, /Noto Sans Thai Variable/);
+  assert.match(styles, /Botanical text palette/);
+  assert.match(styles, /--text-secondary: #365f54/);
+  assert.match(styles, /Complete UI rebuild/);
+  assert.match(styles, /--forest: #245fbe/);
+  assert.match(styles, /Work hub/);
+  assert.match(styles, /work-section-tabs/);
   assert.match(office3D, /Noto Sans Thai Variable/);
   assert.match(styles, /calm-shell/);
   assert.match(styles, /prefers-reduced-motion/);
