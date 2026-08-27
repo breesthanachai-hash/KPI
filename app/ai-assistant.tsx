@@ -44,6 +44,7 @@ export type PeopleAiContext = {
 
 type AssistantAction = { id: PeopleAiActionId; label: string };
 type ChatMessage = { id: string; role: "assistant" | "user"; content: string; actions?: AssistantAction[]; createdAt: string };
+type AssistantResponse = Omit<ChatMessage, "id" | "role" | "createdAt">;
 
 const priorityLabels: Record<PeopleAiTask["priority"], string> = { low: "ทั่วไป", medium: "ปานกลาง", high: "สำคัญ", urgent: "เร่งด่วน" };
 const statusLabels: Record<PeopleAiTask["status"], string> = { todo: "ยังไม่เริ่ม", in_progress: "กำลังทำ", review: "รอตรวจ", done: "เสร็จแล้ว" };
@@ -121,7 +122,7 @@ function taskActions(canManageWork: boolean): AssistantAction[] {
   ];
 }
 
-function taskAnalysis(context: PeopleAiContext, employee: PeopleAiEmployee | null) {
+function taskAnalysis(context: PeopleAiContext, employee: PeopleAiEmployee | null): AssistantResponse {
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok" }).format(new Date());
   const scope = context.tasks.filter((task) => task.status !== "done" && (!employee || task.assigneeEmployeeId === employee.id));
   const ranked = scope.slice().sort((a, b) => {
@@ -144,7 +145,7 @@ function taskAnalysis(context: PeopleAiContext, employee: PeopleAiEmployee | nul
   };
 }
 
-function skillAnalysis(context: PeopleAiContext, employee: PeopleAiEmployee | null) {
+function skillAnalysis(context: PeopleAiContext, employee: PeopleAiEmployee | null): AssistantResponse {
   if (employee) {
     if (!employee.skills.length || employee.skillScore === null) {
       return {
@@ -169,7 +170,7 @@ function skillAnalysis(context: PeopleAiContext, employee: PeopleAiEmployee | nu
   };
 }
 
-function kpiAnalysis(context: PeopleAiContext, employee: PeopleAiEmployee | null) {
+function kpiAnalysis(context: PeopleAiContext, employee: PeopleAiEmployee | null): AssistantResponse {
   if (employee) {
     if (employee.totalScore === null) {
       return { content: `${employee.name} ยังไม่มีผลประเมินรอบ ${context.period}\nควรรวบรวมผลงานจริง งานที่ส่งตรงเวลา และหลักฐานผลลัพธ์ก่อนเริ่มให้คะแนน เพื่อให้การประเมินตรวจสอบย้อนหลังได้`, actions: context.canManagePeople ? [{ id: "open_evaluations", label: "เริ่มประเมิน" }, { id: "open_portfolio", label: "ดูแฟ้มผลงาน" }] : [{ id: "open_portfolio", label: "ดูแฟ้มผลงาน" }] };
@@ -191,7 +192,7 @@ function kpiAnalysis(context: PeopleAiContext, employee: PeopleAiEmployee | null
   };
 }
 
-function evaluationHelp(context: PeopleAiContext, employee: PeopleAiEmployee | null) {
+function evaluationHelp(context: PeopleAiContext, employee: PeopleAiEmployee | null): AssistantResponse {
   if (employee) {
     const skill = skillAnalysis(context, employee);
     return {
@@ -202,7 +203,7 @@ function evaluationHelp(context: PeopleAiContext, employee: PeopleAiEmployee | n
   return kpiAnalysis(context, null);
 }
 
-function systemHelp(query: string, context: PeopleAiContext) {
+function systemHelp(query: string, context: PeopleAiContext): AssistantResponse {
   const text = query.toLocaleLowerCase("th");
   if (/หลักฐาน|ส่งงาน|drive|ลิงก์|ไฟล์|ผลงาน/.test(text)) return { content: "วิธีส่งงานและหลักฐาน\n1. เปิดเมนู งาน แล้วเลือกงานที่ต้องการ\n2. กด ส่งหลักฐานงาน\n3. ใส่ลิงก์ Drive, วิดีโอ, Social, Pull Request หรืออัปโหลดไฟล์ตามตำแหน่ง\n4. เขียนสรุปผลลัพธ์สั้น ๆ แล้วส่งให้ผู้ตรวจ\n5. ติดตามสถานะได้ที่ แฟ้มผลงาน หากถูกส่งกลับให้แก้ไข ระบบจะแสดงหมายเหตุผู้ตรวจ", actions: [{ id: "open_portfolio" as const, label: "เปิดแฟ้มผลงาน" }] };
   if (/แต้ม|รางวัล|แลก/.test(text)) return { content: "ระบบแต้มและรางวัล\nแต้มมาจากผลประเมิน งานตรงเวลา ภารกิจ และพฤติกรรมการทำงาน ยอดคงเหลือจะหักเมื่อส่งคำขอแลกรางวัล หากแต้มไม่พอให้ตรวจประวัติรายการแต้มและรอบประเมินล่าสุดก่อน", actions: [] };
@@ -211,7 +212,7 @@ function systemHelp(query: string, context: PeopleAiContext) {
   return { content: "ผมช่วยแก้ปัญหาในระบบได้ครับ\nบอกผมได้เลยว่าเกิดที่หน้าไหน กดปุ่มอะไร และเห็นข้อความว่าอย่างไร เช่น “ส่งหลักฐานไม่ได้”, “แต้มไม่เข้า”, “ไม่เห็นงานของฉัน” หรือ “บัญชีเข้าไม่ได้” แล้วผมจะไล่ตรวจทีละขั้นให้", actions: [] };
 }
 
-function createAssistantResponse(query: string, context: PeopleAiContext, focusEmployeeId: string): Omit<ChatMessage, "id" | "role" | "createdAt"> {
+function createAssistantResponse(query: string, context: PeopleAiContext, focusEmployeeId: string): AssistantResponse {
   const text = query.toLocaleLowerCase("th");
   const employee = findFocusedEmployee(context, focusEmployeeId, query);
   if (/ทูดู|todo|งานวันนี้|งานเร่ง|เกินกำหนด|จัดลำดับ|จัดงาน|ภารกิจ/.test(text)) return taskAnalysis(context, employee);

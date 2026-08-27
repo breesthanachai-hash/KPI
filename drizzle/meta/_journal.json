@@ -71,6 +71,34 @@
       "when": 1787746163663,
       "tag": "0009_easy_wong",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1787800732550,
+      "tag": "0010_dry_blue_blade",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1787802775964,
+      "tag": "0011_same_iceman",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1787806378966,
+      "tag": "0012_common_christian_walker",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1787807255990,
+      "tag": "0013_bangkok_reward_month",
+      "breakpoints": true
     }
   ]
 }

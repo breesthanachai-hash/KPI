@@ -49,6 +49,65 @@ export const notificationReads = sqliteTable("notification_reads", {
   index("notification_reads_user_read_idx").on(table.userKey, table.readAt),
 ]);
 
+export const organizationPolicies = sqliteTable("organization_policies", {
+  id: text("id").primaryKey(),
+  code: text("code").notNull(),
+  title: text("title").notNull(),
+  summary: text("summary").notNull().default(""),
+  content: text("content").notNull(),
+  category: text("category", { enum: ["work_rules", "points_rewards", "ai_data", "other"] }).notNull().default("other"),
+  status: text("status", { enum: ["draft", "published"] }).notNull().default("draft"),
+  version: integer("version").notNull().default(1),
+  effectiveDate: text("effective_date").notNull(),
+  effectiveTo: text("effective_to"),
+  scopeType: text("scope_type", { enum: ["all", "department", "role", "employment_type"] }).notNull().default("all"),
+  scopeValues: text("scope_values", { mode: "json" }).$type<string[]>().notNull(),
+  acknowledgementRequired: integer("acknowledgement_required", { mode: "boolean" }).notNull().default(true),
+  acknowledgementDueDays: integer("acknowledgement_due_days").notNull().default(7),
+  rules: text("rules", { mode: "json" }).$type<Record<string, unknown> | null>(),
+  contentHash: text("content_hash").notNull().default(""),
+  publishedAt: text("published_at"),
+  publishedBy: text("published_by"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedBy: text("updated_by").notNull().default("ระบบ"),
+}, (table) => [
+  uniqueIndex("organization_policies_code_version_unique").on(table.code, table.version),
+  uniqueIndex("organization_policies_published_code_effective_unique").on(table.code, table.effectiveDate).where(sql`${table.status} = 'published'`),
+  index("organization_policies_status_effective_idx").on(table.status, table.effectiveDate),
+  index("organization_policies_category_status_idx").on(table.category, table.status),
+]);
+
+export const organizationPolicyPublishClaims = sqliteTable("organization_policy_publish_claims", {
+  id: text("id").primaryKey(),
+  policyId: text("policy_id").notNull().references(() => organizationPolicies.id, { onDelete: "restrict" }),
+  code: text("code").notNull(),
+  predecessorVersion: integer("predecessor_version").notNull(),
+  expectedContentHash: text("expected_content_hash").notNull().default(""),
+  publishedAt: text("published_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("organization_policy_publish_claim_policy_unique").on(table.policyId),
+  uniqueIndex("organization_policy_publish_claim_head_unique").on(table.code, table.predecessorVersion),
+]);
+
+export const policyAcknowledgements = sqliteTable("policy_acknowledgements", {
+  id: text("id").primaryKey(),
+  policyId: text("policy_id").notNull().references(() => organizationPolicies.id, { onDelete: "restrict" }),
+  employeeId: text("employee_id").notNull().references(() => employees.id, { onDelete: "restrict" }),
+  userAccountId: text("user_account_id").references(() => userAccounts.id, { onDelete: "set null" }),
+  policyVersion: integer("policy_version").notNull(),
+  contentHash: text("content_hash").notNull(),
+  acknowledgementText: text("acknowledgement_text").notNull(),
+  acknowledgedName: text("acknowledged_name").notNull(),
+  acknowledgedEmail: text("acknowledged_email").notNull(),
+  authenticatedUserId: text("authenticated_user_id").notNull(),
+  acknowledgedAt: text("acknowledged_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("policy_acknowledgements_policy_version_employee_unique").on(table.policyId, table.policyVersion, table.employeeId),
+  index("policy_acknowledgements_employee_date_idx").on(table.employeeId, table.acknowledgedAt),
+  index("policy_acknowledgements_policy_date_idx").on(table.policyId, table.acknowledgedAt),
+]);
+
 export const evaluations = sqliteTable("evaluations", {
   id: text("id").primaryKey(),
   employeeId: text("employee_id").notNull().references(() => employees.id, { onDelete: "cascade" }),
@@ -184,6 +243,7 @@ export const workSubmissions = sqliteTable("work_submissions", {
   reviewedAt: text("reviewed_at"),
   reviewerNote: text("reviewer_note").notNull().default(""),
 }, (table) => [
+  uniqueIndex("work_submissions_one_submitted_per_work_unique").on(table.workItemId).where(sql`${table.status} = 'submitted'`),
   index("work_submissions_work_status_idx").on(table.workItemId, table.status),
   index("work_submissions_employee_submitted_idx").on(table.employeeId, table.submittedAt),
 ]);
@@ -195,6 +255,7 @@ export const rewards = sqliteTable("rewards", {
   category: text("category", { enum: ["perk", "learning", "wellbeing", "recognition"] }).notNull().default("perk"),
   costPoints: integer("cost_points").notNull(),
   stock: integer("stock").notNull().default(0),
+  inventoryVersion: integer("inventory_version").notNull().default(0),
   icon: text("icon").notNull().default("★"),
   isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
@@ -210,10 +271,14 @@ export const pointLedger = sqliteTable("point_ledger", {
   sourceId: text("source_id").notNull(),
   points: integer("points").notNull(),
   note: text("note").notNull().default(""),
+  policyId: text("policy_id").references(() => organizationPolicies.id, { onDelete: "set null" }),
+  policyVersion: integer("policy_version"),
+  policyContentHash: text("policy_content_hash"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
   uniqueIndex("point_ledger_source_unique").on(table.sourceType, table.sourceId),
   index("point_ledger_employee_created_idx").on(table.employeeId, table.createdAt),
+  index("point_ledger_policy_idx").on(table.policyId, table.policyVersion),
 ]);
 
 export const pointEvents = sqliteTable("point_events", {
@@ -225,10 +290,41 @@ export const pointEvents = sqliteTable("point_events", {
   note: text("note").notNull().default(""),
   evidenceUrl: text("evidence_url").notNull().default(""),
   recordedBy: text("recorded_by").notNull().default(""),
+  policyId: text("policy_id").references(() => organizationPolicies.id, { onDelete: "set null" }),
+  policyVersion: integer("policy_version"),
+  policyContentHash: text("policy_content_hash"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
   index("point_events_employee_date_idx").on(table.employeeId, table.eventDate),
   index("point_events_type_date_idx").on(table.eventType, table.eventDate),
+  index("point_events_policy_idx").on(table.policyId, table.policyVersion),
+]);
+
+export const pointMutationClaims = sqliteTable("point_mutation_claims", {
+  id: text("id").primaryKey(),
+  pointEventId: text("point_event_id").notNull().references(() => pointEvents.id, { onDelete: "restrict" }),
+  employeeId: text("employee_id").notNull().references(() => employees.id, { onDelete: "restrict" }),
+  predecessorEventCount: integer("predecessor_event_count").notNull(),
+  employeeSequenceKey: text("employee_sequence_key").notNull(),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("point_mutation_claim_event_unique").on(table.pointEventId),
+  uniqueIndex("point_mutation_claim_employee_sequence_unique").on(table.employeeSequenceKey),
+  index("point_mutation_claim_employee_created_idx").on(table.employeeId, table.createdAt),
+]);
+
+export const pointCapClaims = sqliteTable("point_cap_claims", {
+  id: text("id").primaryKey(),
+  employeeId: text("employee_id").notNull().references(() => employees.id, { onDelete: "restrict" }),
+  claimMonth: text("claim_month").notNull(),
+  sourceType: text("source_type").notNull(),
+  sourceId: text("source_id").notNull(),
+  employeeMonthSequenceKey: text("employee_month_sequence_key").notNull(),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("point_cap_claim_employee_month_sequence_unique").on(table.employeeMonthSequenceKey),
+  uniqueIndex("point_cap_claim_source_unique").on(table.sourceType, table.sourceId),
+  index("point_cap_claim_employee_month_idx").on(table.employeeId, table.claimMonth),
 ]);
 
 export const rewardRedemptions = sqliteTable("reward_redemptions", {
@@ -242,6 +338,26 @@ export const rewardRedemptions = sqliteTable("reward_redemptions", {
 }, (table) => [
   index("reward_redemptions_employee_created_idx").on(table.employeeId, table.createdAt),
   index("reward_redemptions_status_idx").on(table.status),
+]);
+
+export const rewardRedemptionClaims = sqliteTable("reward_redemption_claims", {
+  id: text("id").primaryKey(),
+  redemptionId: text("redemption_id").notNull().references(() => rewardRedemptions.id, { onDelete: "restrict" }),
+  employeeId: text("employee_id").notNull().references(() => employees.id, { onDelete: "restrict" }),
+  rewardId: text("reward_id").notNull().references(() => rewards.id, { onDelete: "restrict" }),
+  employeeRequestKey: text("employee_request_key").notNull(),
+  rewardInventoryKey: text("reward_inventory_key").notNull(),
+  expectedInventoryVersion: integer("expected_inventory_version").notNull(),
+  requiredBalance: integer("required_balance").notNull(),
+  maxRedemptionsPerMonth: integer("max_redemptions_per_month").notNull(),
+  cooldownDays: integer("cooldown_days").notNull(),
+  requestMonth: text("request_month").notNull(),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("reward_redemption_claim_redemption_unique").on(table.redemptionId),
+  uniqueIndex("reward_redemption_claim_employee_request_unique").on(table.employeeRequestKey),
+  uniqueIndex("reward_redemption_claim_inventory_unique").on(table.rewardInventoryKey),
+  index("reward_redemption_claim_employee_created_idx").on(table.employeeId, table.createdAt),
 ]);
 
 export const employeeProfiles = sqliteTable("employee_profiles", {

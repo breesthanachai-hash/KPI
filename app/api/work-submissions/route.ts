@@ -47,10 +47,18 @@ function isSafeWebUrl(value: string) {
 function errorResponse(error: unknown) {
   const message = error instanceof Error ? error.message : "ส่งหลักฐานงานไม่สำเร็จ";
   if (message.includes("R2 binding")) return Response.json({ error: "พื้นที่เก็บไฟล์หลักฐานยังไม่พร้อม กรุณาเผยแพร่ระบบอีกครั้ง" }, { status: 503 });
+  if (message.includes("WORK_SUBMISSION_INVALID_STATE")) {
+    return Response.json({ error: "งานนี้ถูกส่งตรวจ ปิดงาน หรือเปลี่ยนผู้รับผิดชอบแล้ว กรุณาโหลดข้อมูลล่าสุด" }, { status: 409 });
+  }
+  if (message.includes("UNIQUE constraint failed") && message.includes("work_submissions")) {
+    return Response.json({ error: "งานนี้มีหลักฐานรอตรวจอยู่แล้ว กรุณาโหลดข้อมูลล่าสุด" }, { status: 409 });
+  }
   return Response.json({ error: message }, { status: 500 });
 }
 
 export async function POST(request: Request) {
+  let uploadedStorageKey = "";
+  let submissionCommitted = false;
   try {
     await ensureDatabase();
     await ensureBootstrapAccounts();
@@ -72,11 +80,11 @@ export async function POST(request: Request) {
     const db = getDb();
     const [workItem] = await db.select().from(workItems).where(eq(workItems.id, workItemId)).limit(1);
     if (!workItem) return Response.json({ error: "ไม่พบงานที่เลือก" }, { status: 404 });
-    if (!(await canAccessEmployee(currentUser, workItem.assigneeEmployeeId))) return Response.json({ error: "ส่งหลักฐานได้เฉพาะงานที่อยู่ในสิทธิ์ของคุณ" }, { status: 403 });
+    if (currentUser.role !== "employee" || !currentUser.employeeId || currentUser.employeeId !== workItem.assigneeEmployeeId) return Response.json({ error: "เฉพาะพนักงานผู้รับผิดชอบงานเท่านั้นที่ส่งหลักฐานได้ HR และหัวหน้าทีมไม่สามารถส่งแทน" }, { status: 403 });
     if (workItem.status === "review" || workItem.status === "done") return Response.json({ error: "งานนี้ส่งตรวจหรือปิดแล้ว กรุณารอผลตรวจก่อนส่งใหม่" }, { status: 409 });
     const [pendingSubmission] = await db.select({ id: workSubmissions.id }).from(workSubmissions).where(and(eq(workSubmissions.workItemId, workItemId), eq(workSubmissions.status, "submitted"))).limit(1);
     if (pendingSubmission) return Response.json({ error: "งานนี้มีหลักฐานรอตรวจอยู่แล้ว" }, { status: 409 });
-    const [employee] = await db.select({ id: employees.id }).from(employees).where(eq(employees.id, workItem.assigneeEmployeeId)).limit(1);
+    const [employee] = await db.select({ id: employees.id }).from(employees).where(and(eq(employees.id, workItem.assigneeEmployeeId), eq(employees.status, "active"))).limit(1);
     if (!employee) return Response.json({ error: "ไม่พบพนักงานผู้รับผิดชอบ" }, { status: 404 });
 
     let storageKey = "";
@@ -93,6 +101,7 @@ export async function POST(request: Request) {
         httpMetadata: { contentType: file.type },
         customMetadata: { workItemId, employeeId: workItem.assigneeEmployeeId, originalName: file.name.slice(0, 180) },
       });
+      uploadedStorageKey = storageKey;
     }
 
     const now = new Date().toISOString();
@@ -115,11 +124,21 @@ export async function POST(request: Request) {
       reviewedAt: null,
       reviewerNote: "",
     };
-    await db.insert(workSubmissions).values(submission);
     const updatedWorkItem = { ...workItem, status: "review" as const, progress: Math.max(90, Math.min(99, workItem.progress)), updatedAt: now };
-    await db.update(workItems).set({ status: updatedWorkItem.status, progress: updatedWorkItem.progress, updatedAt: now }).where(eq(workItems.id, workItemId));
+    await db.batch([
+      db.insert(workSubmissions).values(submission),
+      db.update(workItems).set({ status: updatedWorkItem.status, progress: updatedWorkItem.progress, updatedAt: now }).where(and(eq(workItems.id, workItemId), eq(workItems.assigneeEmployeeId, workItem.assigneeEmployeeId))),
+    ]);
+    submissionCommitted = true;
     return Response.json({ workSubmission: submission, workItem: updatedWorkItem }, { status: 201 });
   } catch (error) {
+    if (uploadedStorageKey && !submissionCommitted) {
+      try {
+        await getFilesBucket().delete(uploadedStorageKey);
+      } catch {
+        // Preserve the database error; orphan cleanup is best effort.
+      }
+    }
     return errorResponse(error);
   }
 }

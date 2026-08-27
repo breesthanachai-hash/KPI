@@ -137,8 +137,8 @@ test("builds the People Pulse KPI product bundle", async () => {
   assert.match(pageAsset, /POINTS OPERATIONS/);
   assert.match(pageAsset, /แต้มประเมินประจำเดือน/);
   assert.match(pageAsset, /กติกาการได้และเสียแต้ม/);
-  assert.match(pageAsset, /คูปองเงินสด 100 บาท/);
-  assert.match(pageAsset, /iPhone 18/);
+  assert.match(kpiData, /คูปองเงินสด 100 บาท/);
+  assert.match(kpiData, /iPhone 18/);
   assert.match(pageAsset, /WORK PROOF CENTER/);
   assert.match(pageAsset, /ส่งหลักฐานงาน/);
   assert.match(pageAsset, /หลักฐานแนะนำตามตำแหน่ง/);
@@ -233,7 +233,7 @@ test("builds the People Pulse KPI product bundle", async () => {
 });
 
 test("ships durable role-based access and scoped people, work, portfolio and reward storage", async () => {
-  const [hosting, migration, workforceMigration, workMigration, dossierMigration, dossierIndexMigration, proofMigration, pointsMigration, peopleOpsMigration, accessMigration, notificationMigration, packagedMigration, packagedWorkforceMigration, packagedWorkMigration, packagedDossierMigration, packagedDossierIndexMigration, packagedProofMigration, packagedPointsMigration, packagedPeopleOpsMigration, packagedAccessMigration, packagedNotificationMigration, page, dashboardRoute, accessControl, data, schema, documentRoute, profileImageRoute, workSubmissionRoute, nextConfig] = await Promise.all([
+  const [hosting, migration, workforceMigration, workMigration, dossierMigration, dossierIndexMigration, proofMigration, pointsMigration, peopleOpsMigration, accessMigration, notificationMigration, policyMigration, packagedMigration, packagedWorkforceMigration, packagedWorkMigration, packagedDossierMigration, packagedDossierIndexMigration, packagedProofMigration, packagedPointsMigration, packagedPeopleOpsMigration, packagedAccessMigration, packagedNotificationMigration, packagedPolicyMigration, page, dashboardRoute, accessControl, data, schema, documentRoute, profileImageRoute, workSubmissionRoute, nextConfig] = await Promise.all([
     readFile(new URL("../.openai/hosting.json", import.meta.url), "utf8"),
     readFile(new URL("../drizzle/0000_marvelous_pandemic.sql", import.meta.url), "utf8"),
     readFile(new URL("../drizzle/0001_outstanding_leper_queen.sql", import.meta.url), "utf8"),
@@ -245,6 +245,7 @@ test("ships durable role-based access and scoped people, work, portfolio and rew
     readFile(new URL("../drizzle/0007_colossal_lord_tyger.sql", import.meta.url), "utf8"),
     readFile(new URL("../drizzle/0008_spotty_trauma.sql", import.meta.url), "utf8"),
     readFile(new URL("../drizzle/0009_easy_wong.sql", import.meta.url), "utf8"),
+    readFile(new URL("../drizzle/0010_dry_blue_blade.sql", import.meta.url), "utf8"),
     readFile(new URL("../dist/.openai/drizzle/0000_marvelous_pandemic.sql", import.meta.url), "utf8"),
     readFile(new URL("../dist/.openai/drizzle/0001_outstanding_leper_queen.sql", import.meta.url), "utf8"),
     readFile(new URL("../dist/.openai/drizzle/0002_legal_vector.sql", import.meta.url), "utf8"),
@@ -255,6 +256,7 @@ test("ships durable role-based access and scoped people, work, portfolio and rew
     readFile(new URL("../dist/.openai/drizzle/0007_colossal_lord_tyger.sql", import.meta.url), "utf8"),
     readFile(new URL("../dist/.openai/drizzle/0008_spotty_trauma.sql", import.meta.url), "utf8"),
     readFile(new URL("../dist/.openai/drizzle/0009_easy_wong.sql", import.meta.url), "utf8"),
+    readFile(new URL("../dist/.openai/drizzle/0010_dry_blue_blade.sql", import.meta.url), "utf8"),
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/api/dashboard/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/access-control.ts", import.meta.url), "utf8"),
@@ -305,6 +307,10 @@ test("ships durable role-based access and scoped people, work, portfolio and rew
   assert.match(notificationMigration, /CREATE TABLE `notification_reads`/);
   assert.match(notificationMigration, /notification_reads_user_notification_unique/);
   assert.equal(packagedNotificationMigration, notificationMigration);
+  assert.match(policyMigration, /CREATE TABLE `organization_policies`/);
+  assert.match(policyMigration, /CREATE TABLE `policy_acknowledgements`/);
+  assert.match(policyMigration, /policy_acknowledgements_policy_version_employee_unique/);
+  assert.equal(packagedPolicyMigration, policyMigration);
   assert.match(schema, /kpiScores/);
   assert.match(schema, /skillScores/);
   assert.match(schema, /currentSalary/);
@@ -324,6 +330,8 @@ test("ships durable role-based access and scoped people, work, portfolio and rew
   assert.match(schema, /skillAchievements/);
   assert.match(schema, /userAccounts/);
   assert.match(schema, /notificationReads/);
+  assert.match(schema, /organizationPolicies/);
+  assert.match(schema, /policyAcknowledgements/);
   assert.match(page, /saveEvaluation/);
   assert.match(page, /saveHrPlan/);
   assert.match(page, /saveWorkItem/);
@@ -413,7 +421,7 @@ test("ships a private employee portal with safe team overview and self-only acti
   assert.match(page, /section\.id !== "projects"/);
   assert.match(page, /!isEmployeeUser && <AiAssistant/);
   assert.match(page, /item\.assigneeEmployeeId === currentUser\.employeeId/);
-  assert.match(page, /activeRewardEmployeeId = isEmployeeUser/);
+  assert.match(page, /const activeRewardEmployeeId = isAdmin \? rewardEmployeeId : currentUser\?\.employeeId \?\? ""/);
   assert.match(page, /บัญชีที่ใช้แต้ม/);
   assert.match(page, /employee-growth-portal/);
   assert.match(page, /employee-portal-welcome/);
@@ -425,7 +433,7 @@ test("ships a private employee portal with safe team overview and self-only acti
   assert.match(dashboardRoute, /id: `team-load:/);
   assert.match(dashboardRoute, /dueDate: item\.dueDate < teamOverviewDate \? "2000-01-01"/);
   assert.match(dashboardRoute, /currentUser\.role === "admin" \|\| currentUser\.role === "employee" \? hrProfileRows/);
-  assert.match(dashboardRoute, /const employeePortalActions = new Set\(\["markNotificationsRead", "saveWorkItem", "redeemReward"\]\)/);
+  assert.match(dashboardRoute, /const employeePortalActions = new Set\(\["markNotificationsRead", "saveWorkItem", "redeemReward", "acknowledgeOrganizationPolicy", "signContract"\]\)/);
   assert.match(dashboardRoute, /งานที่ส่งตรวจหรือปิดแล้วไม่สามารถแก้ความคืบหน้าได้/);
   assert.match(workSubmissionRoute, /งานนี้ส่งตรวจหรือปิดแล้ว/);
   assert.match(workSubmissionRoute, /งานนี้มีหลักฐานรอตรวจอยู่แล้ว/);
@@ -486,5 +494,452 @@ test("ships a secure admin-only, read-only employee preview link", async () => {
   assert.match(page, /guardEmployeePreviewMutation\("เริ่มหรืออัปเดตงาน"\)/);
   assert.match(page, /guardEmployeePreviewMutation\("ส่งหลักฐานใหม่"\)/);
   assert.match(page, /guardEmployeePreviewMutation\("ส่งคำขอแลกรางวัล"\)/);
+  assert.match(page, /guardEmployeePreviewMutation\("ยืนยันรับทราบกฎองค์กร"\)/);
+  assert.match(page, /disabled=\{isSaving \|\| isEmployeePreview\}/);
   assert.match(page, /disabled=\{isEmployeePreview \|\| !unreadNotifications\.length\}/);
+});
+
+test("ships balanced point governance and version-specific organization policy acknowledgements", async () => {
+  const assetRoot = new URL("../dist/client/assets/", import.meta.url);
+  const assetNames = await readdir(assetRoot);
+  const pageAssetName = assetNames.find((name) => /^page-.*\.js$/.test(name));
+  assert.ok(pageAssetName, "expected a built page asset");
+
+  const [pageAsset, page, dashboardRoute, data, schema, initialize, styles, policyMigration, packagedPolicyMigration, governanceMigration, packagedGovernanceMigration] = await Promise.all([
+    readFile(new URL(pageAssetName, assetRoot), "utf8"),
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/dashboard/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/kpi-data.ts", import.meta.url), "utf8"),
+    readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
+    readFile(new URL("../db/initialize.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+    readFile(new URL("../drizzle/0010_dry_blue_blade.sql", import.meta.url), "utf8"),
+    readFile(new URL("../dist/.openai/drizzle/0010_dry_blue_blade.sql", import.meta.url), "utf8"),
+    readFile(new URL("../drizzle/0011_same_iceman.sql", import.meta.url), "utf8"),
+    readFile(new URL("../dist/.openai/drizzle/0011_same_iceman.sql", import.meta.url), "utf8"),
+  ]);
+
+  // Policies and immutable acknowledgement evidence survive deployments.
+  assert.match(schema, /export const organizationPolicies = sqliteTable\("organization_policies"/);
+  assert.match(schema, /export const policyAcknowledgements = sqliteTable\("policy_acknowledgements"/);
+  assert.match(schema, /policyVersion: integer\("policy_version"\)\.notNull\(\)/);
+  assert.match(schema, /contentHash: text\("content_hash"\)\.notNull\(\)/);
+  assert.match(schema, /uniqueIndex\("policy_acknowledgements_policy_version_employee_unique"\)\.on\(table\.policyId, table\.policyVersion, table\.employeeId\)/);
+  assert.match(policyMigration, /CREATE TABLE `organization_policies`/);
+  assert.match(policyMigration, /CREATE TABLE `policy_acknowledgements`/);
+  assert.match(policyMigration, /CREATE UNIQUE INDEX `organization_policies_code_version_unique`/);
+  assert.match(policyMigration, /CREATE UNIQUE INDEX `policy_acknowledgements_policy_version_employee_unique` ON `policy_acknowledgements` \(`policy_id`,`policy_version`,`employee_id`\)/);
+  assert.match(initialize, /CREATE TABLE IF NOT EXISTS organization_policies/);
+  assert.match(initialize, /policy_acknowledgements_policy_version_employee_unique ON policy_acknowledgements \(policy_id, policy_version, employee_id\)/);
+  assert.match(initialize, /async function ensureColumn/);
+  assert.match(initialize, /PRAGMA table_info\(\$\{table\}\)/);
+  assert.match(initialize, /ALTER TABLE \$\{table\} ADD COLUMN \$\{column\} \$\{definition\}/);
+  assert.match(initialize, /\["rewards", "inventory_version", "INTEGER NOT NULL DEFAULT 0"\]/);
+  assert.match(initialize, /\["point_ledger", "policy_id", "TEXT REFERENCES organization_policies\(id\) ON DELETE SET NULL"\]/);
+  assert.match(initialize, /CREATE INDEX IF NOT EXISTS point_ledger_policy_idx ON point_ledger \(policy_id, policy_version\)/);
+  assert.equal(packagedPolicyMigration, policyMigration);
+
+  // The seeded work-rules template covers all eight mandatory subject areas,
+  // while the UI gives HR a matching pre-publication checklist.
+  const workRulesSeed = data.match(/id: "policy-work-rules-v1"[\s\S]*?(?=\n  \{\n    id: "policy-points-rewards-v1")/)?.[0] ?? "";
+  assert.ok(workRulesSeed, "expected the seeded work-rules policy");
+  for (const heading of [
+    "วันทำงาน เวลาทำงานปกติ และเวลาพัก",
+    "วันหยุดและหลักเกณฑ์การหยุด",
+    "การทำงานล่วงเวลาและการทำงานในวันหยุด",
+    "วันและสถานที่จ่ายค่าจ้าง",
+    "วันลาและหลักเกณฑ์การลา",
+    "วินัยและโทษทางวินัย",
+    "การร้องทุกข์และอุทธรณ์",
+    "การเลิกจ้างและค่าชดเชย",
+  ]) assert.match(workRulesSeed, new RegExp(heading));
+
+  const checklistBlock = page.match(/const complianceChecklistItems = \[[\s\S]*?\n\] as const;/)?.[0] ?? "";
+  assert.ok(checklistBlock, "expected the eight-topic compliance checklist");
+  for (const title of [
+    "เวลาทำงานและเวลาพัก",
+    "วันหยุด",
+    "การทำงานล่วงเวลา (OT)",
+    "ค่าจ้างและรอบจ่าย",
+    "วันลา",
+    "วินัยและการสอบข้อเท็จจริง",
+    "ช่องทางร้องทุกข์",
+    "การสิ้นสุดการจ้าง",
+  ]) assert.ok(checklistBlock.includes(title), `expected checklist topic: ${title}`);
+  assert.equal((checklistBlock.match(/\{ id: /g) ?? []).length, 8, "the publish checklist must contain exactly eight required topics");
+
+  // The product labels this as a reviewable template, not legal certification,
+  // and never treats points as wages or a replacement for due process.
+  assert.match(data, /เอกสารนี้เป็นแม่แบบสำหรับระบบทดลอง HR ต้องตรวจแก้ให้ตรงสภาพการจ้างและให้ที่ปรึกษากฎหมายทบทวนก่อนประกาศใช้จริง/);
+  assert.match(data, /ไม่ใช่ค่าจ้าง/);
+  assert.match(data, /ไม่แทนกระบวนการวินัย/);
+  assert.match(data, /ไม่ใช้ลดค่าจ้างหรือสิทธิตามกฎหมาย/);
+  assert.match(pageAsset, /แม่แบบตรวจข้อบังคับการทำงาน 8 หัวข้อ/);
+  assert.match(pageAsset, /ยืนยันว่าส่งให้ HR หรือที่ปรึกษากฎหมายทบทวนแล้ว/);
+  assert.match(pageAsset, /ระบบช่วยตรวจความครบถ้วนเท่านั้น ไม่ได้รับรองความถูกต้องทางกฎหมาย/);
+  assert.match(pageAsset, /ไม่ใช่การสละสิทธิ์หรือยอมรับทุกข้อความ/);
+
+  // Admins draft and publish; employees receive only applicable, effective
+  // published versions and can see only their own acknowledgement receipt.
+  assert.match(dashboardRoute, /function isPolicyEffective/);
+  assert.match(dashboardRoute, /function policyAppliesToEmployee/);
+  assert.match(dashboardRoute, /currentUser\.role === "admin" \|\| \(isPolicyEffective\(policy, policyDay\) && policyAppliesToEmployee\(policy, signedInEmployee, signedInEmployeeProfile\)\)/);
+  assert.match(dashboardRoute, /if \(currentUser\.role !== "admin"\) return Boolean\(currentUser\.employeeId\) && acknowledgement\.employeeId === currentUser\.employeeId/);
+  assert.match(dashboardRoute, /const visiblePolicyAcknowledgements = currentUser\.role === "admin"[\s\S]*?: visiblePolicyAcknowledgementRows\.map\(publicPolicyAcknowledgement\)/);
+  assert.match(dashboardRoute, /canManagePolicies: currentUser\.role === "admin"/);
+  assert.match(dashboardRoute, /canAcknowledgePolicies: Boolean\(currentUser\.employeeId\) && !employeePreview/);
+  const adminOnlyActionBlock = dashboardRoute.match(/const adminOnlyActions = new Set\(\[[^\]]+\]\)/)?.[0] ?? "";
+  assert.match(adminOnlyActionBlock, /"saveOrganizationPolicy"/);
+  assert.match(adminOnlyActionBlock, /"publishOrganizationPolicy"/);
+  assert.match(adminOnlyActionBlock, /"updateRewardRedemption"/);
+  assert.match(dashboardRoute, /employeePortalActions = new Set\(\["markNotificationsRead", "saveWorkItem", "redeemReward", "acknowledgeOrganizationPolicy", "signContract"\]\)/);
+  assert.match(page, /panel\.id !== "adjust" \|\| permissions\.canReviewWork/);
+  assert.match(page, /isAdmin \? <form className="organization-policy-editor"/);
+  assert.match(page, /พนักงานจะเห็นเฉพาะฉบับที่ประกาศแล้ว/);
+
+  // Published rows are immutable; edits create the next version. Acknowledging
+  // is self-only, version-specific, content-bound, and idempotent.
+  assert.match(dashboardRoute, /const createsNewVersion = !sourcePolicy \|\| sourcePolicy\.status === "published"/);
+  assert.match(dashboardRoute, /if \(draft\.status !== "draft"\)/);
+  assert.match(dashboardRoute, /requestedCategory !== sourcePolicy\.category/);
+  assert.match(dashboardRoute, /requestedCode !== sourcePolicy\.code/);
+  assert.match(dashboardRoute, /category === "points_rewards" \? true : payload\.acknowledgementRequired/);
+  assert.match(dashboardRoute, /draft\.category === "points_rewards" && !draft\.acknowledgementRequired/);
+  assert.match(page, /const savedPolicy = await persistOrganizationPolicyDraft\(\)/);
+  assert.match(page, /policyId: savedPolicy\.id/);
+  assert.match(dashboardRoute, /type PolicyHashInput = Pick<OrganizationPolicyRow, "code" \| "title" \| "summary" \| "content" \| "category" \| "version" \| "effectiveDate" \| "scopeType" \| "scopeValues" \| "acknowledgementRequired" \| "acknowledgementDueDays" \| "rules">/);
+  assert.match(dashboardRoute, /function stableJsonValue\(value: unknown\)/);
+  assert.match(dashboardRoute, /async function policyIntegrityHash\(policy: PolicyHashInput\)/);
+  const policyHashBlock = dashboardRoute.match(/async function policyIntegrityHash\(policy: PolicyHashInput\) \{[\s\S]*?\n\}/)?.[0] ?? "";
+  for (const canonicalField of ["code", "title", "summary", "content", "category", "version", "effectiveDate", "scopeType", "scopeValues", "acknowledgementRequired", "acknowledgementDueDays", "rules"]) {
+    assert.match(policyHashBlock, new RegExp(`\\b${canonicalField}:`), `canonical policy hash must bind ${canonicalField}`);
+  }
+  assert.doesNotMatch(policyHashBlock, /effectiveTo:/, "closing an older policy version must not invalidate its acknowledgement hash");
+  assert.match(dashboardRoute, /const hash = await policyIntegrityHash\(draft\)/);
+  assert.match(dashboardRoute, /const currentPolicyHash = await policyIntegrityHash\(policy\)/);
+  assert.match(dashboardRoute, /policy\.contentHash !== currentPolicyHash/);
+  assert.match(dashboardRoute, /eq\(policyAcknowledgements\.policyVersion, policy\.version\)/);
+  assert.match(dashboardRoute, /policyVersion: policy\.version/);
+  assert.match(dashboardRoute, /contentHash: currentPolicyHash/);
+  const publicAcknowledgementBlock = dashboardRoute.match(/function publicPolicyAcknowledgement\([\s\S]*?\n\}/)?.[0] ?? "";
+  assert.match(publicAcknowledgementBlock, /const \{ id, policyId, employeeId, policyVersion, contentHash, acknowledgedAt \} = acknowledgement/);
+  assert.match(publicAcknowledgementBlock, /return \{ id, policyId, employeeId, policyVersion, contentHash, acknowledgedAt \}/);
+  assert.doesNotMatch(publicAcknowledgementBlock, /acknowledgedEmail|authenticatedUserId|acknowledgementText|acknowledgedName|userAccountId/);
+  assert.match(dashboardRoute, /if \(existingAcknowledgement\) return Response\.json\(\{ policyAcknowledgement: currentUser\.role === "admin" \? existingAcknowledgement : publicPolicyAcknowledgement\(existingAcknowledgement\) \}\)/);
+  assert.match(dashboardRoute, /db\.insert\(policyAcknowledgements\)\.values\(policyAcknowledgement\)\.onConflictDoNothing\(\)/);
+  assert.match(dashboardRoute, /policyAcknowledgement: currentUser\.role === "admin" \? acknowledgementResponse : publicPolicyAcknowledgement\(acknowledgementResponse\)/);
+  assert.match(page, /guardEmployeePreviewMutation\("ยืนยันรับทราบกฎองค์กร"\)/);
+  assert.match(page, /disabled=\{isSaving \|\| isEmployeePreview\}/);
+
+  // The UI consumes the effective policy returned by the server instead of
+  // rendering a second, hard-coded point economy.
+  assert.match(page, /useState<PointPolicyRules>\(defaultPointPolicyRules\)/);
+  assert.match(page, /pointPolicyRules\?: PointPolicyRules/);
+  assert.match(page, /setActivePointPolicyRules\(body\.pointPolicyRules \?\? defaultPointPolicyRules\)/);
+  assert.match(page, /const pointEconomyPolicy = activePointPolicyRules\.economy/);
+  assert.match(page, /const pointEventRules = activePointPolicyRules\.events/);
+  assert.match(page, /const workPointAwards = activePointPolicyRules\.workAwards/);
+  assert.match(page, /pointEventRules\[eventType\]\.entryMode === "manual"/);
+  assert.match(page, /pointEventRules\[eventType\]\.authorizedRoles\.includes\(pointOperatorRole\)/);
+  assert.match(page, /required=\{selectedPointEventRule\.requiresEvidence\}/);
+  assert.match(page, /monthlyEvaluationPoints\(monthlyPointExampleScore, activePointPolicyRules\)/);
+  assert.match(page, /workPointValue\("mission", "high", activePointPolicyRules\)/);
+  assert.match(page, /setActivePointPolicyRules\(resolvePointPolicyRules\(body\.organizationPolicy\.rules\)\)/);
+  assert.match(page, /const monthlyPointFormulaLabel = `ต้องผ่าน \$\{pointEconomyPolicy\.monthlyEvaluationMinimumScore\}/);
+  assert.match(page, /const rewardPreflightChecks = rewardToRedeem \? \[/);
+  for (const preflightId of ["policy", "acknowledgement", "balance", "monthly-limit", "cooldown", "stock"]) {
+    assert.match(page, new RegExp(`id: "${preflightId}"`));
+  }
+  assert.match(page, /disabled=\{isSaving \|\| !canSubmitRewardRedemption\}/);
+
+  // The active published point policy is the source of truth for caps,
+  // evidence, authorized actors, redemption cadence and anti-self-dealing.
+  assert.match(data, /export const defaultPointPolicyRules/);
+  assert.match(data, /negativePointsPerMonthCap: 200/);
+  assert.match(data, /deadlineBonusMonthlyCap: 80/);
+  assert.match(data, /workAwardsMonthlyCap: 420/);
+  assert.match(data, /standardEarnMonthlyCap: 900/);
+  assert.match(data, /maxRedemptionsPerMonth: 2/);
+  assert.match(data, /cooldownDays: 7/);
+  assert.match(data, /warning: \{[\s\S]*?entryMode: "manual"[\s\S]*?requiresEvidence: true[\s\S]*?authorizedRoles: \["admin"\]/);
+  assert.match(dashboardRoute, /const \{ policy: activePointPolicy, rules: activePointRules \} = pointPolicyFromRows/);
+  assert.match(dashboardRoute, /ผู้ใช้ไม่สามารถให้หรือหักแต้มของตนเองได้/);
+  assert.match(dashboardRoute, /rule\.entryMode !== "manual"/);
+  assert.match(dashboardRoute, /!rule\.authorizedRoles\.includes\(currentUser\.role\)/);
+  assert.match(dashboardRoute, /rule\.requiresEvidence && !evidenceUrl/);
+  assert.match(dashboardRoute, /negativePointsThisMonth \+ Math\.abs\(rule\.points\) > eventPointEconomyPolicy\.negativePointsPerMonthCap/);
+  assert.match(dashboardRoute, /positiveEventsThisMonth \+ workAwardsThisMonth \+ rule\.points > eventPointEconomyPolicy\.standardEarnMonthlyCap/);
+  assert.match(dashboardRoute, /activePointRules\.redemption\.acknowledgementRequired/);
+  assert.match(dashboardRoute, /monthlyRedemptions\.length >= activePointRules\.redemption\.maxRedemptionsPerMonth/);
+  assert.match(dashboardRoute, /activePointRules\.redemption\.cooldownDays/);
+  assert.match(dashboardRoute, /ผู้ใช้ไม่สามารถประเมินตนเองหรือให้แต้มจากผลประเมินตนเองได้/);
+  assert.match(dashboardRoute, /แต้มจะถูกคำนวณแบบครั้งเดียวเมื่อ HR ประมวลผลรอบแต้มรายเดือน/);
+  assert.ok((dashboardRoute.match(/\.\.\.policyMetadata/g) ?? []).length >= 4, "governed point events and ledger rows must carry policy provenance");
+
+  // Migration 0011 and the schema preserve the exact policy used for every
+  // point mutation and serialize competing publish, point and reward writes.
+  assert.equal(packagedGovernanceMigration, governanceMigration);
+  assert.match(schema, /export const organizationPolicyPublishClaims = sqliteTable\("organization_policy_publish_claims"/);
+  assert.match(schema, /export const pointMutationClaims = sqliteTable\("point_mutation_claims"/);
+  assert.match(schema, /export const rewardRedemptionClaims = sqliteTable\("reward_redemption_claims"/);
+  assert.match(schema, /inventoryVersion: integer\("inventory_version"\)\.notNull\(\)\.default\(0\)/);
+  assert.equal((schema.match(/policyId: text\("policy_id"\)\.references\(\(\) => organizationPolicies\.id/g) ?? []).length, 2, "both point tables must retain policy provenance");
+  assert.equal((schema.match(/policyVersion: integer\("policy_version"\)/g) ?? []).length, 3, "acknowledgements and both point tables must retain policy versions");
+  assert.equal((schema.match(/policyContentHash: text\("policy_content_hash"\)/g) ?? []).length, 2, "both point tables must retain policy hashes");
+  assert.match(governanceMigration, /CREATE TABLE `organization_policy_publish_claims`/);
+  assert.match(governanceMigration, /CREATE UNIQUE INDEX `organization_policy_publish_claim_head_unique`/);
+  assert.match(governanceMigration, /CREATE TABLE `point_mutation_claims`/);
+  assert.match(governanceMigration, /CREATE UNIQUE INDEX `point_mutation_claim_employee_sequence_unique`/);
+  assert.match(governanceMigration, /CREATE TABLE `reward_redemption_claims`/);
+  assert.match(governanceMigration, /CREATE UNIQUE INDEX `reward_redemption_claim_inventory_unique`/);
+  assert.match(governanceMigration, /ALTER TABLE `point_events` ADD `policy_content_hash` text/);
+  assert.match(governanceMigration, /ALTER TABLE `point_ledger` ADD `policy_content_hash` text/);
+  assert.match(governanceMigration, /ALTER TABLE `rewards` ADD `inventory_version` integer DEFAULT 0 NOT NULL/);
+  assert.match(dashboardRoute, /function pointPolicyMetadata\(policy: OrganizationPolicyRow \| null\)/);
+  assert.match(dashboardRoute, /policyId: policy\?\.id \?\? null/);
+  assert.match(dashboardRoute, /policyVersion: policy\?\.version \?\? null/);
+  assert.match(dashboardRoute, /policyContentHash: policy\?\.contentHash \|\| null/);
+  assert.match(dashboardRoute, /db\.insert\(organizationPolicyPublishClaims\)\.values\(publishClaim\)/);
+  assert.match(dashboardRoute, /db\.insert\(pointMutationClaims\)\.values\(mutationClaim\)/);
+  assert.match(dashboardRoute, /db\.insert\(rewardRedemptionClaims\)\.values\(redemptionClaim\)/);
+  assert.ok((dashboardRoute.match(/await db\.batch\(\[/g) ?? []).length >= 5, "governed multi-row mutations must use D1 batches");
+
+  // Manual point events use the historical policy, bounded backdating and
+  // verified attendance records rather than trusting a free-form request.
+  assert.match(dashboardRoute, /if \(eventDate > today\) return Response\.json\(\{ error: "ไม่สามารถบันทึกเหตุการณ์แต้มล่วงหน้าได้"/);
+  assert.match(dashboardRoute, /const maximumBackdateDays = currentUser\.role === "admin" \? 90 : 7/);
+  assert.match(dashboardRoute, /pointPolicyFromRows\(pointPolicyRows, eventDate\)/);
+  assert.match(dashboardRoute, /if \(!eventPointPolicy\) return Response\.json\(\{ error: "ไม่มีกติกาแต้มที่ประกาศใช้สำหรับวันที่เกิดเหตุการณ์/);
+  assert.match(dashboardRoute, /const attendanceTypes: PointEventType\[\] = \["attendance_on_time", "attendance_late", "absence", "approved_leave"\]/);
+  assert.match(dashboardRoute, /eq\(attendanceRecords\.employeeId, employeeId\), eq\(attendanceRecords\.workDate, eventDate\)/);
+  assert.match(dashboardRoute, /attendanceRecord\.status !== expectedAttendanceStatus \|\| !approvalMatches/);
+  assert.match(dashboardRoute, /eventType === "approved_leave" \? attendanceRecord\?\.approvalStatus === "approved"/);
+
+  // Database triggers independently reject stale stock, insufficient balance,
+  // monthly-limit and cooldown races during reward redemption.
+  assert.match(governanceMigration, /CREATE TRIGGER `reward_redemption_claim_guard`/);
+  assert.match(governanceMigration, /REDEMPTION_STALE_INVENTORY/);
+  assert.match(governanceMigration, /REDEMPTION_INSUFFICIENT_BALANCE/);
+  assert.match(governanceMigration, /REDEMPTION_MONTHLY_LIMIT/);
+  assert.match(governanceMigration, /REDEMPTION_COOLDOWN/);
+  assert.match(dashboardRoute, /rewardInventoryKey: `\$\{rewardId\}:inventory:\$\{reward\.inventoryVersion\}`/);
+  assert.match(dashboardRoute, /eq\(rewards\.inventoryVersion, reward\.inventoryVersion\)/);
+  assert.match(dashboardRoute, /isRedemptionConflictError\(error\)/);
+
+  // Work evidence and reward requests have one-way, idempotent workflows.
+  assert.match(dashboardRoute, /const submissionDate = bangkokIsoDayFromTimestamp\(submission\.submittedAt\) \?\? bangkokIsoDay\(\)/);
+  assert.match(dashboardRoute, /eq\(workSubmissions\.status, "submitted"\)/);
+  assert.match(dashboardRoute, /eq\(workItems\.status, "review"\)/);
+  assert.match(dashboardRoute, /if \(payload\.action === "updateRewardRedemption"\)/);
+  assert.match(dashboardRoute, /redemption\.status === "requested" && \(targetStatus === "approved" \|\| targetStatus === "cancelled"\)/);
+  assert.match(dashboardRoute, /redemption\.status === "approved" && \(targetStatus === "fulfilled" \|\| targetStatus === "cancelled"\)/);
+  assert.match(dashboardRoute, /const reversalId = `points-redemption-reversal-\$\{redemption\.id\}`/);
+  assert.match(dashboardRoute, /stock: sql`\$\{rewards\.stock\} \+ 1`/);
+  assert.match(page, /updateRewardRedemption\(redemption, "approved"\)/);
+  assert.match(page, /updateRewardRedemption\(redemption, "fulfilled"\)/);
+  assert.match(page, /updateRewardRedemption\(redemption, "cancelled"\)/);
+  assert.match(page, /\.filter\(\(entry\) => entry\.points !== 0\)/);
+  assert.match(styles, /\.work-point-table-scroll \{[^}]*overflow-x: auto/);
+
+  assert.match(pageAsset, /กฎองค์กรและการรับทราบ/);
+  assert.match(pageAsset, /ยืนยันว่าได้อ่านและรับทราบ/);
+  assert.match(styles, /Points hub and organization policy workspace/);
+  assert.match(styles, /\.organization-policy-center/);
+  assert.match(styles, /\.policy-acknowledgement-card/);
+});
+
+test("hardens policy publishing, point caps and work evidence against concurrent writes", async () => {
+  const [schema, initialize, dashboardRoute, workSubmissionRoute, hardeningMigration, packagedHardeningMigration] = await Promise.all([
+    readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
+    readFile(new URL("../db/initialize.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/dashboard/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/work-submissions/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../drizzle/0012_common_christian_walker.sql", import.meta.url), "utf8"),
+    readFile(new URL("../dist/.openai/drizzle/0012_common_christian_walker.sql", import.meta.url), "utf8"),
+  ]);
+
+  assert.equal(packagedHardeningMigration, hardeningMigration, "the deployed bundle must include migration 0012 verbatim");
+
+  // Saving and publishing a policy are compare-and-swap operations bound to
+  // the canonical content visible to HR, including a database-level guard.
+  assert.match(schema, /expectedContentHash: text\("expected_content_hash"\)\.notNull/);
+  assert.match(hardeningMigration, /ALTER TABLE `organization_policy_publish_claims` ADD `expected_content_hash`/);
+  assert.match(hardeningMigration, /CREATE TRIGGER `organization_policy_publish_claim_guard`/);
+  assert.match(hardeningMigration, /`status` = 'draft'/);
+  assert.match(hardeningMigration, /`content_hash` = NEW\.`expected_content_hash`/);
+  assert.match(hardeningMigration, /POLICY_PUBLISH_STALE_DRAFT/);
+  assert.match(initialize, /CREATE TRIGGER IF NOT EXISTS organization_policy_publish_claim_guard/);
+  const savePolicyBlock = dashboardRoute.match(/if \(payload\.action === "saveOrganizationPolicy"\) \{[\s\S]*?(?=\n    if \(payload\.action === "publishOrganizationPolicy"\))/)?.[0] ?? "";
+  const publishPolicyBlock = dashboardRoute.match(/if \(payload\.action === "publishOrganizationPolicy"\) \{[\s\S]*?(?=\n    if \(payload\.action === "acknowledgeOrganizationPolicy"\))/)?.[0] ?? "";
+  assert.ok(savePolicyBlock && publishPolicyBlock, "expected isolated policy save and publish actions");
+  assert.match(savePolicyBlock, /contentHash: await policyIntegrityHash\(draftPolicy\)/);
+  assert.match(savePolicyBlock, /eq\(organizationPolicies\.status, "draft"\)/);
+  assert.match(savePolicyBlock, /eq\(organizationPolicies\.contentHash, sourcePolicy\.contentHash\)/);
+  assert.match(savePolicyBlock, /eq\(organizationPolicies\.updatedAt, sourcePolicy\.updatedAt\)/);
+  assert.match(publishPolicyBlock, /expectedContentHash: draft\.contentHash/);
+  assert.match(publishPolicyBlock, /message\.includes\("POLICY_PUBLISH_"\)/);
+  assert.match(publishPolicyBlock, /status: 409/);
+
+  // Every standard capped award path shares one employee/month sequence lock,
+  // so a work approval and manual bonus cannot both spend the same allowance.
+  assert.match(schema, /export const pointCapClaims = sqliteTable\("point_cap_claims"/);
+  for (const field of ["claimMonth", "sourceType", "sourceId", "employeeMonthSequenceKey"]) assert.match(schema, new RegExp(`${field}:`));
+  for (const indexName of [
+    "point_cap_claim_employee_month_sequence_unique",
+    "point_cap_claim_source_unique",
+    "point_cap_claim_employee_month_idx",
+  ]) {
+    assert.match(schema, new RegExp(indexName));
+    assert.match(hardeningMigration, new RegExp(indexName));
+    assert.match(initialize, new RegExp(indexName));
+  }
+  const reviewBlock = dashboardRoute.match(/if \(payload\.action === "reviewWorkSubmission"\) \{[\s\S]*?(?=\n    if \(payload\.action === "recordPointEvent"\))/)?.[0] ?? "";
+  const manualPointBlock = dashboardRoute.match(/if \(payload\.action === "recordPointEvent"\) \{[\s\S]*?(?=\n    if \(payload\.action === "runMonthlyPointCycle"\))/)?.[0] ?? "";
+  assert.ok(reviewBlock && manualPointBlock, "expected isolated review and manual-point actions");
+  assert.match(reviewBlock, /sourceType: status === "approved" \? "work_approval" : "work_revision"/);
+  assert.match(reviewBlock, /sourceId: status === "approved" \? workItem\.id : submission\.id/);
+  assert.match(reviewBlock, /employeeMonthSequenceKey: `\$\{workItem\.assigneeEmployeeId\}:\$\{completionMonth\}:\$\{employeeCapClaimRows\.length\}`/);
+  assert.match(reviewBlock, /db\.insert\(pointCapClaims\)\.values\(pointCapClaim\)/);
+  assert.doesNotMatch(reviewBlock, /reviewClaimPrefix|points-work-review-claim|points:\s*0/);
+  assert.match(manualPointBlock, /sourceType: "manual_point_event"/);
+  assert.match(manualPointBlock, /sourceId: eventId/);
+  assert.match(manualPointBlock, /employeeMonthSequenceKey: `\$\{employeeId\}:\$\{eventMonth\}:\$\{employeeCapClaimRows\.length\}`/);
+  assert.match(manualPointBlock, /await db\.batch\(\[[\s\S]*?db\.insert\(pointEvents\)[\s\S]*?db\.insert\(pointMutationClaims\)[\s\S]*?db\.insert\(pointCapClaims\)[\s\S]*?db\.insert\(pointLedger\)/);
+
+  // Evaluations become immutable inputs to the explicit monthly point run;
+  // saving an evaluation never rewrites a ledger award already spent.
+  const saveEvaluationBlock = dashboardRoute.match(/if \(payload\.action === "saveEvaluation"\) \{[\s\S]*?(?=\n    if \(payload\.action === "saveHrPlan"\))/)?.[0] ?? "";
+  const monthlyCycleBlock = dashboardRoute.match(/if \(payload\.action === "runMonthlyPointCycle"\) \{[\s\S]*?(?=\n    if \(payload\.action === "updateRewardRedemption"\))/)?.[0] ?? "";
+  assert.ok(saveEvaluationBlock && monthlyCycleBlock, "expected isolated evaluation and monthly-cycle actions");
+  assert.match(saveEvaluationBlock, /eq\(employees\.status, "active"\)/);
+  assert.match(saveEvaluationBlock, /await db\.batch\(\[/);
+  assert.doesNotMatch(saveEvaluationBlock, /monthlyEvaluationPoints|db\.insert\(pointEvents\)|db\.insert\(pointLedger\)/);
+  assert.match(saveEvaluationBlock, /\{ evaluation, pointEntry: null, pointEvent: null, pointWarning: "บันทึกผลประเมินแล้ว แต้มจะถูกคำนวณแบบครั้งเดียวเมื่อ HR ประมวลผลรอบแต้มรายเดือน" \}/);
+  assert.match(monthlyCycleBlock, /monthlyPointPolicy\.contentHash !== await policyIntegrityHash\(monthlyPointPolicy\)/);
+  assert.match(monthlyCycleBlock, /const monthlySourceId = `monthly-evaluation-\$\{month\}:\$\{evaluation\.employeeId\}`/);
+  assert.match(monthlyCycleBlock, /db\.insert\(pointEvents\)\.values\(event\)\.onConflictDoNothing\(\)/);
+  assert.match(monthlyCycleBlock, /db\.insert\(pointLedger\)\.values\(entry\)\.onConflictDoNothing\(\)/);
+
+  // Evidence submission is one atomic state transition. Database constraints
+  // reject duplicate pending evidence or changed work terms, and an uploaded R2
+  // object is removed if the transaction fails before it is committed.
+  assert.match(schema, /work_submissions_one_submitted_per_work_unique/);
+  assert.match(hardeningMigration, /CREATE UNIQUE INDEX `work_submissions_one_submitted_per_work_unique`/);
+  for (const [trigger, code] of [
+    ["work_submission_insert_guard", "WORK_SUBMISSION_INVALID_STATE"],
+    ["work_item_submission_terms_lock", "WORK_ITEM_TERMS_LOCKED"],
+  ]) {
+    assert.match(hardeningMigration, new RegExp("CREATE TRIGGER `" + trigger + "`"));
+    assert.match(hardeningMigration, new RegExp(code));
+    assert.match(initialize, new RegExp(trigger));
+    assert.match(initialize, new RegExp(code));
+  }
+  assert.match(hardeningMigration, /`assignee_employee_id` = NEW\.`employee_id`/);
+  assert.match(hardeningMigration, /`status` IN \('todo', 'in_progress'\)/);
+  assert.match(hardeningMigration, /NEW\.`project_id` IS NOT OLD\.`project_id`/);
+  assert.match(hardeningMigration, /NEW\.`due_date` IS NOT OLD\.`due_date`/);
+  assert.equal((workSubmissionRoute.match(/await db\.batch\(\[/g) ?? []).length, 1, "submission insert and work transition must use one D1 batch");
+  assert.match(workSubmissionRoute, /db\.insert\(workSubmissions\)\.values\(submission\)[\s\S]*?db\.update\(workItems\)/);
+  assert.match(workSubmissionRoute, /WORK_SUBMISSION_INVALID_STATE[\s\S]*?status: 409/);
+  assert.match(workSubmissionRoute, /UNIQUE constraint failed[\s\S]*?status: 409/);
+  assert.match(workSubmissionRoute, /uploadedStorageKey && !submissionCommitted/);
+  assert.match(workSubmissionRoute, /getFilesBucket\(\)\.delete\(uploadedStorageKey\)/);
+  assert.match(reviewBlock, /await db\.batch\(\[[\s\S]*?db\.insert\(pointCapClaims\)[\s\S]*?db\.update\(workSubmissions\)[\s\S]*?db\.update\(workItems\)/);
+});
+
+test("locks employee evidence and signatures to their owner and applies Bangkok business months", async () => {
+  const [page, dashboardRoute, workSubmissionRoute, initialize, bangkokMigration, packagedBangkokMigration] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/dashboard/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/work-submissions/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../db/initialize.ts", import.meta.url), "utf8"),
+    readFile(new URL("../drizzle/0013_bangkok_reward_month.sql", import.meta.url), "utf8"),
+    readFile(new URL("../dist/.openai/drizzle/0013_bangkok_reward_month.sql", import.meta.url), "utf8"),
+  ]);
+
+  // Employees may sign only their own contract. Managers and admins are not
+  // allowed to sign on behalf of another person even if they can view them.
+  assert.match(dashboardRoute, /employeePortalActions = new Set\(\[[^\]]*"signContract"[^\]]*\]\)/);
+  const signContractBlock = dashboardRoute.match(/if \(payload\.action === "signContract"\) \{[\s\S]*?(?=\n    if \(payload\.action === "sendContract"\))/)?.[0] ?? "";
+  assert.ok(signContractBlock, "expected an isolated contract-signing action");
+  assert.match(signContractBlock, /currentUser\.role !== "employee" \|\| !currentUser\.employeeId \|\| currentUser\.employeeId !== contract\.employeeId/);
+  assert.match(signContractBlock, /เฉพาะพนักงานเจ้าของสัญญาเท่านั้นที่ลงนามได้ HR และหัวหน้าทีมไม่สามารถลงนามแทน/);
+  assert.doesNotMatch(signContractBlock, /canAccessEmployee\(/, "view access must never authorize a signature");
+
+  // Evidence POSTs are owner-only and require an active employee record. HR
+  // and managers retain read/review access, but cannot manufacture evidence.
+  const submissionPostBlock = workSubmissionRoute.match(/export async function POST\(request: Request\) \{[\s\S]*?(?=\nexport async function GET\()/)?.[0] ?? "";
+  assert.ok(submissionPostBlock, "expected an isolated evidence POST handler");
+  assert.match(submissionPostBlock, /currentUser\.role !== "employee" \|\| !currentUser\.employeeId \|\| currentUser\.employeeId !== workItem\.assigneeEmployeeId/);
+  assert.match(submissionPostBlock, /เฉพาะพนักงานผู้รับผิดชอบงานเท่านั้นที่ส่งหลักฐานได้ HR และหัวหน้าทีมไม่สามารถส่งแทน/);
+  assert.match(submissionPostBlock, /eq\(employees\.id, workItem\.assigneeEmployeeId\), eq\(employees\.status, "active"\)/);
+  assert.match(submissionPostBlock, /employeeId: workItem\.assigneeEmployeeId/);
+  assert.doesNotMatch(submissionPostBlock, /canAccessEmployee\(currentUser/, "team visibility must not grant evidence submission rights");
+
+  // Saving work uses compare-and-swap for both employee progress and manager
+  // edits, and refuses to overwrite a concurrent transition to review.
+  const saveWorkItemBlock = dashboardRoute.match(/if \(payload\.action === "saveWorkItem"\) \{[\s\S]*?(?=\n    if \(payload\.action === "reviewWorkSubmission"\))/)?.[0] ?? "";
+  assert.ok(saveWorkItemBlock, "expected an isolated save-work action");
+  assert.match(saveWorkItemBlock, /eq\(workItems\.status, assignedWorkItem\.status\)/);
+  assert.match(saveWorkItemBlock, /eq\(workItems\.updatedAt, assignedWorkItem\.updatedAt\)/);
+  assert.match(saveWorkItemBlock, /eq\(workItems\.status, existingWorkItem\.status\)/);
+  assert.match(saveWorkItemBlock, /eq\(workItems\.updatedAt, existingWorkItem\.updatedAt\)/);
+  assert.equal((saveWorkItemBlock.match(/notExists\(submittedEvidence\)/g) ?? []).length, 2, "both work update paths must reject submitted evidence");
+  assert.ok((saveWorkItemBlock.match(/\)\.returning\(\)/g) ?? []).length >= 2, "both work update paths must inspect their CAS result");
+  assert.equal((saveWorkItemBlock.match(/if \(!savedWorkItem\) return Response\.json\([\s\S]*?\{ status: 409 \}\)/g) ?? []).length, 2, "both stale work updates must return conflict");
+  assert.match(saveWorkItemBlock, /await db\.insert\(workItems\)\.values\(workItem\)/);
+  assert.doesNotMatch(saveWorkItemBlock, /insert\(workItems\)[\s\S]*?onConflictDoUpdate/, "new work must not upsert over a concurrent row");
+
+  // Anti-self-dealing applies to every account linked to the target employee,
+  // regardless of whether the linked account is employee, manager or admin.
+  const evaluationBlock = dashboardRoute.match(/if \(payload\.action === "saveEvaluation"\) \{[\s\S]*?(?=\n    if \(payload\.action === "saveHrPlan"\))/)?.[0] ?? "";
+  const reviewBlock = dashboardRoute.match(/if \(payload\.action === "reviewWorkSubmission"\) \{[\s\S]*?(?=\n    if \(payload\.action === "recordPointEvent"\))/)?.[0] ?? "";
+  const manualPointBlock = dashboardRoute.match(/if \(payload\.action === "recordPointEvent"\) \{[\s\S]*?(?=\n    if \(payload\.action === "runMonthlyPointCycle"\))/)?.[0] ?? "";
+  assert.ok(evaluationBlock && reviewBlock && manualPointBlock, "expected isolated evaluation, review and point actions");
+  assert.match(evaluationBlock, /if \(currentUser\.employeeId === employeeId\) return Response\.json\([\s\S]*?\{ status: 403 \}\)/);
+  assert.match(reviewBlock, /if \(currentUser\.employeeId === workItem\.assigneeEmployeeId\) return Response\.json\([\s\S]*?\{ status: 403 \}\)/);
+  assert.match(manualPointBlock, /if \(currentUser\.employeeId === employeeId\) return Response\.json\([\s\S]*?\{ status: 403 \}\)/);
+
+  // The proof composer is rendered only for the signed-in employee who owns
+  // the work item. HR and managers receive a read/review-only explanation.
+  assert.match(page, /const canSubmitActiveWorkProof = Boolean\(!isEmployeePreview && currentUser\?\.role === "employee" && currentUser\.employeeId && currentUser\.employeeId === submissionWorkItem\?\.assigneeEmployeeId\)/);
+  assert.match(page, /isEmployeePreview \|\| !canSubmitActiveWorkProof \|\| submissionWorkItem\.status === "review" \|\| submissionWorkItem\.status === "done" \? <div[\s\S]*?: <form className="submission-form" onSubmit=\{submitWorkProof\}>/);
+  assert.match(page, /HR และหัวหน้าเปิดดูหลักฐานและตรวจผลงานได้ แต่ส่งแทนพนักงานไม่ได้/);
+
+  // Every user-facing and server-side business day/month calculation uses the
+  // Asia/Bangkok boundary, including work caps and reward preflight checks.
+  assert.match(dashboardRoute, /const BANGKOK_OFFSET_MS = 7 \* 60 \* 60 \* 1000/);
+  assert.match(dashboardRoute, /function bangkokIsoDayFromTimestamp\(value: string\)/);
+  assert.match(dashboardRoute, /new Date\(timestamp \+ BANGKOK_OFFSET_MS\)\.toISOString\(\)\.slice\(0, 10\)/);
+  assert.match(dashboardRoute, /function bangkokMonthFromTimestamp\(value: string\)/);
+  assert.match(dashboardRoute, /const submissionDate = bangkokIsoDayFromTimestamp\(submission\.submittedAt\) \?\? bangkokIsoDay\(\)/);
+  assert.equal((dashboardRoute.match(/bangkokMonthFromTimestamp\(entry\.createdAt\)/g) ?? []).length, 2, "work and manual awards must share Bangkok month caps");
+  assert.match(dashboardRoute, /const month = bangkokMonthFromTimestamp\(now\) \?\? bangkokIsoDay\(\)\.slice\(0, 7\)/);
+  assert.match(dashboardRoute, /activeRedemptions\.filter\(\(redemption\) => bangkokMonthFromTimestamp\(redemption\.createdAt\) === month\)/);
+  assert.match(page, /new Intl\.DateTimeFormat\("en-CA", \{ timeZone: "Asia\/Bangkok"/);
+  assert.match(page, /const \[monthlyPointMonth, setMonthlyPointMonth\] = useState\(bangkokIsoMonth\(\)\)/);
+  assert.match(page, /eventDate: bangkokIsoDate\(\)/);
+  assert.match(page, /activeRewardRedemptions\.filter\(\(redemption\) => bangkokIsoMonth\(redemption\.createdAt\) === rewardCurrentMonth\)/);
+  assert.match(page, /people-pulse-work-portfolio-\$\{bangkokIsoDate\(\)\}\.csv/);
+
+  // Migration 0013 replaces the old UTC trigger in both fresh and existing
+  // databases, validates the claimed month and counts Bangkok-month requests.
+  assert.equal(packagedBangkokMigration, bangkokMigration, "the deployed bundle must include migration 0013 verbatim");
+  for (const fragment of [
+    "DROP TRIGGER IF EXISTS `reward_redemption_claim_guard`",
+    "CREATE TRIGGER `reward_redemption_claim_guard`",
+    "datetime(NEW.`created_at`, '+7 hours')",
+    "datetime(`created_at`, '+7 hours')",
+    "REDEMPTION_INVALID_MONTH",
+    "REDEMPTION_MONTHLY_LIMIT",
+  ]) assert.ok(bangkokMigration.includes(fragment), `expected migration 0013 fragment: ${fragment}`);
+  const migrationDrop = bangkokMigration.indexOf("DROP TRIGGER IF EXISTS `reward_redemption_claim_guard`");
+  const migrationCreate = bangkokMigration.indexOf("CREATE TRIGGER `reward_redemption_claim_guard`");
+  assert.ok(migrationDrop >= 0 && migrationCreate > migrationDrop, "migration 0013 must drop the UTC trigger before recreating it");
+  const initializeDrop = initialize.indexOf('d1.prepare("DROP TRIGGER IF EXISTS reward_redemption_claim_guard")');
+  const initializeCreate = initialize.indexOf("d1.prepare(`CREATE TRIGGER reward_redemption_claim_guard");
+  assert.ok(initializeDrop >= 0 && initializeCreate > initializeDrop, "runtime initialization must replace the trigger in the same order");
+  assert.match(initialize, /datetime\(NEW\.created_at, '\+7 hours'\)/);
+  assert.match(initialize, /datetime\(created_at, '\+7 hours'\)/);
+  assert.match(initialize, /REDEMPTION_INVALID_MONTH/);
 });

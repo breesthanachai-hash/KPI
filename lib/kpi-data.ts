@@ -228,6 +228,7 @@ export type RewardRecord = {
   category: "perk" | "learning" | "wellbeing" | "recognition";
   costPoints: number;
   stock: number;
+  inventoryVersion?: number;
   icon: string;
   isActive: boolean;
   createdAt: string;
@@ -241,6 +242,9 @@ export type PointLedgerRecord = {
   sourceId: string;
   points: number;
   note: string;
+  policyId?: string | null;
+  policyVersion?: number | null;
+  policyContentHash?: string | null;
   createdAt: string;
 };
 
@@ -255,49 +259,184 @@ export type PointEventRecord = {
   note: string;
   evidenceUrl: string;
   recordedBy: string;
+  policyId?: string | null;
+  policyVersion?: number | null;
+  policyContentHash?: string | null;
   createdAt: string;
 };
 
-export const pointEconomyPolicy = {
-  monthlyEvaluationMinimumScore: 70,
-  monthlyEvaluationBaseScore: 60,
-  monthlyEvaluationMultiplier: 6,
-  monthlyEvaluationCap: 240,
-  positiveManualEventsPerMonth: 2,
-  attendanceDaysPerMonth: 22,
-} as const;
-
-export const workPointAwards: Record<WorkItemRecord["kind"], Record<WorkItemRecord["priority"], number>> = {
-  task: { low: 10, medium: 20, high: 35, urgent: 50 },
-  request: { low: 15, medium: 25, high: 40, urgent: 60 },
-  mission: { low: 40, medium: 60, high: 90, urgent: 120 },
+export type PointEventRule = {
+  label: string;
+  points: number | null;
+  description: string;
+  sourceType: PointLedgerRecord["sourceType"];
+  entryMode: "automatic" | "manual";
+  requiresEvidence: boolean;
+  authorizedRoles: ("admin" | "manager")[];
 };
 
-export function workPointValue(kind: WorkItemRecord["kind"], priority: WorkItemRecord["priority"]) {
-  return workPointAwards[kind]?.[priority] ?? workPointAwards.task.medium;
+export type PointPolicyRules = {
+  economy: {
+    monthlyEvaluationMinimumScore: number;
+    monthlyEvaluationBaseScore: number;
+    monthlyEvaluationMultiplier: number;
+    monthlyEvaluationCap: number;
+    positiveManualEventsPerMonth: number;
+    attendanceDaysPerMonth: number;
+    negativePointsPerMonthCap: number;
+    deadlineBonusMonthlyCap: number;
+    workAwardsMonthlyCap: number;
+    standardEarnMonthlyCap: number;
+  };
+  workAwards: Record<WorkItemRecord["kind"], Record<WorkItemRecord["priority"], number>>;
+  events: Record<PointEventType, PointEventRule>;
+  redemption: {
+    maxRedemptionsPerMonth: number;
+    cooldownDays: number;
+    minimumBalanceAfterRedemption: number;
+    acknowledgementRequired: boolean;
+  };
+};
+
+export const defaultPointPolicyRules: PointPolicyRules = {
+  economy: {
+    monthlyEvaluationMinimumScore: 70,
+    monthlyEvaluationBaseScore: 60,
+    monthlyEvaluationMultiplier: 6,
+    monthlyEvaluationCap: 240,
+    positiveManualEventsPerMonth: 2,
+    attendanceDaysPerMonth: 22,
+    negativePointsPerMonthCap: 200,
+    deadlineBonusMonthlyCap: 80,
+    workAwardsMonthlyCap: 420,
+    standardEarnMonthlyCap: 900,
+  },
+  workAwards: {
+    task: { low: 10, medium: 20, high: 35, urgent: 50 },
+    request: { low: 15, medium: 25, high: 40, urgent: 60 },
+    mission: { low: 40, medium: 60, high: 90, urgent: 120 },
+  },
+  events: {
+    monthly_evaluation: { label: "แต้มประเมินประจำเดือน", points: null, description: "ผ่านเกณฑ์ 70 คะแนน แล้วคำนวณ (คะแนน − 60) × 6 สูงสุด 240 แต้ม", sourceType: "evaluation", entryMode: "automatic", requiresEvidence: false, authorizedRoles: ["admin"] },
+    attendance_on_time: { label: "เข้างานตรงเวลา", points: 5, description: "ให้ได้วันละครั้ง สูงสุด 22 วัน หรือ 110 แต้มต่อเดือน", sourceType: "attendance", entryMode: "manual", requiresEvidence: false, authorizedRoles: ["admin", "manager"] },
+    attendance_late: { label: "มาสาย", points: -20, description: "หักแต้มเมื่อมาสายตามข้อมูลลงเวลาที่ตรวจสอบแล้ว", sourceType: "attendance", entryMode: "manual", requiresEvidence: false, authorizedRoles: ["admin", "manager"] },
+    absence: { label: "ขาดงานโดยไม่ได้รับอนุมัติ", points: -120, description: "ใช้เฉพาะกรณีขาดงานที่ตรวจสอบแล้ว", sourceType: "attendance", entryMode: "manual", requiresEvidence: true, authorizedRoles: ["admin", "manager"] },
+    approved_leave: { label: "ลาที่ได้รับอนุมัติ", points: 0, description: "บันทึกไว้ตรวจสอบโดยไม่หักแต้ม", sourceType: "attendance", entryMode: "manual", requiresEvidence: false, authorizedRoles: ["admin", "manager"] },
+    early_finish: { label: "ส่งงานก่อนกำหนด", points: 25, description: "โบนัสอัตโนมัติเมื่อหลักฐานผ่านการตรวจและเสร็จก่อนกำหนด", sourceType: "deadline", entryMode: "automatic", requiresEvidence: true, authorizedRoles: ["admin", "manager"] },
+    on_time_finish: { label: "ส่งงานตรงกำหนด", points: 15, description: "โบนัสอัตโนมัติเมื่อหลักฐานผ่านการตรวจภายในวันกำหนด", sourceType: "deadline", entryMode: "automatic", requiresEvidence: true, authorizedRoles: ["admin", "manager"] },
+    work_error: { label: "งานผิดพลาด", points: -40, description: "หักแต้มพร้อมระบุข้อผิดพลาด ผลกระทบ แนวทางแก้ไข และหลักฐาน", sourceType: "quality", entryMode: "manual", requiresEvidence: true, authorizedRoles: ["admin", "manager"] },
+    warning: { label: "ได้รับใบเตือน", points: -150, description: "ต้องผ่านการตรวจข้อเท็จจริงและแนบเอกสารอ้างอิงโดย HR", sourceType: "discipline", entryMode: "manual", requiresEvidence: true, authorizedRoles: ["admin"] },
+    rule_violation: { label: "ผิดกฎระเบียบการทำงาน", points: -100, description: "บันทึกหลังตรวจสอบข้อเท็จจริงตามระเบียบบริษัทโดย HR", sourceType: "discipline", entryMode: "manual", requiresEvidence: true, authorizedRoles: ["admin"] },
+    bonus: { label: "โบนัสพิเศษ", points: 50, description: "ต้องมีหลักฐาน และให้ได้ไม่เกิน 2 ครั้งต่อเดือน", sourceType: "bonus", entryMode: "manual", requiresEvidence: true, authorizedRoles: ["admin", "manager"] },
+    quest: { label: "ทำเควสต์สำเร็จ", points: 75, description: "ต้องมีหลักฐาน ผ่านการตรวจ และให้ได้ไม่เกิน 2 ครั้งต่อเดือน", sourceType: "quest", entryMode: "manual", requiresEvidence: true, authorizedRoles: ["admin", "manager"] },
+  },
+  redemption: {
+    maxRedemptionsPerMonth: 2,
+    cooldownDays: 7,
+    minimumBalanceAfterRedemption: 0,
+    acknowledgementRequired: true,
+  },
+};
+
+export const pointEconomyPolicy = defaultPointPolicyRules.economy;
+export const workPointAwards = defaultPointPolicyRules.workAwards;
+export const pointEventRules = defaultPointPolicyRules.events;
+
+function finiteNumber(value: unknown, fallback: number, minimum: number, maximum: number) {
+  return typeof value === "number" && Number.isFinite(value) ? Math.min(maximum, Math.max(minimum, value)) : fallback;
 }
 
-export function monthlyEvaluationPoints(totalScore: number) {
-  if (totalScore < pointEconomyPolicy.monthlyEvaluationMinimumScore) return 0;
+export function resolvePointPolicyRules(value: unknown): PointPolicyRules {
+  if (!value || typeof value !== "object") return defaultPointPolicyRules;
+  const input = value as Partial<PointPolicyRules>;
+  const economy = input.economy ?? defaultPointPolicyRules.economy;
+  const redemption = input.redemption ?? defaultPointPolicyRules.redemption;
+  const resolved: PointPolicyRules = structuredClone(defaultPointPolicyRules);
+  resolved.economy = {
+    monthlyEvaluationMinimumScore: finiteNumber(economy.monthlyEvaluationMinimumScore, resolved.economy.monthlyEvaluationMinimumScore, 0, 100),
+    monthlyEvaluationBaseScore: finiteNumber(economy.monthlyEvaluationBaseScore, resolved.economy.monthlyEvaluationBaseScore, 0, 100),
+    monthlyEvaluationMultiplier: finiteNumber(economy.monthlyEvaluationMultiplier, resolved.economy.monthlyEvaluationMultiplier, 0, 100),
+    monthlyEvaluationCap: finiteNumber(economy.monthlyEvaluationCap, resolved.economy.monthlyEvaluationCap, 0, 10000),
+    positiveManualEventsPerMonth: Math.round(finiteNumber(economy.positiveManualEventsPerMonth, resolved.economy.positiveManualEventsPerMonth, 0, 31)),
+    attendanceDaysPerMonth: Math.round(finiteNumber(economy.attendanceDaysPerMonth, resolved.economy.attendanceDaysPerMonth, 0, 31)),
+    negativePointsPerMonthCap: Math.round(finiteNumber(economy.negativePointsPerMonthCap, resolved.economy.negativePointsPerMonthCap, 0, 10000)),
+    deadlineBonusMonthlyCap: Math.round(finiteNumber(economy.deadlineBonusMonthlyCap, resolved.economy.deadlineBonusMonthlyCap, 0, 10000)),
+    workAwardsMonthlyCap: Math.round(finiteNumber(economy.workAwardsMonthlyCap, resolved.economy.workAwardsMonthlyCap, 0, 10000)),
+    standardEarnMonthlyCap: Math.round(finiteNumber(economy.standardEarnMonthlyCap, resolved.economy.standardEarnMonthlyCap, 0, 10000)),
+  };
+  for (const kind of ["task", "request", "mission"] as const) {
+    for (const priority of ["low", "medium", "high", "urgent"] as const) {
+      resolved.workAwards[kind][priority] = Math.round(finiteNumber(input.workAwards?.[kind]?.[priority], resolved.workAwards[kind][priority], 0, 10000));
+    }
+  }
+  for (const eventType of Object.keys(defaultPointPolicyRules.events) as PointEventType[]) {
+    const candidate = input.events?.[eventType];
+    if (!candidate) continue;
+    resolved.events[eventType] = {
+      ...resolved.events[eventType],
+      label: typeof candidate.label === "string" ? candidate.label.slice(0, 160) : resolved.events[eventType].label,
+      description: typeof candidate.description === "string" ? candidate.description.slice(0, 1000) : resolved.events[eventType].description,
+      points: candidate.points === null && eventType === "monthly_evaluation" ? null : Math.round(finiteNumber(candidate.points, resolved.events[eventType].points ?? 0, -10000, 10000)),
+    };
+  }
+  resolved.redemption = {
+    maxRedemptionsPerMonth: Math.round(finiteNumber(redemption.maxRedemptionsPerMonth, resolved.redemption.maxRedemptionsPerMonth, 0, 31)),
+    cooldownDays: Math.round(finiteNumber(redemption.cooldownDays, resolved.redemption.cooldownDays, 0, 365)),
+    minimumBalanceAfterRedemption: Math.round(finiteNumber(redemption.minimumBalanceAfterRedemption, resolved.redemption.minimumBalanceAfterRedemption, 0, 1000000)),
+    acknowledgementRequired: typeof redemption.acknowledgementRequired === "boolean" ? redemption.acknowledgementRequired : resolved.redemption.acknowledgementRequired,
+  };
+  return resolved;
+}
+
+export function workPointValue(kind: WorkItemRecord["kind"], priority: WorkItemRecord["priority"], rules: PointPolicyRules = defaultPointPolicyRules) {
+  return rules.workAwards[kind]?.[priority] ?? rules.workAwards.task.medium;
+}
+
+export function monthlyEvaluationPoints(totalScore: number, rules: PointPolicyRules = defaultPointPolicyRules) {
+  const policy = rules.economy;
+  if (totalScore < policy.monthlyEvaluationMinimumScore) return 0;
   return Math.min(
-    pointEconomyPolicy.monthlyEvaluationCap,
-    Math.max(0, Math.round((totalScore - pointEconomyPolicy.monthlyEvaluationBaseScore) * pointEconomyPolicy.monthlyEvaluationMultiplier)),
+    policy.monthlyEvaluationCap,
+    Math.max(0, Math.round((totalScore - policy.monthlyEvaluationBaseScore) * policy.monthlyEvaluationMultiplier)),
   );
 }
 
-export const pointEventRules: Record<PointEventType, { label: string; points: number | null; description: string; sourceType: PointLedgerRecord["sourceType"] }> = {
-  monthly_evaluation: { label: "แต้มประเมินประจำเดือน", points: null, description: "ผ่านเกณฑ์ 70 คะแนน แล้วคำนวณ (คะแนน − 60) × 6 สูงสุด 240 แต้ม", sourceType: "evaluation" },
-  attendance_on_time: { label: "เข้างานตรงเวลา", points: 5, description: "ให้ได้วันละครั้ง สูงสุด 22 วัน หรือ 110 แต้มต่อเดือน", sourceType: "attendance" },
-  attendance_late: { label: "มาสาย", points: -20, description: "หักแต้มเมื่อมาสายตามข้อมูลลงเวลาที่ตรวจสอบแล้ว", sourceType: "attendance" },
-  absence: { label: "ขาดงานโดยไม่ได้รับอนุมัติ", points: -120, description: "ใช้เฉพาะกรณีขาดงานที่ตรวจสอบแล้ว", sourceType: "attendance" },
-  approved_leave: { label: "ลาที่ได้รับอนุมัติ", points: 0, description: "บันทึกไว้ตรวจสอบโดยไม่หักแต้ม", sourceType: "attendance" },
-  early_finish: { label: "ส่งงานก่อนกำหนด", points: 25, description: "โบนัสอัตโนมัติเมื่อหลักฐานผ่านการตรวจและเสร็จก่อนกำหนด", sourceType: "deadline" },
-  on_time_finish: { label: "ส่งงานตรงกำหนด", points: 15, description: "โบนัสอัตโนมัติเมื่อหลักฐานผ่านการตรวจภายในวันกำหนด", sourceType: "deadline" },
-  work_error: { label: "งานผิดพลาด", points: -40, description: "หักแต้มพร้อมระบุข้อผิดพลาด ผลกระทบ และแนวทางแก้ไข", sourceType: "quality" },
-  warning: { label: "ได้รับใบเตือน", points: -150, description: "ต้องมีเหตุผล ผู้บันทึก และหลักฐานอ้างอิง", sourceType: "discipline" },
-  rule_violation: { label: "ผิดกฎระเบียบการทำงาน", points: -100, description: "บันทึกหลังตรวจสอบข้อเท็จจริงตามระเบียบบริษัท", sourceType: "discipline" },
-  bonus: { label: "โบนัสพิเศษ", points: 50, description: "ต้องมีหลักฐาน และให้ได้ไม่เกิน 2 ครั้งต่อเดือน", sourceType: "bonus" },
-  quest: { label: "ทำเควสต์สำเร็จ", points: 75, description: "ต้องมีหลักฐาน ผ่านการตรวจ และให้ได้ไม่เกิน 2 ครั้งต่อเดือน", sourceType: "quest" },
+export type OrganizationPolicyRecord = {
+  id: string;
+  code: string;
+  title: string;
+  summary: string;
+  content: string;
+  category: "work_rules" | "points_rewards" | "ai_data" | "other";
+  status: "draft" | "published";
+  version: number;
+  effectiveDate: string;
+  effectiveTo: string | null;
+  scopeType: "all" | "department" | "role" | "employment_type";
+  scopeValues: string[];
+  acknowledgementRequired: boolean;
+  acknowledgementDueDays: number;
+  rules: PointPolicyRules | null;
+  contentHash: string;
+  publishedAt: string | null;
+  publishedBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+  updatedBy: string;
+};
+
+export type PolicyAcknowledgementRecord = {
+  id: string;
+  policyId: string;
+  employeeId: string;
+  userAccountId: string | null;
+  policyVersion: number;
+  contentHash: string;
+  acknowledgementText: string;
+  acknowledgedName: string;
+  acknowledgedEmail: string;
+  authenticatedUserId: string;
+  acknowledgedAt: string;
 };
 
 export type RewardRedemptionRecord = {
@@ -838,25 +977,107 @@ export const seedWorkItems: WorkItemRecord[] = [
   { id: "work-people-checklist", projectId: "project-people-onboarding", assigneeEmployeeId: "emp-kanyarat", kind: "task", title: "ออกแบบ Onboarding Checklist", description: "กำหนดภารกิจสัปดาห์ 1–4 พร้อมผู้ดูแลและแต้มรางวัล", priority: "medium", status: "todo", progress: 10, points: 130, dueDate: "2026-09-05", createdAt: "2026-08-10T06:00:00.000Z", updatedAt: "2026-08-18T08:00:00.000Z" },
 ];
 
+const policyTemplateNotice = "เอกสารนี้เป็นแม่แบบสำหรับระบบทดลอง HR ต้องตรวจแก้ให้ตรงสภาพการจ้างและให้ที่ปรึกษากฎหมายทบทวนก่อนประกาศใช้จริง ไม่ใช่คำรับรองว่าองค์กรปฏิบัติตามกฎหมายครบถ้วนแล้ว";
+
+export const seedOrganizationPolicies: OrganizationPolicyRecord[] = [
+  {
+    id: "policy-work-rules-v1",
+    code: "work-rules",
+    title: "ข้อบังคับเกี่ยวกับการทำงาน (ฉบับแม่แบบ)",
+    summary: "รวมวันและเวลาทำงาน ค่าจ้าง วันลา วินัย การร้องทุกข์ และการสิ้นสุดการจ้างไว้ในฉบับเดียว",
+    content: `${policyTemplateNotice}\n\nสำหรับข้อมูลองค์กรตัวอย่าง 28 คน แม่แบบนี้จัดหัวข้อตรวจทานตามที่ HR ระบุโดยอ้างอิงโครงหัวข้อมาตรา 108 แต่ต้องตรวจข้อเท็จจริง กฎหมายปัจจุบัน และประกาศขององค์กรอีกครั้งก่อนใช้จริง\n\n1. วันทำงาน เวลาทำงานปกติ และเวลาพัก\nบริษัทกำหนดวันทำงาน เวลาทำงาน จุดลงเวลา และเวลาพักให้ชัดเจนตามหน่วยงาน การเปลี่ยนตารางต้องแจ้งล่วงหน้าและไม่ขัดต่อกฎหมายที่ใช้บังคับ\n\n2. วันหยุดและหลักเกณฑ์การหยุด\nประกาศวันหยุดประจำสัปดาห์ วันหยุดตามประเพณี และเงื่อนไขการหยุดล่วงหน้า พนักงานตรวจสอบปฏิทินล่าสุดในระบบและยื่นคำขอตามขั้นตอน\n\n3. การทำงานล่วงเวลาและการทำงานในวันหยุด\nต้องได้รับอนุมัติก่อนทำ ยืนยันความยินยอมเมื่อกฎหมายกำหนด บันทึกเวลาตามจริง และจ่ายค่าตอบแทนตามอัตราที่กฎหมายและข้อตกลงกำหนด\n\n4. วันและสถานที่จ่ายค่าจ้าง\nHR ต้องระบุรอบจ่าย วันที่จ่าย ช่องทางหรือสถานที่จ่าย และวิธีแจ้งเมื่อวันจ่ายตรงวันหยุดไว้ในประกาศฉบับใช้งานจริง การหักเงินทำได้เฉพาะกรณีที่กฎหมายอนุญาต\n\n5. วันลาและหลักเกณฑ์การลา\nระบุประเภทลา สิทธิ เอกสาร ช่องทางยื่น ผู้อนุมัติ และกรณีฉุกเฉินให้ครบ โดยสิทธิขั้นต่ำต้องไม่น้อยกว่ากฎหมายที่ใช้บังคับ\n\n6. วินัยและโทษทางวินัย\nแจ้งข้อกล่าวหาและข้อเท็จจริงให้พนักงานทราบ เปิดโอกาสให้ชี้แจง ตรวจหลักฐานอย่างเป็นธรรม และบันทึกผู้อนุมัติ การตัดแต้มเป็นเพียงกลไกแรงจูงใจ ไม่ใช่โทษทางวินัย ไม่แทนกระบวนการวินัย และไม่ใช้ลดค่าจ้างหรือสิทธิตามกฎหมาย\n\n7. การร้องทุกข์และอุทธรณ์\nพนักงานยื่นเรื่องต่อหัวหน้า HR หรือช่องทางลับที่บริษัทกำหนดได้ ต้องมีผู้รับเรื่อง ระยะเวลาตอบกลับ การคุ้มครองผู้ร้องโดยสุจริต และช่องทางอุทธรณ์ต่อผู้มีอำนาจสูงกว่า\n\n8. การเลิกจ้างและค่าชดเชย\nการบอกกล่าว เหตุเลิกจ้าง วันสิ้นสุดงาน การคืนทรัพย์สิน การจ่ายเงินค้างและค่าชดเชย ให้ HR ดำเนินการตามสัญญาและกฎหมายที่ใช้บังคับ พร้อมแจ้งสิทธิทักท้วงแก่พนักงาน`,
+    category: "work_rules",
+    status: "published",
+    version: 1,
+    effectiveDate: "2026-08-01",
+    effectiveTo: null,
+    scopeType: "all",
+    scopeValues: [],
+    acknowledgementRequired: true,
+    acknowledgementDueDays: 7,
+    rules: null,
+    contentHash: "",
+    publishedAt: "2026-08-01T02:00:00.000Z",
+    publishedBy: "ฝ่ายทรัพยากรบุคคล",
+    createdAt: "2026-08-01T02:00:00.000Z",
+    updatedAt: "2026-08-01T02:00:00.000Z",
+    updatedBy: "ฝ่ายทรัพยากรบุคคล",
+  },
+  {
+    id: "policy-points-rewards-v1",
+    code: "points-and-rewards",
+    title: "กติกาการรับ ใช้ และแลกแต้ม",
+    summary: "แต้มมาจากผลประเมิน งานที่ผ่านหลักฐาน เวลา คุณภาพ และภารกิจ พร้อมเพดานป้องกันการให้แต้มง่ายเกินไป",
+    content: `${policyTemplateNotice}\n\nหลักการสำคัญ\n• แต้มเป็นคะแนนกิจกรรมภายใน ไม่มีมูลค่าเป็นเงินสด ไม่ใช่ค่าจ้าง และไม่ลดทอนสิทธิหรือสวัสดิการตามกฎหมาย\n• แต้มติดลบหรือการหักแต้มไม่ใช่โทษทางวินัย และไม่แทนการสอบข้อเท็จจริง ใบเตือน การอุทธรณ์ หรือกระบวนการ HR\n• งานและภารกิจได้แต้มเมื่อส่งหลักฐานและผู้มีสิทธิอนุมัติแล้วเท่านั้น ระบบไม่ให้แต้มซ้ำจากแหล่งเดียวกัน และให้แต้มงานรวมไม่เกิน 420 แต้มต่อเดือน\n• ผลประเมินต้องได้อย่างน้อย 70 คะแนน คำนวณ (คะแนนรวม − 60) × 6 และไม่เกิน 240 แต้มต่อเดือน\n• เข้างานตรงเวลา +5 แต้ม สูงสุด 22 วันต่อเดือน; มาสาย −20; ขาดงานที่ตรวจสอบแล้ว −120; ลาที่อนุมัติ 0 แต้ม\n• ส่งงานก่อนกำหนด +25; ส่งตรงกำหนด +15; โบนัสกำหนดส่งรวมไม่เกิน 80 แต้มต่อเดือน; งานผิดพลาดที่มีหลักฐาน −40\n• โบนัสพิเศษ +50 และเควสต์ +75 ต้องมีหลักฐาน แต่ละประเภทได้ไม่เกิน 2 ครั้งต่อเดือน แต้มบวกมาตรฐานนอกผลประเมินรวมไม่เกิน 900 แต้มต่อเดือน\n• ใบเตือน −150 และการผิดกฎ −100 บันทึกได้โดย HR หลังตรวจข้อเท็จจริงและแนบหลักฐานเท่านั้น แต้มลบรวมไม่เกิน 200 แต้มต่อเดือน\n• หัวหน้าไม่มีสิทธิ์ให้หรือหักแต้มของตนเอง และรายการอัตโนมัติห้ามบันทึกซ้ำด้วยมือ\n• แลกรางวัลได้ไม่เกิน 2 ครั้งต่อเดือน และเว้นอย่างน้อย 7 วัน ยอดคงเหลือต้องไม่ติดลบ คำขอทุกรายการต้องผ่านการตรวจสต็อกและอนุมัติ\n• หากยกเลิกคำขอที่ถูกต้อง ระบบต้องคืนแต้มด้วยรายการย้อนกลับ ห้ามแก้หรือลบประวัติแต้มเดิม`,
+    category: "points_rewards",
+    status: "published",
+    version: 1,
+    effectiveDate: "2026-08-01",
+    effectiveTo: null,
+    scopeType: "all",
+    scopeValues: [],
+    acknowledgementRequired: true,
+    acknowledgementDueDays: 7,
+    rules: defaultPointPolicyRules,
+    contentHash: "",
+    publishedAt: "2026-08-01T02:05:00.000Z",
+    publishedBy: "ฝ่ายทรัพยากรบุคคล",
+    createdAt: "2026-08-01T02:05:00.000Z",
+    updatedAt: "2026-08-01T02:05:00.000Z",
+    updatedBy: "ฝ่ายทรัพยากรบุคคล",
+  },
+  {
+    id: "policy-ai-data-v1",
+    code: "ai-and-data",
+    title: "การใช้ AI และการคุ้มครองข้อมูลองค์กร",
+    summary: "กำหนดข้อมูลที่ห้ามส่งให้ AI การตรวจผลลัพธ์ และความรับผิดชอบของผู้ใช้งาน",
+    content: `${policyTemplateNotice}\n\n• ห้ามป้อนรหัสผ่าน ความลับทางการค้า ข้อมูลสุขภาพ เลขประจำตัว หรือข้อมูลลูกค้าที่ระบุตัวบุคคลได้ลงในบริการ AI ที่องค์กรไม่อนุมัติ\n• ปกปิดหรือลดทอนข้อมูลก่อนใช้ AI และใช้เฉพาะบัญชี เครื่องมือ และพื้นที่จัดเก็บที่บริษัทอนุมัติ\n• ผู้ใช้งานต้องตรวจข้อเท็จจริง ลิขสิทธิ์ ความลำเอียง และความเหมาะสมก่อนนำผล AI ไปใช้\n• การตัดสินใจที่กระทบการจ้าง ค่าจ้าง วินัย ลูกค้า หรือข้อผูกพันทางกฎหมายต้องมีมนุษย์ผู้รับผิดชอบตรวจและอนุมัติ\n• เมื่อพบข้อมูลรั่วไหลหรือผลลัพธ์เสี่ยง ให้หยุดใช้งาน เก็บหลักฐานเท่าที่จำเป็น และแจ้งหัวหน้ากับผู้ดูแลข้อมูลทันที`,
+    category: "ai_data",
+    status: "published",
+    version: 1,
+    effectiveDate: "2026-08-01",
+    effectiveTo: null,
+    scopeType: "all",
+    scopeValues: [],
+    acknowledgementRequired: true,
+    acknowledgementDueDays: 7,
+    rules: null,
+    contentHash: "",
+    publishedAt: "2026-08-01T02:10:00.000Z",
+    publishedBy: "ฝ่ายทรัพยากรบุคคล",
+    createdAt: "2026-08-01T02:10:00.000Z",
+    updatedAt: "2026-08-01T02:10:00.000Z",
+    updatedBy: "ฝ่ายทรัพยากรบุคคล",
+  },
+];
+
 export const seedRewards: RewardRecord[] = [
-  { id: "reward-coffee", title: "คูปองกาแฟ", description: "เครื่องดื่ม 1 แก้วจากร้านพาร์ตเนอร์", category: "perk", costPoints: 120, stock: 20, icon: "☕", isActive: true, createdAt: "2026-08-01T02:00:00.000Z", updatedAt: "2026-08-01T02:00:00.000Z" },
+  { id: "reward-coffee", title: "คูปองกาแฟ", description: "เครื่องดื่ม 1 แก้วจากร้านพาร์ตเนอร์", category: "perk", costPoints: 300, stock: 20, icon: "☕", isActive: true, createdAt: "2026-08-01T02:00:00.000Z", updatedAt: "2026-08-27T02:00:00.000Z" },
   { id: "reward-cash-100", title: "คูปองเงินสด 100 บาท", description: "กิฟต์วอเชอร์มูลค่า 100 บาท ส่งให้หลังคำขอได้รับอนุมัติ", category: "perk", costPoints: 1000, stock: 100, icon: "฿", isActive: true, createdAt: "2026-08-21T02:00:00.000Z", updatedAt: "2026-08-21T02:00:00.000Z" },
   { id: "reward-shopping-500", title: "กิฟต์วอเชอร์ 500 บาท", description: "เลือกใช้กับร้านค้าที่บริษัทกำหนดหลังตรวจสอบสิทธิ์", category: "perk", costPoints: 5000, stock: 30, icon: "▣", isActive: true, createdAt: "2026-08-21T02:05:00.000Z", updatedAt: "2026-08-21T02:05:00.000Z" },
-  { id: "reward-half-day", title: "วันหยุดครึ่งวัน", description: "แลกสิทธิ์วันหยุดเพิ่มเติมครึ่งวัน", category: "wellbeing", costPoints: 500, stock: 6, icon: "☀", isActive: true, createdAt: "2026-08-01T02:00:00.000Z", updatedAt: "2026-08-01T02:00:00.000Z" },
-  { id: "reward-learning", title: "งบเรียนรู้ 1,000 บาท", description: "ใช้กับคอร์ส หนังสือ หรือเวิร์กช็อป", category: "learning", costPoints: 850, stock: 4, icon: "↗", isActive: true, createdAt: "2026-08-01T02:00:00.000Z", updatedAt: "2026-08-01T02:00:00.000Z" },
-  { id: "reward-lunch", title: "มื้อพิเศษกับทีม", description: "เครดิตอาหารกลางวันสำหรับฉลองความสำเร็จ", category: "recognition", costPoints: 350, stock: 10, icon: "★", isActive: true, createdAt: "2026-08-01T02:00:00.000Z", updatedAt: "2026-08-01T02:00:00.000Z" },
+  { id: "reward-half-day", title: "วันหยุดครึ่งวัน", description: "แลกสิทธิ์วันหยุดเพิ่มเติมครึ่งวัน", category: "wellbeing", costPoints: 3000, stock: 6, icon: "☀", isActive: true, createdAt: "2026-08-01T02:00:00.000Z", updatedAt: "2026-08-27T02:00:00.000Z" },
+  { id: "reward-learning", title: "งบเรียนรู้ 1,000 บาท", description: "ใช้กับคอร์ส หนังสือ หรือเวิร์กช็อป", category: "learning", costPoints: 2500, stock: 4, icon: "↗", isActive: true, createdAt: "2026-08-01T02:00:00.000Z", updatedAt: "2026-08-27T02:00:00.000Z" },
+  { id: "reward-lunch", title: "มื้อพิเศษกับทีม", description: "เครดิตอาหารกลางวันสำหรับฉลองความสำเร็จ", category: "recognition", costPoints: 1200, stock: 10, icon: "★", isActive: true, createdAt: "2026-08-01T02:00:00.000Z", updatedAt: "2026-08-27T02:00:00.000Z" },
   { id: "reward-iphone-18", title: "iPhone 18", description: "รางวัลพิเศษมูลค่าสูง จำกัดจำนวนและต้องผ่านการอนุมัติตามนโยบายบริษัท", category: "recognition", costPoints: 500000, stock: 1, icon: "◎", isActive: true, createdAt: "2026-08-21T02:10:00.000Z", updatedAt: "2026-08-21T02:10:00.000Z" },
 ];
 
 export const seedPointLedger: PointLedgerRecord[] = [
-  { id: "points-work-growth-key-account", employeeId: "emp-narin", sourceType: "mission", sourceId: "work-growth-key-account", points: 180, note: "สำเร็จภารกิจปิดดีล Key Account", createdAt: "2026-08-15T09:00:00.000Z" },
-  { id: "points-work-tech-runbook", employeeId: "emp-supakorn", sourceType: "task", sourceId: "work-tech-runbook", points: 140, note: "จัดทำ Incident Runbook สำเร็จ", createdAt: "2026-08-16T08:00:00.000Z" },
-  { id: "points-bonus-pim", employeeId: "emp-pimchanok", sourceType: "bonus", sourceId: "bonus-q3-pim", points: 420, note: "โบนัสผลงานแคมเปญไตรมาส 3", createdAt: "2026-08-12T06:00:00.000Z" },
-  { id: "points-bonus-thanawat", employeeId: "emp-thanawat", sourceType: "bonus", sourceId: "bonus-cx-thanawat", points: 260, note: "คะแนนคำชมจากลูกค้า", createdAt: "2026-08-13T06:00:00.000Z" },
-  { id: "points-bonus-kanyarat", employeeId: "emp-kanyarat", sourceType: "bonus", sourceId: "bonus-people-kanyarat", points: 310, note: "สนับสนุนกิจกรรมพัฒนาทีม", createdAt: "2026-08-14T06:00:00.000Z" },
-  { id: "points-bonus-nattapong", employeeId: "emp-nattapong", sourceType: "bonus", sourceId: "bonus-coaching-nattapong", points: 290, note: "แบ่งปันเทคนิคการขายกับทีม", createdAt: "2026-08-14T07:00:00.000Z" },
-  { id: "points-bonus-sirilak", employeeId: "emp-sirilak", sourceType: "bonus", sourceId: "bonus-content-sirilak", points: 180, note: "ช่วยงานคอนเทนต์เร่งด่วน", createdAt: "2026-08-15T07:00:00.000Z" },
-  { id: "points-bonus-pattarapon", employeeId: "emp-pattarapon", sourceType: "bonus", sourceId: "bonus-platform-pattarapon", points: 230, note: "แก้เหตุระบบนอกเวลาทำการ", createdAt: "2026-08-17T07:00:00.000Z" },
+  { id: "points-work-growth-key-account", employeeId: "emp-narin", sourceType: "mission", sourceId: "work-growth-key-account", points: 120, note: "สำเร็จภารกิจปิดดีล Key Account ตามเกณฑ์ภารกิจเร่งด่วน", createdAt: "2026-08-15T09:00:00.000Z" },
+  { id: "points-work-tech-runbook", employeeId: "emp-supakorn", sourceType: "task", sourceId: "work-tech-runbook", points: 35, note: "จัดทำ Incident Runbook สำเร็จตามเกณฑ์งานสำคัญ", createdAt: "2026-08-16T08:00:00.000Z" },
+  { id: "points-bonus-pim", employeeId: "emp-pimchanok", sourceType: "bonus", sourceId: "bonus-q3-pim", points: 50, note: "โบนัสพิเศษพร้อมหลักฐานผลงานแคมเปญไตรมาส 3", createdAt: "2026-08-12T06:00:00.000Z" },
+  { id: "points-bonus-thanawat", employeeId: "emp-thanawat", sourceType: "bonus", sourceId: "bonus-cx-thanawat", points: 50, note: "โบนัสพิเศษจากคำชมลูกค้าที่ตรวจสอบแล้ว", createdAt: "2026-08-13T06:00:00.000Z" },
+  { id: "points-bonus-kanyarat", employeeId: "emp-kanyarat", sourceType: "bonus", sourceId: "bonus-people-kanyarat", points: 50, note: "โบนัสพิเศษจากการสนับสนุนกิจกรรมพัฒนาทีม", createdAt: "2026-08-14T06:00:00.000Z" },
+  { id: "points-bonus-nattapong", employeeId: "emp-nattapong", sourceType: "bonus", sourceId: "bonus-coaching-nattapong", points: 50, note: "โบนัสพิเศษจากการแบ่งปันเทคนิคการขาย", createdAt: "2026-08-14T07:00:00.000Z" },
+  { id: "points-bonus-sirilak", employeeId: "emp-sirilak", sourceType: "bonus", sourceId: "bonus-content-sirilak", points: 50, note: "โบนัสพิเศษจากการช่วยงานคอนเทนต์เร่งด่วน", createdAt: "2026-08-15T07:00:00.000Z" },
+  { id: "points-bonus-pattarapon", employeeId: "emp-pattarapon", sourceType: "bonus", sourceId: "bonus-platform-pattarapon", points: 50, note: "โบนัสพิเศษจากการแก้เหตุระบบนอกเวลาทำการ", createdAt: "2026-08-17T07:00:00.000Z" },
+  { id: "points-evaluation-narin-2026-07", employeeId: "emp-narin", sourceType: "evaluation", sourceId: "seed-evaluation-2026-07:emp-narin", points: 230, note: "แต้มประเมินเดือนกรกฎาคม 2569", createdAt: "2026-07-31T09:00:00.000Z" },
+  { id: "points-evaluation-supakorn-2026-07", employeeId: "emp-supakorn", sourceType: "evaluation", sourceId: "seed-evaluation-2026-07:emp-supakorn", points: 220, note: "แต้มประเมินเดือนกรกฎาคม 2569", createdAt: "2026-07-31T09:00:00.000Z" },
+  { id: "points-evaluation-pim-2026-07", employeeId: "emp-pimchanok", sourceType: "evaluation", sourceId: "seed-evaluation-2026-07:emp-pimchanok", points: 210, note: "แต้มประเมินเดือนกรกฎาคม 2569", createdAt: "2026-07-31T09:00:00.000Z" },
+  { id: "points-evaluation-thanawat-2026-07", employeeId: "emp-thanawat", sourceType: "evaluation", sourceId: "seed-evaluation-2026-07:emp-thanawat", points: 195, note: "แต้มประเมินเดือนกรกฎาคม 2569", createdAt: "2026-07-31T09:00:00.000Z" },
+  { id: "points-evaluation-kanyarat-2026-07", employeeId: "emp-kanyarat", sourceType: "evaluation", sourceId: "seed-evaluation-2026-07:emp-kanyarat", points: 225, note: "แต้มประเมินเดือนกรกฎาคม 2569", createdAt: "2026-07-31T09:00:00.000Z" },
+  { id: "points-evaluation-nattapong-2026-07", employeeId: "emp-nattapong", sourceType: "evaluation", sourceId: "seed-evaluation-2026-07:emp-nattapong", points: 230, note: "แต้มประเมินเดือนกรกฎาคม 2569", createdAt: "2026-07-31T09:00:00.000Z" },
+  { id: "points-evaluation-sirilak-2026-07", employeeId: "emp-sirilak", sourceType: "evaluation", sourceId: "seed-evaluation-2026-07:emp-sirilak", points: 180, note: "แต้มประเมินเดือนกรกฎาคม 2569", createdAt: "2026-07-31T09:00:00.000Z" },
+  { id: "points-evaluation-pattarapon-2026-07", employeeId: "emp-pattarapon", sourceType: "evaluation", sourceId: "seed-evaluation-2026-07:emp-pattarapon", points: 190, note: "แต้มประเมินเดือนกรกฎาคม 2569", createdAt: "2026-07-31T09:00:00.000Z" },
 ];
 
 export const seedRewardRedemptions: RewardRedemptionRecord[] = [];

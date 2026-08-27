@@ -2,10 +2,23 @@ import { getD1 } from ".";
 
 let initialization: Promise<unknown> | null = null;
 
+async function ensureColumn(
+  d1: ReturnType<typeof getD1>,
+  table: "rewards" | "point_ledger" | "point_events" | "organization_policy_publish_claims",
+  column: string,
+  definition: string,
+) {
+  const result = await d1.prepare(`PRAGMA table_info(${table})`).all();
+  const columns = result.results as Array<{ name: string }>;
+  if (columns.some((item) => item.name === column)) return;
+  await d1.prepare(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`).run();
+}
+
 export function ensureDatabase() {
   if (initialization) return initialization;
   const d1 = getD1();
-  initialization = d1.batch([
+  initialization = (async () => {
+    await d1.batch([
     d1.prepare(`CREATE TABLE IF NOT EXISTS employees (
       id TEXT PRIMARY KEY NOT NULL,
       initials TEXT NOT NULL,
@@ -48,6 +61,59 @@ export function ensureDatabase() {
     )`),
     d1.prepare("CREATE UNIQUE INDEX IF NOT EXISTS notification_reads_user_notification_unique ON notification_reads (user_key, notification_id)"),
     d1.prepare("CREATE INDEX IF NOT EXISTS notification_reads_user_read_idx ON notification_reads (user_key, read_at)"),
+    d1.prepare(`CREATE TABLE IF NOT EXISTS organization_policies (
+      id TEXT PRIMARY KEY NOT NULL,
+      code TEXT NOT NULL,
+      title TEXT NOT NULL,
+      summary TEXT NOT NULL DEFAULT '',
+      content TEXT NOT NULL,
+      category TEXT NOT NULL DEFAULT 'other',
+      status TEXT NOT NULL DEFAULT 'draft',
+      version INTEGER NOT NULL DEFAULT 1,
+      effective_date TEXT NOT NULL,
+      effective_to TEXT,
+      scope_type TEXT NOT NULL DEFAULT 'all',
+      scope_values TEXT NOT NULL,
+      acknowledgement_required INTEGER NOT NULL DEFAULT 1,
+      acknowledgement_due_days INTEGER NOT NULL DEFAULT 7,
+      rules TEXT,
+      content_hash TEXT NOT NULL DEFAULT '',
+      published_at TEXT,
+      published_by TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_by TEXT NOT NULL DEFAULT 'ระบบ'
+    )`),
+    d1.prepare("CREATE UNIQUE INDEX IF NOT EXISTS organization_policies_code_version_unique ON organization_policies (code, version)"),
+    d1.prepare("CREATE UNIQUE INDEX IF NOT EXISTS organization_policies_published_code_effective_unique ON organization_policies (code, effective_date) WHERE status = 'published'"),
+    d1.prepare("CREATE INDEX IF NOT EXISTS organization_policies_status_effective_idx ON organization_policies (status, effective_date)"),
+    d1.prepare("CREATE INDEX IF NOT EXISTS organization_policies_category_status_idx ON organization_policies (category, status)"),
+    d1.prepare(`CREATE TABLE IF NOT EXISTS organization_policy_publish_claims (
+      id TEXT PRIMARY KEY NOT NULL,
+      policy_id TEXT NOT NULL REFERENCES organization_policies(id) ON DELETE RESTRICT,
+      code TEXT NOT NULL,
+      predecessor_version INTEGER NOT NULL,
+      expected_content_hash TEXT NOT NULL DEFAULT '',
+      published_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`),
+    d1.prepare("CREATE UNIQUE INDEX IF NOT EXISTS organization_policy_publish_claim_policy_unique ON organization_policy_publish_claims (policy_id)"),
+    d1.prepare("CREATE UNIQUE INDEX IF NOT EXISTS organization_policy_publish_claim_head_unique ON organization_policy_publish_claims (code, predecessor_version)"),
+    d1.prepare(`CREATE TABLE IF NOT EXISTS policy_acknowledgements (
+      id TEXT PRIMARY KEY NOT NULL,
+      policy_id TEXT NOT NULL REFERENCES organization_policies(id) ON DELETE RESTRICT,
+      employee_id TEXT NOT NULL REFERENCES employees(id) ON DELETE RESTRICT,
+      user_account_id TEXT REFERENCES user_accounts(id) ON DELETE SET NULL,
+      policy_version INTEGER NOT NULL,
+      content_hash TEXT NOT NULL,
+      acknowledgement_text TEXT NOT NULL,
+      acknowledged_name TEXT NOT NULL,
+      acknowledged_email TEXT NOT NULL,
+      authenticated_user_id TEXT NOT NULL,
+      acknowledged_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`),
+    d1.prepare("CREATE UNIQUE INDEX IF NOT EXISTS policy_acknowledgements_policy_version_employee_unique ON policy_acknowledgements (policy_id, policy_version, employee_id)"),
+    d1.prepare("CREATE INDEX IF NOT EXISTS policy_acknowledgements_employee_date_idx ON policy_acknowledgements (employee_id, acknowledged_at)"),
+    d1.prepare("CREATE INDEX IF NOT EXISTS policy_acknowledgements_policy_date_idx ON policy_acknowledgements (policy_id, acknowledged_at)"),
     d1.prepare(`CREATE TABLE IF NOT EXISTS evaluations (
       id TEXT PRIMARY KEY NOT NULL,
       employee_id TEXT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
@@ -179,6 +245,7 @@ export function ensureDatabase() {
       category TEXT NOT NULL DEFAULT 'perk',
       cost_points INTEGER NOT NULL,
       stock INTEGER NOT NULL DEFAULT 0,
+      inventory_version INTEGER NOT NULL DEFAULT 0,
       icon TEXT NOT NULL DEFAULT '★',
       is_active INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -192,6 +259,9 @@ export function ensureDatabase() {
       source_id TEXT NOT NULL,
       points INTEGER NOT NULL,
       note TEXT NOT NULL DEFAULT '',
+      policy_id TEXT REFERENCES organization_policies(id) ON DELETE SET NULL,
+      policy_version INTEGER,
+      policy_content_hash TEXT,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )`),
     d1.prepare("CREATE UNIQUE INDEX IF NOT EXISTS point_ledger_source_unique ON point_ledger (source_type, source_id)"),
@@ -205,10 +275,24 @@ export function ensureDatabase() {
       note TEXT NOT NULL DEFAULT '',
       evidence_url TEXT NOT NULL DEFAULT '',
       recorded_by TEXT NOT NULL DEFAULT '',
+      policy_id TEXT REFERENCES organization_policies(id) ON DELETE SET NULL,
+      policy_version INTEGER,
+      policy_content_hash TEXT,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )`),
     d1.prepare("CREATE INDEX IF NOT EXISTS point_events_employee_date_idx ON point_events (employee_id, event_date)"),
     d1.prepare("CREATE INDEX IF NOT EXISTS point_events_type_date_idx ON point_events (event_type, event_date)"),
+    d1.prepare(`CREATE TABLE IF NOT EXISTS point_mutation_claims (
+      id TEXT PRIMARY KEY NOT NULL,
+      point_event_id TEXT NOT NULL REFERENCES point_events(id) ON DELETE RESTRICT,
+      employee_id TEXT NOT NULL REFERENCES employees(id) ON DELETE RESTRICT,
+      predecessor_event_count INTEGER NOT NULL,
+      employee_sequence_key TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`),
+    d1.prepare("CREATE UNIQUE INDEX IF NOT EXISTS point_mutation_claim_event_unique ON point_mutation_claims (point_event_id)"),
+    d1.prepare("CREATE UNIQUE INDEX IF NOT EXISTS point_mutation_claim_employee_sequence_unique ON point_mutation_claims (employee_sequence_key)"),
+    d1.prepare("CREATE INDEX IF NOT EXISTS point_mutation_claim_employee_created_idx ON point_mutation_claims (employee_id, created_at)"),
     d1.prepare(`CREATE TABLE IF NOT EXISTS reward_redemptions (
       id TEXT PRIMARY KEY NOT NULL,
       employee_id TEXT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
@@ -220,6 +304,24 @@ export function ensureDatabase() {
     )`),
     d1.prepare("CREATE INDEX IF NOT EXISTS reward_redemptions_employee_created_idx ON reward_redemptions (employee_id, created_at)"),
     d1.prepare("CREATE INDEX IF NOT EXISTS reward_redemptions_status_idx ON reward_redemptions (status)"),
+    d1.prepare(`CREATE TABLE IF NOT EXISTS reward_redemption_claims (
+      id TEXT PRIMARY KEY NOT NULL,
+      redemption_id TEXT NOT NULL REFERENCES reward_redemptions(id) ON DELETE RESTRICT,
+      employee_id TEXT NOT NULL REFERENCES employees(id) ON DELETE RESTRICT,
+      reward_id TEXT NOT NULL REFERENCES rewards(id) ON DELETE RESTRICT,
+      employee_request_key TEXT NOT NULL,
+      reward_inventory_key TEXT NOT NULL,
+      expected_inventory_version INTEGER NOT NULL,
+      required_balance INTEGER NOT NULL,
+      max_redemptions_per_month INTEGER NOT NULL,
+      cooldown_days INTEGER NOT NULL,
+      request_month TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`),
+    d1.prepare("CREATE UNIQUE INDEX IF NOT EXISTS reward_redemption_claim_redemption_unique ON reward_redemption_claims (redemption_id)"),
+    d1.prepare("CREATE UNIQUE INDEX IF NOT EXISTS reward_redemption_claim_employee_request_unique ON reward_redemption_claims (employee_request_key)"),
+    d1.prepare("CREATE UNIQUE INDEX IF NOT EXISTS reward_redemption_claim_inventory_unique ON reward_redemption_claims (reward_inventory_key)"),
+    d1.prepare("CREATE INDEX IF NOT EXISTS reward_redemption_claim_employee_created_idx ON reward_redemption_claims (employee_id, created_at)"),
     d1.prepare(`CREATE TABLE IF NOT EXISTS employee_profiles (
       employee_id TEXT PRIMARY KEY NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
       personal_email TEXT NOT NULL DEFAULT '',
@@ -278,8 +380,98 @@ export function ensureDatabase() {
     )`),
     d1.prepare("CREATE INDEX IF NOT EXISTS employment_contracts_employee_created_idx ON employment_contracts (employee_id, created_at)"),
     d1.prepare("CREATE INDEX IF NOT EXISTS employment_contracts_status_idx ON employment_contracts (status)"),
-    d1.prepare("PRAGMA optimize"),
-  ]).catch((error) => {
+    ]);
+
+    const compatibilityColumns = [
+      ["organization_policy_publish_claims", "expected_content_hash", "TEXT NOT NULL DEFAULT ''"],
+      ["rewards", "inventory_version", "INTEGER NOT NULL DEFAULT 0"],
+      ["point_ledger", "policy_id", "TEXT REFERENCES organization_policies(id) ON DELETE SET NULL"],
+      ["point_ledger", "policy_version", "INTEGER"],
+      ["point_ledger", "policy_content_hash", "TEXT"],
+      ["point_events", "policy_id", "TEXT REFERENCES organization_policies(id) ON DELETE SET NULL"],
+      ["point_events", "policy_version", "INTEGER"],
+      ["point_events", "policy_content_hash", "TEXT"],
+    ] as const;
+    for (const [table, column, definition] of compatibilityColumns) {
+      await ensureColumn(d1, table, column, definition);
+    }
+
+    return d1.batch([
+      d1.prepare(`CREATE TABLE IF NOT EXISTS point_cap_claims (
+        id TEXT PRIMARY KEY NOT NULL,
+        employee_id TEXT NOT NULL REFERENCES employees(id) ON DELETE RESTRICT,
+        claim_month TEXT NOT NULL,
+        source_type TEXT NOT NULL,
+        source_id TEXT NOT NULL,
+        employee_month_sequence_key TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`),
+      d1.prepare("CREATE UNIQUE INDEX IF NOT EXISTS point_cap_claim_employee_month_sequence_unique ON point_cap_claims (employee_month_sequence_key)"),
+      d1.prepare("CREATE UNIQUE INDEX IF NOT EXISTS point_cap_claim_source_unique ON point_cap_claims (source_type, source_id)"),
+      d1.prepare("CREATE INDEX IF NOT EXISTS point_cap_claim_employee_month_idx ON point_cap_claims (employee_id, claim_month)"),
+      d1.prepare("CREATE UNIQUE INDEX IF NOT EXISTS work_submissions_one_submitted_per_work_unique ON work_submissions (work_item_id) WHERE status = 'submitted'"),
+      d1.prepare("CREATE INDEX IF NOT EXISTS point_ledger_policy_idx ON point_ledger (policy_id, policy_version)"),
+      d1.prepare("CREATE INDEX IF NOT EXISTS point_events_policy_idx ON point_events (policy_id, policy_version)"),
+      d1.prepare(`CREATE TRIGGER IF NOT EXISTS organization_policy_publish_claim_guard
+        BEFORE INSERT ON organization_policy_publish_claims
+        BEGIN
+          SELECT CASE WHEN NOT EXISTS (
+            SELECT 1 FROM organization_policies
+            WHERE id = NEW.policy_id
+              AND status = 'draft'
+              AND content_hash = NEW.expected_content_hash
+          ) THEN RAISE(ABORT, 'POLICY_PUBLISH_STALE_DRAFT') END;
+        END`),
+      d1.prepare(`CREATE TRIGGER IF NOT EXISTS work_submission_insert_guard
+        BEFORE INSERT ON work_submissions
+        WHEN NEW.status = 'submitted'
+        BEGIN
+          SELECT CASE WHEN NOT EXISTS (
+            SELECT 1 FROM work_items
+            WHERE id = NEW.work_item_id
+              AND assignee_employee_id = NEW.employee_id
+              AND status IN ('todo', 'in_progress')
+          ) THEN RAISE(ABORT, 'WORK_SUBMISSION_INVALID_STATE') END;
+        END`),
+      d1.prepare(`CREATE TRIGGER IF NOT EXISTS work_item_submission_terms_lock
+        BEFORE UPDATE OF project_id, assignee_employee_id, kind, priority, due_date ON work_items
+        WHEN EXISTS (
+          SELECT 1 FROM work_submissions WHERE work_item_id = OLD.id
+        ) AND (
+          NEW.project_id IS NOT OLD.project_id
+          OR NEW.assignee_employee_id IS NOT OLD.assignee_employee_id
+          OR NEW.kind IS NOT OLD.kind
+          OR NEW.priority IS NOT OLD.priority
+          OR NEW.due_date IS NOT OLD.due_date
+        )
+        BEGIN
+          SELECT RAISE(ABORT, 'WORK_ITEM_TERMS_LOCKED');
+        END`),
+      d1.prepare("DROP TRIGGER IF EXISTS reward_redemption_claim_guard"),
+      d1.prepare(`CREATE TRIGGER reward_redemption_claim_guard
+        BEFORE INSERT ON reward_redemption_claims
+        BEGIN
+          SELECT CASE WHEN substr(datetime(NEW.created_at, '+7 hours'), 1, 7) IS NOT NEW.request_month
+            THEN RAISE(ABORT, 'REDEMPTION_INVALID_MONTH') END;
+          SELECT CASE WHEN NOT EXISTS (
+            SELECT 1 FROM rewards
+            WHERE id = NEW.reward_id AND is_active = 1 AND stock > 0 AND inventory_version = NEW.expected_inventory_version
+          ) THEN RAISE(ABORT, 'REDEMPTION_STALE_INVENTORY') END;
+          SELECT CASE WHEN COALESCE((SELECT SUM(points) FROM point_ledger WHERE employee_id = NEW.employee_id), 0) < NEW.required_balance
+            THEN RAISE(ABORT, 'REDEMPTION_INSUFFICIENT_BALANCE') END;
+          SELECT CASE WHEN (SELECT COUNT(*) FROM reward_redemptions
+            WHERE employee_id = NEW.employee_id AND status IN ('requested', 'approved', 'fulfilled')
+              AND substr(datetime(created_at, '+7 hours'), 1, 7) = NEW.request_month
+          ) > NEW.max_redemptions_per_month THEN RAISE(ABORT, 'REDEMPTION_MONTHLY_LIMIT') END;
+          SELECT CASE WHEN NEW.cooldown_days > 0 AND EXISTS (
+            SELECT 1 FROM reward_redemptions
+            WHERE employee_id = NEW.employee_id AND id <> NEW.redemption_id AND status IN ('requested', 'approved', 'fulfilled')
+              AND julianday(NEW.created_at) - julianday(created_at) < NEW.cooldown_days
+          ) THEN RAISE(ABORT, 'REDEMPTION_COOLDOWN') END;
+        END`),
+      d1.prepare("PRAGMA optimize"),
+    ]);
+  })().catch((error) => {
     initialization = null;
     throw error;
   });
