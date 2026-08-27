@@ -52,6 +52,7 @@ function apiError(error: unknown) {
 }
 
 let seedInitialization: Promise<void> | null = null;
+const demoDataEnabled = process.env.PEOPLE_PULSE_ENABLE_DEMO_DATA === "true";
 
 type OrganizationPolicyRow = typeof organizationPolicies.$inferSelect;
 
@@ -313,6 +314,11 @@ async function initializeSeedData() {
 }
 
 async function ensureSeedData() {
+  if (!demoDataEnabled) {
+    await ensureDatabase();
+    await ensureBootstrapAccounts();
+    return;
+  }
   if (seedInitialization) return seedInitialization;
   seedInitialization = initializeSeedData().catch((error) => {
     seedInitialization = null;
@@ -472,6 +478,37 @@ export async function GET(request: Request) {
     const visiblePolicyAcknowledgements = currentUser.role === "admin"
       ? visiblePolicyAcknowledgementRows
       : visiblePolicyAcknowledgementRows.map(publicPolicyAcknowledgement);
+    const visibleEmploymentContracts = currentUser.role === "admin"
+      ? employmentContractRows.filter((row) => visibleEmployeeIds.has(row.employeeId))
+      : currentUser.role === "employee" && currentUser.employeeId
+        ? employmentContractRows.filter((row) => row.employeeId === currentUser.employeeId && row.status !== "draft")
+        : [];
+    const visibleEmployeeContractDocumentIds = new Set(visibleEmploymentContracts.map((contract) => contract.documentId));
+    const visibleApplicationDocuments = currentUser.role === "admin"
+      ? applicationDocumentRows.filter((row) => visibleEmployeeIds.has(row.employeeId))
+      : currentUser.role === "employee" && currentUser.employeeId
+        ? applicationDocumentRows
+          .filter((row) => row.employeeId === currentUser.employeeId && row.documentType === "contract" && visibleEmployeeContractDocumentIds.has(row.id))
+          .map((row) => ({ ...row, storageKey: row.storageKey ? "available" : "" }))
+        : [];
+    const launchReadiness = currentUser.role === "admin" && !employeePreview ? (() => {
+      const activeEmployeeRows = employeeRows.filter((employee) => employee.status === "active");
+      const activeEmployeeIds = new Set(activeEmployeeRows.map((employee) => employee.id));
+      const activeEmployeeAccounts = userAccountRows.filter((account) => account.status === "active" && account.role !== "admin" && Boolean(account.employeeId) && activeEmployeeIds.has(account.employeeId ?? ""));
+      const demoEmployeeCount = employeeRows.filter((employee) => seedEmployees.some((seed) => seed.id === employee.id && seed.name === employee.name && seed.email === employee.email)).length;
+      const templatePolicyCount = organizationPolicyRows.filter((policy) => policy.status === "published" && /แม่แบบ|ระบบทดลอง/.test(`${policy.title} ${policy.summary} ${policy.content}`)).length;
+      return {
+        demoDataEnabled,
+        demoEmployeeCount,
+        templatePolicyCount,
+        activeEmployeeCount: activeEmployeeRows.length,
+        activeLinkedAccountCount: activeEmployeeAccounts.length,
+        loggedInEmployeeAccountCount: activeEmployeeAccounts.filter((account) => Boolean(account.lastLoginAt)).length,
+        publishedPolicyCount: organizationPolicyRows.filter((policy) => isPolicyEffective(policy, policyDay)).length,
+        realDocumentCount: applicationDocumentRows.filter((document) => Boolean(document.storageKey)).length,
+        submittedWorkCount: workSubmissionRows.length,
+      };
+    })() : null;
     const scopedWorkItems = workItemRows
       .filter((item) => visibleEmployeeIds.has(item.assigneeEmployeeId))
       .map((item) => ({ ...item, points: workPointValue(item.kind, item.priority, activePointRules) }));
@@ -533,12 +570,13 @@ export async function GET(request: Request) {
       pointEvents: pointEventRows.filter((row) => visibleEmployeeIds.has(row.employeeId)),
       rewardRedemptions: redemptionRows.filter((row) => visibleEmployeeIds.has(row.employeeId)),
       employeeProfiles: currentUser.role === "admin" ? employeeProfileRows.filter((row) => visibleEmployeeIds.has(row.employeeId)) : visibleProfileImages,
-      applicationDocuments: currentUser.role === "admin" ? applicationDocumentRows.filter((row) => visibleEmployeeIds.has(row.employeeId)) : [],
-      employmentContracts: currentUser.role === "admin" ? employmentContractRows.filter((row) => visibleEmployeeIds.has(row.employeeId)) : [],
+      applicationDocuments: visibleApplicationDocuments,
+      employmentContracts: visibleEmploymentContracts,
       userAccounts: currentUser.role === "admin" ? userAccountRows : [],
       notificationReads: employeePreview ? [] : notificationReadRows,
       organizationPolicies: visibleOrganizationPolicies,
       policyAcknowledgements: visiblePolicyAcknowledgements,
+      launchReadiness,
       activePointPolicyId: activePointPolicy?.id ?? null,
       pointPolicyRules: activePointRules,
       period,
@@ -1393,9 +1431,15 @@ export async function POST(request: Request) {
       ]);
       if (!title || !project || !assignee) return Response.json({ error: "กรุณาระบุชื่องาน โปรเจกต์ และผู้รับผิดชอบที่กำลังใช้งานอยู่" }, { status: 400 });
       if (!(await canAccessEmployee(currentUser, assigneeEmployeeId))) return Response.json({ error: "ไม่มีสิทธิ์มอบหมายงานให้พนักงานคนนี้" }, { status: 403 });
-      const status = payload.status ?? existingWorkItem?.status ?? "todo";
+      const requestedStatus = payload.status ?? existingWorkItem?.status ?? "todo";
+      if (requestedStatus !== "todo" && requestedStatus !== "in_progress") {
+        return Response.json({ error: "สถานะรอตรวจเกิดจากการส่งหลักฐาน และสถานะเสร็จแล้วเกิดจากผู้ตรวจอนุมัติเท่านั้น" }, { status: 400 });
+      }
+      const status = requestedStatus;
       const requestedProgress = payload.progress === undefined ? existingWorkItem?.progress ?? 0 : Number(payload.progress);
-      const progress = status === "done" ? 100 : Math.min(99, Math.max(0, Math.round(Number.isFinite(requestedProgress) ? requestedProgress : 0)));
+      const progress = status === "todo"
+        ? Math.min(20, Math.max(0, Math.round(Number.isFinite(requestedProgress) ? requestedProgress : 0)))
+        : Math.min(90, Math.max(1, Math.round(Number.isFinite(requestedProgress) ? requestedProgress : 1)));
       const workItem = {
         id: existingWorkItem?.id ?? workItemId,
         projectId,

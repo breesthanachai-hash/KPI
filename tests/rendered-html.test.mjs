@@ -983,3 +983,51 @@ test("ships a readable and responsive Portfolio Finder", async () => {
   assert.match(page, /className="portfolio-archive-row" aria-label=/);
   assert.match(page, /className="portfolio-empty" role="status"/);
 });
+
+test("adds a safe launch gate, owner-only contract flow and evidence-led work states", async () => {
+  const [page, styles, dashboardRoute, documentRoute] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/dashboard/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/documents/route.ts", import.meta.url), "utf8"),
+  ]);
+
+  // Production starts without inserting the demo roster. Demo data is an
+  // explicit opt-in used only when the deployment environment requests it.
+  assert.match(dashboardRoute, /const demoDataEnabled = process\.env\.PEOPLE_PULSE_ENABLE_DEMO_DATA === "true"/);
+  const seedGate = dashboardRoute.match(/async function ensureSeedData\(\) \{[\s\S]*?(?=\n\})/)?.[0] ?? "";
+  assert.match(seedGate, /if \(!demoDataEnabled\) \{[\s\S]*?await ensureDatabase\(\)[\s\S]*?await ensureBootstrapAccounts\(\)[\s\S]*?return/);
+  assert.match(dashboardRoute, /launchReadiness/);
+  assert.match(dashboardRoute, /demoEmployeeCount/);
+  assert.match(dashboardRoute, /templatePolicyCount/);
+  assert.match(page, /ศูนย์ตรวจความพร้อมก่อนเปิดใช้จริง/);
+  assert.match(page, /launchReadinessScore/);
+  assert.match(page, /พบข้อมูลสาธิตปะปนอยู่/);
+  assert.match(styles, /\.launch-readiness-center/);
+
+  // Employees receive only their own non-draft contract and its linked file.
+  assert.match(dashboardRoute, /currentUser\.role === "employee" && currentUser\.employeeId[\s\S]*?employmentContractRows\.filter\(\(row\) => row\.employeeId === currentUser\.employeeId && row\.status !== "draft"\)/);
+  assert.match(dashboardRoute, /visibleEmployeeContractDocumentIds/);
+  assert.match(documentRoute, /currentUser\.role !== "employee" \|\| !currentUser\.employeeId \|\| currentUser\.employeeId !== document\.employeeId \|\| document\.documentType !== "contract"/);
+  assert.match(documentRoute, /eq\(employmentContracts\.employeeId, currentUser\.employeeId\)/);
+  assert.match(documentRoute, /linkedContract\.status === "draft"/);
+  assert.match(page, /<h2>สัญญาจ้างของฉัน<\/h2>/);
+  assert.match(page, /อ่านสัญญา/);
+  assert.match(page, /รอพนักงานลงนาม/);
+  assert.doesNotMatch(page, /\| contract\.status === "viewed"\) && <button onClick=\{\(\) => openContractSignature\(contract\)\}>ลงนามสัญญา<\/button>/);
+  assert.match(styles, /\.employee-contract-center/);
+
+  // A manager can create or edit only todo/in-progress. Submission moves an
+  // item to review and reviewer approval is the only path to done.
+  const saveWorkItemBlock = dashboardRoute.match(/if \(payload\.action === "saveWorkItem"\) \{[\s\S]*?(?=\n    if \(payload\.action === "reviewWorkSubmission"\))/)?.[0] ?? "";
+  assert.match(saveWorkItemBlock, /requestedStatus !== "todo" && requestedStatus !== "in_progress"/);
+  assert.match(saveWorkItemBlock, /สถานะรอตรวจเกิดจากการส่งหลักฐาน และสถานะเสร็จแล้วเกิดจากผู้ตรวจอนุมัติเท่านั้น/);
+  assert.match(saveWorkItemBlock, /Math\.min\(90/);
+  assert.match(page, /รอตรวจจะเกิดเมื่อพนักงานส่งหลักฐาน และเสร็จแล้วเมื่อผู้ตรวจอนุมัติ/);
+  assert.match(page, /type="range" min="0" max="90"/);
+
+  // The shell is also ready for a future authenticated public entry without
+  // showing a misleading unknown-email state to a signed-out visitor.
+  assert.match(page, /accessDenied\.anonymous \? "เข้าสู่ระบบเพื่อใช้งาน"/);
+  assert.match(page, /\/signin-with-chatgpt\?return_to=\//);
+});

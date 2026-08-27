@@ -65,6 +65,18 @@ type EmployeePreview = {
   launchedBy: string;
 };
 
+type LaunchReadiness = {
+  demoDataEnabled: boolean;
+  demoEmployeeCount: number;
+  templatePolicyCount: number;
+  activeEmployeeCount: number;
+  activeLinkedAccountCount: number;
+  loggedInEmployeeAccountCount: number;
+  publishedPolicyCount: number;
+  realDocumentCount: number;
+  submittedWorkCount: number;
+};
+
 type OfficeLoadLevel = "available" | "steady" | "busy" | "overloaded";
 
 type OfficeLoadFilter = "all" | OfficeLoadLevel;
@@ -724,7 +736,8 @@ export default function Home() {
   const isEmployeePreview = Boolean(employeePreview?.readOnly);
   const [permissions, setPermissions] = useState<AppPermissions>({ canManageAccounts: false, canManagePeople: false, canManageWork: false, canReviewWork: false, canViewTeam: false, canViewTeamOverview: false, canViewOwnGrowth: false, canViewOwnRewards: false });
   const [teamOverview, setTeamOverview] = useState<EmployeeTeamOverview>({ employees: [], evaluations: [], workItems: [] });
-  const [accessDenied, setAccessDenied] = useState<{ email: string; name: string } | null>(null);
+  const [launchReadiness, setLaunchReadiness] = useState<LaunchReadiness | null>(null);
+  const [accessDenied, setAccessDenied] = useState<{ email: string; name: string; anonymous: boolean } | null>(null);
   const [selectedEmployee, setSelectedEmployee] = useState<EmployeeRecord | null>(null);
   const [skillProfileEmployee, setSkillProfileEmployee] = useState<EmployeeRecord | null>(null);
   const [hrEmployee, setHrEmployee] = useState<EmployeeRecord | null>(null);
@@ -799,9 +812,9 @@ export default function Home() {
     if (previewEmployeeId) dashboardParams.set("previewEmployeeId", previewEmployeeId);
     fetch(`/api/dashboard?${dashboardParams.toString()}`, { signal: controller.signal })
       .then(async (response) => {
-        const body = await response.json() as { currentUser?: CurrentUser; employeePreview?: EmployeePreview | null; permissions?: AppPermissions; teamOverview?: EmployeeTeamOverview; userAccounts?: UserAccountRecord[]; notificationReads?: NotificationReadRecord[]; employees?: EmployeeRecord[]; evaluations?: EvaluationRecord[]; hrProfiles?: HrProfileRecord[]; attendanceRecords?: AttendanceRecord[]; skillAchievements?: SkillAchievementRecord[]; talentActions?: TalentActionRecord[]; projects?: ProjectRecord[]; workItems?: WorkItemRecord[]; workSubmissions?: WorkSubmissionRecord[]; rewards?: RewardRecord[]; pointLedger?: PointLedgerRecord[]; pointEvents?: PointEventRecord[]; pointPolicyRules?: PointPolicyRules; rewardRedemptions?: RewardRedemptionRecord[]; organizationPolicies?: OrganizationPolicyRecord[]; policyAcknowledgements?: PolicyAcknowledgementRecord[]; employeeProfiles?: EmployeeProfileRecord[]; applicationDocuments?: ApplicationDocumentRecord[]; employmentContracts?: EmploymentContractRecord[]; accessDenied?: boolean; identity?: { email: string; name: string } | null; error?: string };
+        const body = await response.json() as { currentUser?: CurrentUser; employeePreview?: EmployeePreview | null; permissions?: AppPermissions; teamOverview?: EmployeeTeamOverview; launchReadiness?: LaunchReadiness; userAccounts?: UserAccountRecord[]; notificationReads?: NotificationReadRecord[]; employees?: EmployeeRecord[]; evaluations?: EvaluationRecord[]; hrProfiles?: HrProfileRecord[]; attendanceRecords?: AttendanceRecord[]; skillAchievements?: SkillAchievementRecord[]; talentActions?: TalentActionRecord[]; projects?: ProjectRecord[]; workItems?: WorkItemRecord[]; workSubmissions?: WorkSubmissionRecord[]; rewards?: RewardRecord[]; pointLedger?: PointLedgerRecord[]; pointEvents?: PointEventRecord[]; pointPolicyRules?: PointPolicyRules; rewardRedemptions?: RewardRedemptionRecord[]; organizationPolicies?: OrganizationPolicyRecord[]; policyAcknowledgements?: PolicyAcknowledgementRecord[]; employeeProfiles?: EmployeeProfileRecord[]; applicationDocuments?: ApplicationDocumentRecord[]; employmentContracts?: EmploymentContractRecord[]; accessDenied?: boolean; identity?: { email: string; name: string } | null; error?: string };
         if (response.status === 403 && body.accessDenied) {
-          setAccessDenied(body.identity ?? { email: "ไม่พบอีเมล", name: "ผู้ใช้งาน" });
+          setAccessDenied(body.identity ? { ...body.identity, anonymous: false } : { email: "", name: "", anonymous: true });
           setCurrentUser(null);
           setEmployeePreview(null);
           setEmployees([]);
@@ -809,6 +822,7 @@ export default function Home() {
           setOrganizationPolicies([]);
           setPolicyAcknowledgements([]);
           setTeamOverview({ employees: [], evaluations: [], workItems: [] });
+          setLaunchReadiness(null);
           return;
         }
         if (!response.ok) throw new Error(body.error ?? "โหลดข้อมูลไม่สำเร็จ");
@@ -816,6 +830,7 @@ export default function Home() {
         setEmployeePreview(body.employeePreview ?? null);
         setPermissions(body.permissions ?? { canManageAccounts: false, canManagePeople: false, canManageWork: false, canReviewWork: false, canViewTeam: false, canViewTeamOverview: false, canViewOwnGrowth: false, canViewOwnRewards: false });
         setTeamOverview(body.teamOverview ?? { employees: [], evaluations: [], workItems: [] });
+        setLaunchReadiness(body.launchReadiness ?? null);
         setUserAccounts(body.userAccounts ?? []);
         setNotificationReads(body.notificationReads ?? []);
         setAccessDenied(null);
@@ -987,6 +1002,8 @@ export default function Home() {
   const profileDocuments = profileEmployee ? applicationDocuments.filter((document) => document.employeeId === profileEmployee.id) : [];
   const profileContractDocuments = profileDocuments.filter((document) => document.documentType === "contract").sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt));
   const profileContracts = profileEmployee ? employmentContracts.filter((contract) => contract.employeeId === profileEmployee.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt)) : [];
+  const employeeContracts = currentUser?.employeeId ? employmentContracts.filter((contract) => contract.employeeId === currentUser.employeeId).sort((a, b) => b.createdAt.localeCompare(a.createdAt)) : [];
+  const contractSigningEmployee = contractToSign ? employeesById.get(contractToSign.employeeId) ?? null : null;
   const verifiedRequiredDocuments = requiredDocumentTypes.filter((type) => profileDocuments.some((document) => document.documentType === type && document.status === "verified")).length;
   const profileFilledFields = profileRecord ? [profileRecord.personalEmail, profileRecord.phone, profileRecord.birthDate, profileRecord.nationalIdLast4, profileRecord.address, profileRecord.emergencyName, profileRecord.emergencyPhone, profileRecord.startDate, profileRecord.education, profileRecord.applicationSource].filter(Boolean).length : 0;
   const dossierCompleteness = Math.round((profileFilledFields / 10 * .45 + verifiedRequiredDocuments / requiredDocumentTypes.length * .4 + (profileContracts.some((contract) => contract.status === "signed") ? .15 : 0)) * 100);
@@ -2048,7 +2065,7 @@ export default function Home() {
 
   const openContractSignature = (contract: EmploymentContractRecord) => {
     setContractToSign(contract);
-    setSignatureForm({ signedName: profileEmployee?.name ?? "", consent: false });
+    setSignatureForm({ signedName: employeesById.get(contract.employeeId)?.name ?? "", consent: false });
   };
 
   const sendEmploymentContract = async (contract: EmploymentContractRecord) => {
@@ -2263,6 +2280,49 @@ export default function Home() {
 
   const isAdmin = currentUser?.role === "admin";
   const isEmployeeUser = currentUser?.role === "employee";
+  const launchReadinessSteps = launchReadiness ? [
+    {
+      title: "ยืนยันล้างหรือเก็บข้อมูลตัวอย่างแยกจากงานจริง",
+      detail: launchReadiness.demoEmployeeCount || launchReadiness.templatePolicyCount
+        ? `ยังพบพนักงานตัวอย่าง ${launchReadiness.demoEmployeeCount} คน และนโยบายแม่แบบ ${launchReadiness.templatePolicyCount} ฉบับ`
+        : launchReadiness.demoDataEnabled ? "โหมดข้อมูลตัวอย่างยังเปิดอยู่ กรุณายืนยันการตั้งค่าก่อนเริ่มงานจริง" : "ไม่พบข้อมูลตัวอย่างปะปนกับข้อมูลใช้งานจริง",
+      ready: !launchReadiness.demoDataEnabled && launchReadiness.demoEmployeeCount === 0 && launchReadiness.templatePolicyCount === 0,
+    },
+    {
+      title: "เพิ่มรายชื่อพนักงานจริง",
+      detail: `มีพนักงานสถานะใช้งาน ${launchReadiness.activeEmployeeCount} คน`,
+      ready: launchReadiness.activeEmployeeCount > 0,
+    },
+    {
+      title: "ให้ HR/กฎหมายทบทวนและประกาศกฎองค์กร",
+      detail: `ประกาศแล้ว ${launchReadiness.publishedPolicyCount} ฉบับ${launchReadiness.templatePolicyCount ? ` · ยังเป็นแม่แบบ ${launchReadiness.templatePolicyCount} ฉบับ` : ""}`,
+      ready: launchReadiness.publishedPolicyCount > 0 && launchReadiness.templatePolicyCount === 0,
+    },
+    {
+      title: "สร้างบัญชีให้ตรงกับพนักงานและส่งคำเชิญเว็บไซต์",
+      detail: `ผูกบัญชีใช้งานแล้ว ${launchReadiness.activeLinkedAccountCount}/${launchReadiness.activeEmployeeCount} คน · ตรวจคำเชิญเว็บไซต์กับเจ้าของระบบอีกครั้ง`,
+      ready: launchReadiness.activeEmployeeCount > 0 && launchReadiness.activeLinkedAccountCount >= launchReadiness.activeEmployeeCount,
+    },
+    {
+      title: "ให้พนักงานจริงเข้าสู่ระบบครั้งแรก",
+      detail: `มีพนักงานเข้าสู่ระบบแล้ว ${launchReadiness.loggedInEmployeeAccountCount} คน`,
+      ready: launchReadiness.loggedInEmployeeAccountCount > 0,
+    },
+    {
+      title: "ทดสอบครบวงจร: รับงาน ส่งหลักฐาน และตรวจผลงาน",
+      detail: `เอกสารจริง ${launchReadiness.realDocumentCount} รายการ · หลักฐานงาน ${launchReadiness.submittedWorkCount} รายการ`,
+      ready: launchReadiness.realDocumentCount > 0 && launchReadiness.submittedWorkCount > 0,
+    },
+  ] : [];
+  const launchReadinessScore = launchReadinessSteps.filter((step) => step.ready).length;
+  const hasLaunchDemoWarning = Boolean(launchReadiness && (launchReadiness.demoEmployeeCount > 0 || launchReadiness.templatePolicyCount > 0));
+  const launchReadinessStatus = !launchReadiness
+    ? "กำลังรอข้อมูลตรวจสอบจากระบบ"
+    : launchReadinessScore === launchReadinessSteps.length
+      ? "ผ่านจุดตรวจหลัก พร้อมนัดทีมทดลองใช้งานจริง"
+      : hasLaunchDemoWarning
+        ? "ยังไม่ควรเปิดให้พนักงานใช้งานจริง"
+        : "อยู่ระหว่างเตรียมความพร้อมก่อนเปิดใช้";
   const currentUserRoleLabel = currentUser?.role === "admin" ? "HR / Admin" : currentUser?.role === "manager" ? "หัวหน้าทีม" : "พนักงาน";
   const currentUserEmployee = currentUser?.employeeId ? employeesById.get(currentUser.employeeId) ?? null : null;
   const activeRewardEmployeeId = isAdmin ? rewardEmployeeId : currentUser?.employeeId ?? "";
@@ -2379,10 +2439,10 @@ export default function Home() {
         <section>
           <span className="access-lock">PP</span>
           <p className="eyebrow">PEOPLE PULSE ACCESS</p>
-          <h1>บัญชีนี้ยังไม่ได้รับสิทธิ์</h1>
-          <p>ส่งอีเมลด้านล่างให้ HR เพื่อผูกบัญชีกับโปรไฟล์พนักงาน แล้วเปิดหน้านี้อีกครั้ง</p>
-          <div><small>อีเมลที่เข้าสู่ระบบ</small><strong>{accessDenied.email}</strong></div>
-          <a href="/signout-with-chatgpt?return_to=/">เปลี่ยนบัญชี</a>
+          <h1>{accessDenied.anonymous ? "เข้าสู่ระบบเพื่อใช้งาน" : "บัญชีนี้ยังไม่ได้รับสิทธิ์"}</h1>
+          <p>{accessDenied.anonymous ? "ใช้บัญชี ChatGPT ที่ HR เพิ่มไว้ในระบบ ระบบจะตรวจสิทธิ์และเปิดพอร์ทัลของคุณอัตโนมัติ" : "ส่งอีเมลด้านล่างให้ HR เพื่อผูกบัญชีกับโปรไฟล์พนักงาน แล้วเปิดหน้านี้อีกครั้ง"}</p>
+          {!accessDenied.anonymous && <div><small>อีเมลที่เข้าสู่ระบบ</small><strong>{accessDenied.email}</strong></div>}
+          <a href={accessDenied.anonymous ? "/signin-with-chatgpt?return_to=/" : "/signout-with-chatgpt?return_to=/"}>{accessDenied.anonymous ? "เข้าสู่ระบบด้วย ChatGPT" : "เปลี่ยนบัญชี"}</a>
         </section>
       </main>
     );
@@ -2808,7 +2868,7 @@ export default function Home() {
                         return <article key={contract.id} className={contract.status}>
                           <span className="contract-sequence">{String(profileContracts.length - index).padStart(2, "0")}</span>
                           <div className="contract-copy"><span><b className={`contract-status ${contract.status}`}>{contractStatusLabel(contract.status)}</b><small>เวอร์ชัน {contract.version}</small></span><strong>{contract.title}</strong><p>มีผล {new Date(`${contract.effectiveDate}T00:00:00`).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" })}{contract.expiryDate ? ` ถึง ${new Date(`${contract.expiryDate}T00:00:00`).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" })}` : " · ไม่มีกำหนด"}</p>{contract.status === "signed" && <em>ลงนามโดย {contract.signedName} · {formatUpdatedAt(contract.signedAt ?? contract.updatedAt)} · {contract.signerEmail}</em>}</div>
-                          <div className="contract-actions">{linkedDocument?.storageKey && <a href={`/api/documents?id=${encodeURIComponent(linkedDocument.id)}`}>เปิดไฟล์</a>}{contract.status === "draft" && <button onClick={() => void sendEmploymentContract(contract)}>ส่งให้ลงนาม</button>}{(contract.status === "sent" || contract.status === "viewed") && <button onClick={() => openContractSignature(contract)}>ลงนามสัญญา</button>}{contract.status === "signed" && <span>✓ หลักฐานครบ</span>}</div>
+                          <div className="contract-actions">{linkedDocument?.storageKey && <a href={`/api/documents?id=${encodeURIComponent(linkedDocument.id)}`}>เปิดไฟล์</a>}{contract.status === "draft" && <button onClick={() => void sendEmploymentContract(contract)}>ส่งให้ลงนาม</button>}{(contract.status === "sent" || contract.status === "viewed") && <span>รอพนักงานลงนาม</span>}{contract.status === "signed" && <span>✓ หลักฐานครบ</span>}</div>
                         </article>;
                       })}
                       {!profileContracts.length && <div className="contract-empty"><span>✎</span><div><strong>ยังไม่มีสัญญาจ้าง</strong><p>อัปโหลดไฟล์ต้นฉบับ แล้วสร้างสัญญาเพื่อส่งให้พนักงานลงนาม</p></div><button onClick={openContractCreator}>เริ่มสร้างสัญญา</button></div>}
@@ -3063,6 +3123,22 @@ export default function Home() {
                   <p className="eyebrow">MY DEVELOPMENT PLAN</p><h2>แผนพัฒนาของฉัน</h2>
                   <div>{talentActions.slice().sort((a, b) => a.dueDate.localeCompare(b.dueDate)).slice(0, 5).map((action) => <article key={action.id}><span className={action.status}>{action.status === "completed" ? "✓" : action.status === "in_progress" ? "→" : "○"}</span><div><strong>{action.title}</strong><small>กำหนด {formatDueDate(action.dueDate)} · {action.status === "completed" ? "เสร็จแล้ว" : action.status === "in_progress" ? "กำลังทำ" : "วางแผนแล้ว"}</small></div></article>)}{!talentActions.length && <div className="employee-growth-empty"><span>↗</span><strong>ยังไม่มีแผนพัฒนา</strong><p>HR จะเพิ่ม Skill Test, Upskill หรือแผนเลื่อนตำแหน่งให้ที่นี่</p></div>}</div>
                 </section>
+                <section className="employee-contract-center">
+                  <div className="employee-contract-heading"><div><p className="eyebrow">MY CONTRACT</p><h2>สัญญาจ้างของฉัน</h2></div><span>{employeeContracts.length}</span></div>
+                  <div className="employee-contract-list">
+                    {employeeContracts.map((contract) => {
+                      const linkedDocument = applicationDocuments.find((document) => document.id === contract.documentId);
+                      const canSign = contract.status === "sent" || contract.status === "viewed";
+                      return <article key={contract.id} className={contract.status}>
+                        <span className="employee-contract-mark">{contract.status === "signed" ? "✓" : "✎"}</span>
+                        <div><span><b className={`contract-status ${contract.status}`}>{contractStatusLabel(contract.status)}</b><small>เวอร์ชัน {contract.version}</small></span><strong>{contract.title}</strong><p>มีผล {new Date(`${contract.effectiveDate}T00:00:00`).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" })}</p></div>
+                        <div className="employee-contract-actions">{linkedDocument?.storageKey && <a href={`/api/documents?id=${encodeURIComponent(linkedDocument.id)}`}>อ่านสัญญา</a>}{canSign && <button type="button" disabled={isEmployeePreview} onClick={() => openContractSignature(contract)}>{isEmployeePreview ? "โหมดทดลอง" : "ลงนาม"}</button>}{contract.status === "signed" && <span>ลงนาม {formatUpdatedAt(contract.signedAt ?? contract.updatedAt)}</span>}</div>
+                      </article>;
+                    })}
+                    {!employeeContracts.length && <div className="employee-growth-empty"><span>✎</span><strong>ยังไม่มีสัญญาที่ส่งถึงคุณ</strong><p>เมื่อ HR ส่งสัญญาแล้ว คุณจะอ่าน ดาวน์โหลด และลงนามได้จากส่วนนี้</p></div>}
+                  </div>
+                  <p className="employee-contract-note">อ่านไฟล์ให้ครบก่อนลงนาม ระบบจะบันทึกบัญชี ชื่อ คำยินยอม และเวลาเป็นหลักฐาน</p>
+                </section>
               </aside>
             </div>
             <div className="employee-growth-privacy"><span>⌁</span><p><strong>ข้อมูลส่วนตัวของคุณ</strong> เงินเดือน เงินเพิ่ม และแผนพัฒนาไม่ถูกส่งไปยังหน้าสำนักงานหรือค่าพลังของเพื่อนร่วมทีม</p></div>
@@ -3272,6 +3348,33 @@ export default function Home() {
 
         {view === "access" && isAdmin && (
           <section className="access-layout">
+            <section className={`launch-readiness-center ${hasLaunchDemoWarning ? "has-demo-warning" : launchReadinessScore === 6 ? "is-ready" : ""}`} aria-labelledby="launch-readiness-title">
+              <header className="launch-readiness-heading">
+                <div className="launch-readiness-title"><span aria-hidden="true">✓</span><div><p className="eyebrow">LAUNCH READINESS</p><h2 id="launch-readiness-title">ศูนย์ตรวจความพร้อมก่อนเปิดใช้จริง</h2><p>ตรวจข้อมูล คน กฎ สิทธิ์ และเส้นทางส่งงานให้ครบก่อนเชิญพนักงานทั้งองค์กร</p></div></div>
+                <div className="launch-readiness-score" aria-label={`ความพร้อม ${launchReadinessScore} จาก 6 ขั้น`}><strong>{launchReadinessScore}<small>/6</small></strong><span>ขั้นพร้อมใช้งาน</span></div>
+              </header>
+
+              <div className="launch-readiness-progress" role="progressbar" aria-label="ความพร้อมก่อนเปิดใช้จริง" aria-valuemin={0} aria-valuemax={6} aria-valuenow={launchReadinessScore}><span style={{ width: `${launchReadinessScore / 6 * 100}%` }} /></div>
+              <div className="launch-readiness-status"><span aria-hidden="true">{launchReadinessScore === 6 ? "✓" : hasLaunchDemoWarning ? "!" : "i"}</span><div><strong>{launchReadinessStatus}</strong><p>{launchReadiness ? `ระบบตรวจล่าสุดจากข้อมูลปัจจุบัน ${launchReadinessScore} จาก 6 ขั้น` : "ยังไม่พบผลตรวจความพร้อม กรุณาโหลดหน้าใหม่หลังระบบหลังบ้านพร้อมใช้งาน"}</p></div></div>
+
+              {hasLaunchDemoWarning && launchReadiness && <div className="launch-demo-warning" role="alert"><span aria-hidden="true">!</span><div><strong>พบข้อมูลสาธิตปะปนอยู่ — ห้ามใช้ตัดสินใจเรื่องพนักงานจริง</strong><p>พนักงานตัวอย่าง {launchReadiness.demoEmployeeCount} คน · นโยบายแม่แบบ {launchReadiness.templatePolicyCount} ฉบับ กรุณายืนยันว่าจะล้างข้อมูลหรือเก็บแยกเพื่อทดลองก่อนส่งคำเชิญให้ทีม</p></div></div>}
+
+              <div className="launch-readiness-metrics" aria-label="ตัวเลขประกอบการตรวจความพร้อม">
+                <article><span>01</span><div><strong>{launchReadiness?.activeEmployeeCount ?? "—"}</strong><small>พนักงานใช้งาน</small></div></article>
+                <article><span>02</span><div><strong>{launchReadiness?.activeLinkedAccountCount ?? "—"}</strong><small>บัญชีผูกโปรไฟล์</small></div></article>
+                <article><span>03</span><div><strong>{launchReadiness?.loggedInEmployeeAccountCount ?? "—"}</strong><small>พนักงานเข้าใช้แล้ว</small></div></article>
+                <article><span>04</span><div><strong>{launchReadiness?.publishedPolicyCount ?? "—"}</strong><small>กฎที่ประกาศ</small></div></article>
+                <article><span>05</span><div><strong>{launchReadiness?.realDocumentCount ?? "—"}</strong><small>เอกสารจริง</small></div></article>
+                <article><span>06</span><div><strong>{launchReadiness?.submittedWorkCount ?? "—"}</strong><small>หลักฐานงาน</small></div></article>
+              </div>
+
+              <ol className="launch-readiness-steps">
+                {launchReadinessSteps.map((step, index) => <li key={step.title} className={step.ready ? "ready" : "pending"}><span>{step.ready ? "✓" : index + 1}</span><div><strong>{step.title}</strong><p>{step.detail}</p></div><b>{step.ready ? "ผ่านแล้ว" : "ต้องทำต่อ"}</b></li>)}
+                {!launchReadinessSteps.length && <li className="pending"><span>i</span><div><strong>รอข้อมูลจากระบบหลังบ้าน</strong><p>ศูนย์ตรวจความพร้อมจะแสดงรายการตรวจอัตโนมัติเมื่อได้รับข้อมูลล่าสุด</p></div><b>รอตรวจ</b></li>}
+              </ol>
+              <footer className="launch-readiness-note"><span aria-hidden="true">i</span><p><strong>ศูนย์นี้ไม่ลบหรือแก้ข้อมูลให้อัตโนมัติ</strong> HR ต้องตรวจข้อมูลจริง ทบทวนกฎหมาย ยืนยันคำเชิญเว็บไซต์ และทดสอบกับพนักงานกลุ่มเล็กก่อนเปิดใช้ทั้งองค์กร</p></footer>
+            </section>
+
             <div className="access-summary-grid">
               <article className="access-hero-card"><span>◎</span><div><p className="eyebrow">SECURE TEAM ACCESS</p><h2>ให้แต่ละคนเห็นเฉพาะสิ่งที่ควรเห็น</h2><p>ผูกอีเมลที่ใช้เข้าสู่ระบบกับโปรไฟล์พนักงานหนึ่งคน จากนั้นระบบจะกรองงาน ภารกิจ แฟ้มผลงาน แต้ม และรางวัลให้อัตโนมัติ</p></div></article>
               <MetricCard label="บัญชีใช้งาน" value={`${userAccounts.filter((account) => account.status === "active").length} บัญชี`} copy={`${userAccounts.filter((account) => account.status === "inactive").length} บัญชีพักสิทธิ์`} tone="positive" icon="✓" />
@@ -3707,17 +3810,17 @@ export default function Home() {
         </div>
       )}
 
-      {contractToSign && profileEmployee && (
+      {contractToSign && contractSigningEmployee && (
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setContractToSign(null)}>
           <form className="signature-modal" onSubmit={signEmploymentContract} role="dialog" aria-modal="true" aria-labelledby="signature-title">
             <div className="signature-hero"><span>✎</span><div><p className="eyebrow">ELECTRONIC SIGNATURE</p><h2 id="signature-title">ลงนามสัญญาอิเล็กทรอนิกส์</h2><p>{contractToSign.title} · เวอร์ชัน {contractToSign.version}</p></div><button type="button" className="modal-close dark" onClick={() => setContractToSign(null)} aria-label="ปิดหน้าต่าง">×</button></div>
             <div className="signature-body">
-              <div className="contract-sign-summary"><span><small>ผู้ลงนาม</small><strong>{profileEmployee.name}</strong></span><span><small>วันที่มีผล</small><strong>{new Date(`${contractToSign.effectiveDate}T00:00:00`).toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric" })}</strong></span></div>
+              <div className="contract-sign-summary"><span><small>ผู้ลงนาม</small><strong>{contractSigningEmployee.name}</strong></span><span><small>วันที่มีผล</small><strong>{new Date(`${contractToSign.effectiveDate}T00:00:00`).toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric" })}</strong></span></div>
               <label className="signature-name-field"><span>พิมพ์ชื่อ–นามสกุลให้ตรงกับโปรไฟล์</span><input required value={signatureForm.signedName} onChange={(event) => setSignatureForm((form) => ({ ...form, signedName: event.target.value }))} /><em>{signatureForm.signedName || "ชื่อผู้ลงนาม"}</em></label>
               <label className="signature-consent"><input type="checkbox" checked={signatureForm.consent} onChange={(event) => setSignatureForm((form) => ({ ...form, consent: event.target.checked }))} /><span><strong>ยืนยันการลงนาม</strong> ข้าพเจ้าได้อ่าน เข้าใจ และยอมรับข้อกำหนดในสัญญาจ้างฉบับนี้ และยืนยันใช้ชื่อที่พิมพ์เป็นลายเซ็นอิเล็กทรอนิกส์</span></label>
               <div className="signature-audit"><span>⌁</span><p>ระบบจะบันทึกบัญชีผู้ใช้งาน ชื่อผู้ลงนาม คำยินยอม และวันเวลาที่ลงนามไว้ในประวัติสัญญา</p></div>
             </div>
-            <div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setContractToSign(null)}>ยกเลิก</button><button className="primary-button" disabled={isSaving || !signatureForm.consent || signatureForm.signedName.trim() !== profileEmployee.name.trim()}>{isSaving ? "กำลังลงนาม..." : "ยืนยันและลงนามสัญญา"}</button></div>
+            <div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setContractToSign(null)}>ยกเลิก</button><button className="primary-button" disabled={isSaving || !signatureForm.consent || signatureForm.signedName.trim() !== contractSigningEmployee.name.trim()}>{isSaving ? "กำลังลงนาม..." : "ยืนยันและลงนามสัญญา"}</button></div>
           </form>
         </div>
       )}
@@ -3737,10 +3840,10 @@ export default function Home() {
                 <label><span>ระดับความสำคัญ</span><select value={workForm.priority} onChange={(event) => { const priority = event.target.value as WorkItemRecord["priority"]; setWorkForm((form) => ({ ...form, priority, points: workPointValue(form.kind, priority, activePointPolicyRules) })); }}><option value="low">ทั่วไป</option><option value="medium">ปานกลาง</option><option value="high">สำคัญ</option><option value="urgent">เร่งด่วน</option></select></label>
                 <label><span>โปรเจกต์</span><select required value={workForm.projectId} onChange={(event) => setWorkForm((form) => ({ ...form, projectId: event.target.value }))}>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
                 <label><span>ผู้รับผิดชอบ</span><select required value={workForm.assigneeEmployeeId} onChange={(event) => setWorkForm((form) => ({ ...form, assigneeEmployeeId: event.target.value }))}>{employees.filter((employee) => employee.status === "active").map((employee) => <option key={employee.id} value={employee.id}>{employee.name} · {getRole(employee.roleId).shortName}</option>)}</select></label>
-                <label><span>สถานะ</span><select value={workForm.status} onChange={(event) => { const status = event.target.value as WorkItemRecord["status"]; setWorkForm((form) => ({ ...form, status, progress: status === "done" ? 100 : status === "todo" ? Math.min(form.progress, 20) : form.progress })); }}><option value="todo">ต้องทำ</option><option value="in_progress">กำลังทำ</option><option value="review">รอตรวจ</option><option value="done">เสร็จแล้ว</option></select></label>
+                <label><span>สถานะ</span><select value={workForm.status === "review" || workForm.status === "done" ? "in_progress" : workForm.status} onChange={(event) => { const status = event.target.value as "todo" | "in_progress"; setWorkForm((form) => ({ ...form, status, progress: status === "todo" ? Math.min(form.progress, 20) : Math.max(1, Math.min(form.progress, 90)) })); }}><option value="todo">ต้องทำ</option><option value="in_progress">กำลังทำ</option></select><small>รอตรวจจะเกิดเมื่อพนักงานส่งหลักฐาน และเสร็จแล้วเมื่อผู้ตรวจอนุมัติ</small></label>
                 <label><span>กำหนดเสร็จ</span><input required type="date" value={workForm.dueDate} onChange={(event) => setWorkForm((form) => ({ ...form, dueDate: event.target.value }))} /></label>
                 <label className="auto-point-field"><span>แต้มมาตรฐานอัตโนมัติ</span><input readOnly value={`${workForm.points} แต้ม`} /><small>แก้เองไม่ได้ เพื่อให้ทุกคนได้รับแต้มตามกติกาเดียวกัน</small></label>
-                <label className="wide work-progress-field"><span>ความคืบหน้า <b>{workForm.progress}%</b></span><input type="range" min="0" max="100" step="5" value={workForm.progress} onChange={(event) => { const progress = Number(event.target.value); setWorkForm((form) => ({ ...form, progress, status: progress === 100 ? "done" : form.status === "done" ? "in_progress" : form.status })); }} style={{ "--range-value": `${workForm.progress}%` } as React.CSSProperties} /></label>
+                <label className="wide work-progress-field"><span>ความคืบหน้า <b>{Math.min(workForm.progress, 90)}%</b></span><input type="range" min="0" max="90" step="5" value={Math.min(workForm.progress, 90)} onChange={(event) => { const progress = Number(event.target.value); setWorkForm((form) => ({ ...form, progress, status: progress > 0 ? "in_progress" : "todo" })); }} style={{ "--range-value": `${Math.min(workForm.progress, 90)}%` } as React.CSSProperties} /></label>
                 <label className="wide"><span>รายละเอียดและเกณฑ์สำเร็จ</span><textarea value={workForm.description} onChange={(event) => setWorkForm((form) => ({ ...form, description: event.target.value }))} placeholder="อธิบายสิ่งที่ต้องส่งมอบ หรือเงื่อนไขที่ถือว่าภารกิจสำเร็จ" /></label>
               </div>
               <div className="mission-point-note"><span>★</span><p><strong>แต้มจะมอบหลังส่งหลักฐานและหัวหน้าอนุมัติ</strong> การเปลี่ยนสถานะเป็น “เสร็จแล้ว” อย่างเดียวจะยังไม่ได้แต้ม และงานเดิมรับแต้มได้เพียงครั้งเดียว</p></div>
