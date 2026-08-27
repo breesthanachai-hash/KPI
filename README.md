@@ -141,10 +141,10 @@ Migration ล่าสุดที่เกี่ยวข้อง:
 - `0008_spotty_trauma.sql` เพิ่ม `user_accounts`
 - `0009_easy_wong.sql` เพิ่ม `notification_reads`
 - `0010_dry_blue_blade.sql` เพิ่ม `organization_policies`, `policy_acknowledgements` และ index สำหรับค้นหา/กันการรับทราบซ้ำ
-- `0011_same_iceman.sql` เพิ่ม snapshot นโยบายในรายการแต้ม, version ของสต็อก และ claim/trigger สำหรับกันการประกาศหรือแลกรางวัลชนกัน
-- `0012_common_christian_walker.sql` เพิ่มล็อกกลางของเพดานแต้มต่อพนักงาน/เดือน, ป้องกันการประกาศร่างล้าสมัย, ห้ามหลักฐานรอตรวจซ้ำ และล็อกเงื่อนไขงานหลังมีการส่งหลักฐาน
-- `0013_bangkok_reward_month.sql` ปรับตัวตรวจคำขอแลกรางวัลให้ตรวจเดือนและเพดานรายเดือนตามเวลาไทย พร้อมปฏิเสธ request month ที่ไม่ตรงกับเวลาสร้างรายการ
-- `db/initialize.ts` สร้างตารางและ index ที่ต้องใช้เมื่อเริ่มฐานข้อมูลใหม่ ส่วนฐานข้อมูลเดิมอัปเกรดผ่าน migration ตามลำดับ
+- `0011_same_iceman.sql` เพิ่ม snapshot นโยบายในรายการแต้ม, version ของสต็อก และ claim สำหรับกันการประกาศหรือแลกรางวัลชนกัน
+- `0012_common_christian_walker.sql` เพิ่มล็อกกลางของเพดานแต้มต่อพนักงาน/เดือน, ฟิลด์ป้องกันการประกาศร่างล้าสมัย และดัชนีห้ามหลักฐานรอตรวจซ้ำ
+- `0013_bangkok_reward_month.sql` เป็น migration marker สำหรับการเปลี่ยนตัวตรวจเดือนรางวัลเป็นเวลาไทย
+- `db/initialize.ts` สร้างตาราง ดัชนี และ trigger ป้องกัน race condition ตอนเริ่มระบบ โดยเก็บ trigger แบบ `BEGIN/END` ไว้นอกไฟล์ migration เพื่อให้ใช้กับตัวรัน migration ของ Sites/D1 ได้ ส่วนฐานข้อมูลเดิมอัปเกรดผ่าน migration ตามลำดับ
 
 ไฟล์ `lib/kpi-data.ts` เป็นแหล่งเทมเพลตตำแหน่ง KPI สมรรถนะ AI Mastery กติกาแต้ม นโยบายเริ่มต้น และรางวัลเริ่มต้น ส่วน `drizzle/` และ `drizzle/meta/` เก็บ migration กับ snapshot ของสคีมา
 

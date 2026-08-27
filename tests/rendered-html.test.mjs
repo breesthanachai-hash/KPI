@@ -715,13 +715,15 @@ test("ships balanced point governance and version-specific organization policy a
   assert.match(dashboardRoute, /attendanceRecord\.status !== expectedAttendanceStatus \|\| !approvalMatches/);
   assert.match(dashboardRoute, /eventType === "approved_leave" \? attendanceRecord\?\.approvalStatus === "approved"/);
 
-  // Database triggers independently reject stale stock, insufficient balance,
-  // monthly-limit and cooldown races during reward redemption.
-  assert.match(governanceMigration, /CREATE TRIGGER `reward_redemption_claim_guard`/);
-  assert.match(governanceMigration, /REDEMPTION_STALE_INVENTORY/);
-  assert.match(governanceMigration, /REDEMPTION_INSUFFICIENT_BALANCE/);
-  assert.match(governanceMigration, /REDEMPTION_MONTHLY_LIMIT/);
-  assert.match(governanceMigration, /REDEMPTION_COOLDOWN/);
+  // Sites applies migrations with a statement splitter, so compound trigger
+  // bodies stay out of migration files and are installed atomically at runtime.
+  assert.doesNotMatch(governanceMigration, /CREATE\s+TRIGGER/i);
+  assert.doesNotMatch(governanceMigration, /\bBEGIN\b/i);
+  assert.match(initialize, /CREATE TRIGGER reward_redemption_claim_guard/);
+  assert.match(initialize, /REDEMPTION_STALE_INVENTORY/);
+  assert.match(initialize, /REDEMPTION_INSUFFICIENT_BALANCE/);
+  assert.match(initialize, /REDEMPTION_MONTHLY_LIMIT/);
+  assert.match(initialize, /REDEMPTION_COOLDOWN/);
   assert.match(dashboardRoute, /rewardInventoryKey: `\$\{rewardId\}:inventory:\$\{reward\.inventoryVersion\}`/);
   assert.match(dashboardRoute, /eq\(rewards\.inventoryVersion, reward\.inventoryVersion\)/);
   assert.match(dashboardRoute, /isRedemptionConflictError\(error\)/);
@@ -759,16 +761,17 @@ test("hardens policy publishing, point caps and work evidence against concurrent
   ]);
 
   assert.equal(packagedHardeningMigration, hardeningMigration, "the deployed bundle must include migration 0012 verbatim");
+  assert.doesNotMatch(hardeningMigration, /CREATE\s+TRIGGER/i, "Sites migrations must not contain compound trigger statements");
+  assert.doesNotMatch(hardeningMigration, /\bBEGIN\b/i, "Sites migrations must not contain trigger bodies");
 
   // Saving and publishing a policy are compare-and-swap operations bound to
   // the canonical content visible to HR, including a database-level guard.
   assert.match(schema, /expectedContentHash: text\("expected_content_hash"\)\.notNull/);
   assert.match(hardeningMigration, /ALTER TABLE `organization_policy_publish_claims` ADD `expected_content_hash`/);
-  assert.match(hardeningMigration, /CREATE TRIGGER `organization_policy_publish_claim_guard`/);
-  assert.match(hardeningMigration, /`status` = 'draft'/);
-  assert.match(hardeningMigration, /`content_hash` = NEW\.`expected_content_hash`/);
-  assert.match(hardeningMigration, /POLICY_PUBLISH_STALE_DRAFT/);
   assert.match(initialize, /CREATE TRIGGER IF NOT EXISTS organization_policy_publish_claim_guard/);
+  assert.match(initialize, /status = 'draft'/);
+  assert.match(initialize, /content_hash = NEW\.expected_content_hash/);
+  assert.match(initialize, /POLICY_PUBLISH_STALE_DRAFT/);
   const savePolicyBlock = dashboardRoute.match(/if \(payload\.action === "saveOrganizationPolicy"\) \{[\s\S]*?(?=\n    if \(payload\.action === "publishOrganizationPolicy"\))/)?.[0] ?? "";
   const publishPolicyBlock = dashboardRoute.match(/if \(payload\.action === "publishOrganizationPolicy"\) \{[\s\S]*?(?=\n    if \(payload\.action === "acknowledgeOrganizationPolicy"\))/)?.[0] ?? "";
   assert.ok(savePolicyBlock && publishPolicyBlock, "expected isolated policy save and publish actions");
@@ -829,15 +832,13 @@ test("hardens policy publishing, point caps and work evidence against concurrent
     ["work_submission_insert_guard", "WORK_SUBMISSION_INVALID_STATE"],
     ["work_item_submission_terms_lock", "WORK_ITEM_TERMS_LOCKED"],
   ]) {
-    assert.match(hardeningMigration, new RegExp("CREATE TRIGGER `" + trigger + "`"));
-    assert.match(hardeningMigration, new RegExp(code));
     assert.match(initialize, new RegExp(trigger));
     assert.match(initialize, new RegExp(code));
   }
-  assert.match(hardeningMigration, /`assignee_employee_id` = NEW\.`employee_id`/);
-  assert.match(hardeningMigration, /`status` IN \('todo', 'in_progress'\)/);
-  assert.match(hardeningMigration, /NEW\.`project_id` IS NOT OLD\.`project_id`/);
-  assert.match(hardeningMigration, /NEW\.`due_date` IS NOT OLD\.`due_date`/);
+  assert.match(initialize, /assignee_employee_id = NEW\.employee_id/);
+  assert.match(initialize, /status IN \('todo', 'in_progress'\)/);
+  assert.match(initialize, /NEW\.project_id IS NOT OLD\.project_id/);
+  assert.match(initialize, /NEW\.due_date IS NOT OLD\.due_date/);
   assert.equal((workSubmissionRoute.match(/await db\.batch\(\[/g) ?? []).length, 1, "submission insert and work transition must use one D1 batch");
   assert.match(workSubmissionRoute, /db\.insert\(workSubmissions\)\.values\(submission\)[\s\S]*?db\.update\(workItems\)/);
   assert.match(workSubmissionRoute, /WORK_SUBMISSION_INVALID_STATE[\s\S]*?status: 409/);
@@ -922,20 +923,13 @@ test("locks employee evidence and signatures to their owner and applies Bangkok 
   assert.match(page, /activeRewardRedemptions\.filter\(\(redemption\) => bangkokIsoMonth\(redemption\.createdAt\) === rewardCurrentMonth\)/);
   assert.match(page, /people-pulse-work-portfolio-\$\{bangkokIsoDate\(\)\}\.csv/);
 
-  // Migration 0013 replaces the old UTC trigger in both fresh and existing
-  // databases, validates the claimed month and counts Bangkok-month requests.
+  // Migration 0013 is an intentionally simple marker. Compound trigger SQL is
+  // installed by runtime initialization so the Sites statement splitter never
+  // receives a semicolon-delimited BEGIN/END body.
   assert.equal(packagedBangkokMigration, bangkokMigration, "the deployed bundle must include migration 0013 verbatim");
-  for (const fragment of [
-    "DROP TRIGGER IF EXISTS `reward_redemption_claim_guard`",
-    "CREATE TRIGGER `reward_redemption_claim_guard`",
-    "datetime(NEW.`created_at`, '+7 hours')",
-    "datetime(`created_at`, '+7 hours')",
-    "REDEMPTION_INVALID_MONTH",
-    "REDEMPTION_MONTHLY_LIMIT",
-  ]) assert.ok(bangkokMigration.includes(fragment), `expected migration 0013 fragment: ${fragment}`);
-  const migrationDrop = bangkokMigration.indexOf("DROP TRIGGER IF EXISTS `reward_redemption_claim_guard`");
-  const migrationCreate = bangkokMigration.indexOf("CREATE TRIGGER `reward_redemption_claim_guard`");
-  assert.ok(migrationDrop >= 0 && migrationCreate > migrationDrop, "migration 0013 must drop the UTC trigger before recreating it");
+  assert.equal(bangkokMigration.trim(), "SELECT 1;");
+  assert.doesNotMatch(bangkokMigration, /CREATE\s+TRIGGER/i);
+  assert.doesNotMatch(bangkokMigration, /\bBEGIN\b/i);
   const initializeDrop = initialize.indexOf('d1.prepare("DROP TRIGGER IF EXISTS reward_redemption_claim_guard")');
   const initializeCreate = initialize.indexOf("d1.prepare(`CREATE TRIGGER reward_redemption_claim_guard");
   assert.ok(initializeDrop >= 0 && initializeCreate > initializeDrop, "runtime initialization must replace the trigger in the same order");
