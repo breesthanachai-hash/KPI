@@ -2290,8 +2290,8 @@ export default function Home() {
     },
     {
       title: "เพิ่มรายชื่อพนักงานจริง",
-      detail: `มีพนักงานสถานะใช้งาน ${launchReadiness.activeEmployeeCount} คน`,
-      ready: launchReadiness.activeEmployeeCount > 0,
+      detail: `พนักงานจริง ${Math.max(0, launchReadiness.activeEmployeeCount - launchReadiness.demoEmployeeCount)} คน · ข้อมูลตัวอย่าง ${launchReadiness.demoEmployeeCount} คน`,
+      ready: launchReadiness.activeEmployeeCount - launchReadiness.demoEmployeeCount > 0,
     },
     {
       title: "ให้ HR/กฎหมายทบทวนและประกาศกฎองค์กร",

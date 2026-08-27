@@ -1003,6 +1003,7 @@ test("adds a safe launch gate, owner-only contract flow and evidence-led work st
   assert.match(page, /ศูนย์ตรวจความพร้อมก่อนเปิดใช้จริง/);
   assert.match(page, /launchReadinessScore/);
   assert.match(page, /พบข้อมูลสาธิตปะปนอยู่/);
+  assert.match(page, /launchReadiness\.activeEmployeeCount - launchReadiness\.demoEmployeeCount > 0/);
   assert.match(styles, /\.launch-readiness-center/);
 
   // Employees receive only their own non-draft contract and its linked file.
