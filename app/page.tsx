@@ -1259,9 +1259,9 @@ export default function Home() {
       const submissions = workSubmissionsByItem.get(item.id) ?? [];
       const approvedSubmission = submissions.find((submission) => submission.status === "approved") ?? null;
       const latestSubmission = submissions[0] ?? null;
-      const status: Exclude<PortfolioStatusFilter, "all"> = approvedSubmission
-        ? "approved"
-        : latestSubmission?.status ?? "missing";
+      let status: Exclude<PortfolioStatusFilter, "all"> = "missing";
+      if (approvedSubmission) status = "approved";
+      else if (latestSubmission) status = latestSubmission.status;
       return {
         item,
         employee: employeesById.get(item.assigneeEmployeeId) ?? null,
@@ -1276,18 +1276,27 @@ export default function Home() {
     })
     .filter((entry) => entry.item.status === "done" || entry.submissions.length > 0)
     .sort((a, b) => b.sortDate.localeCompare(a.sortDate)), [currentUser, employeesById, evaluationsByEmployee, projectsById, workItems, workSubmissionsByItem]);
-  const visiblePortfolioEntries = useMemo(() => {
+  const portfolioFilterMatches = useMemo(() => {
     const query = portfolioSearch.trim().toLocaleLowerCase("th");
     return portfolioEntries.filter((entry) => {
       const departmentMatches = activeDepartment === "all" || entry.project?.departmentId === activeDepartment;
       const employeeMatches = portfolioEmployeeId === "all" || entry.item.assigneeEmployeeId === portfolioEmployeeId;
       const projectMatches = portfolioProjectId === "all" || entry.item.projectId === portfolioProjectId;
-      const statusMatches = portfolioStatus === "all" || entry.status === portfolioStatus;
       const evidenceText = entry.submissions.map((submission) => `${submission.title} ${submission.fileName} ${submission.linkUrl} ${submission.note} ${submission.submittedBy} ${submission.reviewedBy ?? ""}`).join(" ");
       const queryMatches = !query || `${entry.item.title} ${entry.item.description} ${entry.employee?.name ?? ""} ${getRole(entry.employee?.roleId ?? "").name} ${entry.project?.name ?? ""} ${evidenceText}`.toLocaleLowerCase("th").includes(query);
-      return departmentMatches && employeeMatches && projectMatches && statusMatches && queryMatches;
+      return departmentMatches && employeeMatches && projectMatches && queryMatches;
     });
-  }, [activeDepartment, portfolioEmployeeId, portfolioEntries, portfolioProjectId, portfolioSearch, portfolioStatus]);
+  }, [activeDepartment, portfolioEmployeeId, portfolioEntries, portfolioProjectId, portfolioSearch]);
+  const visiblePortfolioEntries = useMemo(() => portfolioStatus === "all"
+    ? portfolioFilterMatches
+    : portfolioFilterMatches.filter((entry) => entry.status === portfolioStatus), [portfolioFilterMatches, portfolioStatus]);
+  const portfolioStatusCounts = useMemo(() => ({
+    all: portfolioFilterMatches.length,
+    approved: portfolioFilterMatches.filter((entry) => entry.status === "approved").length,
+    submitted: portfolioFilterMatches.filter((entry) => entry.status === "submitted").length,
+    revision: portfolioFilterMatches.filter((entry) => entry.status === "revision").length,
+    missing: portfolioFilterMatches.filter((entry) => entry.status === "missing").length,
+  }), [portfolioFilterMatches]);
   const portfolioPeople = new Set(portfolioEntries.map((entry) => entry.item.assigneeEmployeeId)).size;
   const portfolioApprovedCount = portfolioEntries.filter((entry) => entry.status === "approved").length;
   const portfolioAssetCount = workSubmissions.reduce((sum, submission) => sum + Number(Boolean(submission.linkUrl)) + Number(Boolean(submission.storageKey)), 0);
@@ -1297,6 +1306,10 @@ export default function Home() {
   const portfolioAverageScore = portfolioEvaluations.length ? portfolioEvaluations.reduce((sum, evaluation) => sum + evaluation.totalScore, 0) / portfolioEvaluations.length : 0;
   const focusedPortfolioEmployee = portfolioEmployeeId === "all" ? null : employeesById.get(portfolioEmployeeId) ?? null;
   const focusedPortfolioEvaluation = focusedPortfolioEmployee ? evaluationsByEmployee.get(focusedPortfolioEmployee.id) ?? null : null;
+  const focusedPortfolioProject = portfolioProjectId === "all" ? null : projectsById.get(portfolioProjectId) ?? null;
+  const focusedPortfolioDepartment = activeDepartment === "all" ? null : departmentFilters.find((department) => department.id === activeDepartment) ?? null;
+  const hasPortfolioFilters = Boolean(portfolioSearch.trim() || activeDepartment !== "all" || portfolioProjectId !== "all" || portfolioStatus !== "all" || (currentUser?.role !== "employee" && portfolioEmployeeId !== "all"));
+  const visiblePortfolioAssetCount = visiblePortfolioEntries.reduce((total, entry) => total + entry.submissions.reduce((count, submission) => count + Number(Boolean(submission.linkUrl)) + Number(Boolean(submission.storageKey)), 0), 0);
   const activeWorkSubmissions = submissionWorkItem ? workSubmissionsByItem.get(submissionWorkItem.id) ?? [] : [];
   const submissionAssignee = submissionWorkItem ? employeesById.get(submissionWorkItem.assigneeEmployeeId) ?? null : null;
   const activeProofGuide = submissionAssignee ? roleProofGuides[submissionAssignee.roleId] ?? defaultProofGuide : defaultProofGuide;
@@ -3322,14 +3335,36 @@ export default function Home() {
               <MetricCard label="คะแนนประเมินเฉลี่ย" value={portfolioAverageScore ? portfolioAverageScore.toFixed(1) : "—"} copy={`${portfolioEvaluations.length} คนมีผลประเมินในรอบนี้`} tone="positive" progress={portfolioAverageScore} icon="◎" />
             </div>
 
-            <section className="portfolio-finder-card">
-              <div className="portfolio-finder-heading"><div><p className="eyebrow">PORTFOLIO FINDER</p><h2>ค้นหาแฟ้มและไฟล์ผลงาน</h2><p>ค้นจากชื่อพนักงาน โปรเจกต์ ชื่องาน ชื่อไฟล์ ลิงก์ หรือข้อความในหลักฐาน</p></div><span>{visiblePortfolioEntries.length} รายการ</span></div>
-              <div className="portfolio-filters">
-                <label className="portfolio-search"><span aria-hidden="true">⌕</span><input value={portfolioSearch} onChange={(event) => setPortfolioSearch(event.target.value)} placeholder="พิมพ์ชื่อคน งาน โปรเจกต์ หรือชื่อไฟล์..." /><small>ค้นหาทุกข้อมูลในแฟ้ม</small></label>
-                {!isEmployeeUser && <label><span>พนักงาน</span><select value={portfolioEmployeeId} onChange={(event) => setPortfolioEmployeeId(event.target.value)}><option value="all">พนักงานทั้งหมด</option>{employees.filter((employee) => employee.status === "active").map((employee) => <option key={employee.id} value={employee.id}>{employee.name} · {getRole(employee.roleId).shortName}</option>)}</select></label>}
-                <label><span>โปรเจกต์</span><select value={portfolioProjectId} onChange={(event) => setPortfolioProjectId(event.target.value)}><option value="all">ทุกโปรเจกต์</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
-                <label><span>สถานะแฟ้ม</span><select value={portfolioStatus} onChange={(event) => setPortfolioStatus(event.target.value as PortfolioStatusFilter)}><option value="all">ทุกสถานะ</option><option value="approved">ตรวจและจัดเก็บแล้ว</option><option value="submitted">รอผู้ตรวจอนุมัติ</option><option value="revision">รอแก้ไขผลงาน</option><option value="missing">ยังไม่มีหลักฐาน</option></select></label>
+            <section className="portfolio-finder-card" aria-labelledby="portfolio-finder-title">
+              <div className="portfolio-finder-heading">
+                <div className="portfolio-finder-title"><span className="portfolio-finder-icon" aria-hidden="true">⌕</span><div><p className="eyebrow">PORTFOLIO FINDER</p><h2 id="portfolio-finder-title">ค้นหาแฟ้มและไฟล์ผลงาน</h2><p>ค้นจากชื่อพนักงาน โปรเจกต์ ชื่องาน ชื่อไฟล์ ลิงก์ หรือข้อความในหลักฐาน</p></div></div>
+                <div className="portfolio-finder-result"><small>ผลการค้นหา</small><strong>{visiblePortfolioEntries.length}</strong><span>จาก {portfolioEntries.length} ผลงาน</span></div>
               </div>
+
+              <div className="portfolio-command-panel" role="search" aria-label="ค้นหาและกรองแฟ้มผลงาน">
+                <div className="portfolio-search">
+                  <label htmlFor="portfolio-search-input">ค้นหาทุกข้อมูลในแฟ้ม</label>
+                  <div className="portfolio-search-input"><span aria-hidden="true">⌕</span><input id="portfolio-search-input" type="search" value={portfolioSearch} onChange={(event) => setPortfolioSearch(event.target.value)} placeholder="ค้นหาชื่อคน งาน โปรเจกต์ ชื่อไฟล์ หรือลิงก์..." />{portfolioSearch && <button type="button" onClick={() => setPortfolioSearch("")} aria-label="ล้างคำค้นหา">×</button>}</div>
+                  <small>ระบบค้นหาทั้งชื่องาน รายละเอียด หลักฐาน ผู้ส่ง และผู้ตรวจในครั้งเดียว</small>
+                </div>
+                <div className="portfolio-filter-grid">
+                  {!isEmployeeUser && <label><span>พนักงาน</span><select value={portfolioEmployeeId} onChange={(event) => setPortfolioEmployeeId(event.target.value)}><option value="all">พนักงานทั้งหมด</option>{employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name} · {getRole(employee.roleId).shortName}{employee.status !== "active" ? " · พ้นสภาพ" : ""}</option>)}</select></label>}
+                  <label><span>โปรเจกต์</span><select value={portfolioProjectId} onChange={(event) => setPortfolioProjectId(event.target.value)}><option value="all">ทุกโปรเจกต์</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
+                  <button type="button" className="portfolio-reset-button" disabled={!hasPortfolioFilters} onClick={() => { setPortfolioSearch(""); setPortfolioEmployeeId(isEmployeeUser ? currentUser?.employeeId ?? "all" : "all"); setPortfolioProjectId("all"); setPortfolioStatus("all"); setActiveDepartment("all"); }}><span aria-hidden="true">↺</span> ล้างตัวกรองทั้งหมด</button>
+                </div>
+              </div>
+
+              <div className="portfolio-status-tabs" role="group" aria-label="กรองแฟ้มตามสถานะ">
+                {([
+                  { id: "all", icon: "☷", label: "ทั้งหมด", count: portfolioStatusCounts.all },
+                  { id: "approved", icon: "✓", label: "ตรวจแล้ว", count: portfolioStatusCounts.approved },
+                  { id: "submitted", icon: "⌕", label: "รอตรวจ", count: portfolioStatusCounts.submitted },
+                  { id: "revision", icon: "↺", label: "ต้องแก้ไข", count: portfolioStatusCounts.revision },
+                  { id: "missing", icon: "＋", label: "ไม่มีหลักฐาน", count: portfolioStatusCounts.missing },
+                ] as const).map((status) => <button type="button" key={status.id} className={portfolioStatus === status.id ? "active" : ""} onClick={() => setPortfolioStatus(status.id)} aria-pressed={portfolioStatus === status.id}><span aria-hidden="true">{status.icon}</span><strong>{status.label}</strong><b>{status.count}</b></button>)}
+              </div>
+
+              {hasPortfolioFilters && <div className="portfolio-active-filters"><strong>ตัวกรองที่ใช้</strong>{portfolioSearch.trim() && <button type="button" onClick={() => setPortfolioSearch("")}>คำค้น “{portfolioSearch.trim().slice(0, 24)}” <span aria-hidden="true">×</span></button>}{focusedPortfolioDepartment && <button type="button" onClick={() => setActiveDepartment("all")}>แผนก {focusedPortfolioDepartment.label} <span aria-hidden="true">×</span></button>}{!isEmployeeUser && focusedPortfolioEmployee && <button type="button" onClick={() => setPortfolioEmployeeId("all")}>{focusedPortfolioEmployee.name} <span aria-hidden="true">×</span></button>}{focusedPortfolioProject && <button type="button" onClick={() => setPortfolioProjectId("all")}>{focusedPortfolioProject.name} <span aria-hidden="true">×</span></button>}{portfolioStatus !== "all" && <button type="button" onClick={() => setPortfolioStatus("all")}>{portfolioStatusLabel(portfolioStatus)} <span aria-hidden="true">×</span></button>}</div>}
 
               {focusedPortfolioEmployee && (
                 <article className="portfolio-owner-banner">
@@ -3342,23 +3377,26 @@ export default function Home() {
                 </article>
               )}
 
-              <div className="portfolio-archive" role="table" aria-label="แฟ้มผลงานพนักงาน">
-                <div className="portfolio-archive-head" role="row"><span>เจ้าของผลงาน</span><span>งานและโปรเจกต์</span><span>หลักฐานที่ค้นพบ</span><span>ข้อมูลประเมิน</span><span>สถานะ</span></div>
+              <div className="portfolio-results-heading"><div><p className="eyebrow">SEARCH RESULTS</p><h3>ผลงานและหลักฐานที่ค้นพบ</h3><span aria-live="polite">แสดง {visiblePortfolioEntries.length} ผลงาน · {visiblePortfolioAssetCount} ไฟล์และลิงก์</span></div><small><span aria-hidden="true">↓</span> เรียงผลงานล่าสุดก่อน</small></div>
+              <div className="portfolio-archive" role="region" aria-label="แฟ้มผลงานพนักงาน">
+                <div className="portfolio-archive-head" aria-hidden="true"><span>เจ้าของผลงาน</span><span>งานและโปรเจกต์</span><span>หลักฐานที่ค้นพบ</span><span>ข้อมูลประเมิน</span><span>สถานะ</span></div>
                 {visiblePortfolioEntries.map((entry) => {
                   const linkEvidence = entry.submissions.find((submission) => submission.linkUrl);
                   const fileEvidence = entry.submissions.find((submission) => submission.storageKey);
+                  const evidenceAssetCount = entry.submissions.reduce((count, submission) => count + Number(Boolean(submission.linkUrl)) + Number(Boolean(submission.storageKey)), 0);
+                  const additionalEvidenceCount = Math.max(0, evidenceAssetCount - Number(Boolean(linkEvidence)) - Number(Boolean(fileEvidence)));
                   const role = entry.employee ? getRole(entry.employee.roleId) : null;
                   return (
-                    <article className="portfolio-archive-row" role="row" key={entry.item.id}>
+                    <article className="portfolio-archive-row" aria-label={`${entry.item.title} โดย ${entry.employee?.name ?? "ไม่ระบุพนักงาน"}`} key={entry.item.id}>
                       <span className="portfolio-person">{entry.employee ? <EmployeeAvatar employee={entry.employee} profile={employeeProfilesById.get(entry.employee.id)} className="avatar-portfolio-row" /> : <i className="avatar-media avatar-portfolio-row">PP</i>}<span><strong>{entry.employee?.name ?? "ไม่ระบุพนักงาน"}</strong><small>{role?.name ?? "ไม่ระบุตำแหน่ง"}</small></span></span>
                       <span className="portfolio-work"><b>{workKindLabel(entry.item.kind)} · {entry.project?.name ?? "ไม่ระบุโปรเจกต์"}</b><strong>{entry.item.title}</strong><small>{entry.item.description}</small></span>
-                      <span className="portfolio-assets">{linkEvidence && <a href={linkEvidence.linkUrl} target="_blank" rel="noreferrer"><b>↗</b><span>เปิดลิงก์<small>{submissionTypeLabels[linkEvidence.submissionType]}</small></span></a>}{fileEvidence && <a href={`/api/work-submissions?id=${encodeURIComponent(fileEvidence.id)}`}><b>↓</b><span>{fileEvidence.fileName}<small>{formatFileSize(fileEvidence.sizeBytes)}</small></span></a>}{!linkEvidence && !fileEvidence && <button onClick={() => openSubmissionCenter(entry.item)}><b>{isEmployeeUser && !isEmployeePreview ? "＋" : "⌕"}</b><span>{isEmployeeUser && !isEmployeePreview ? "เพิ่มหลักฐาน" : "ดูรายละเอียด"}<small>{isEmployeeUser && !isEmployeePreview ? "ไฟล์หรือลิงก์ผลงาน" : "ยังไม่มีหลักฐาน"}</small></span></button>}</span>
+                      <span className="portfolio-assets">{linkEvidence && <a href={linkEvidence.linkUrl} target="_blank" rel="noreferrer"><b>↗</b><span>เปิดลิงก์<small>{submissionTypeLabels[linkEvidence.submissionType]}</small></span></a>}{fileEvidence && <a href={`/api/work-submissions?id=${encodeURIComponent(fileEvidence.id)}`}><b>↓</b><span>{fileEvidence.fileName}<small>{formatFileSize(fileEvidence.sizeBytes)}</small></span></a>}{additionalEvidenceCount > 0 && <button type="button" className="portfolio-more-assets" onClick={() => openSubmissionCenter(entry.item)}><b>＋</b><span>อีก {additionalEvidenceCount} รายการ<small>เปิดดูหลักฐานทั้งหมด</small></span></button>}{!linkEvidence && !fileEvidence && <button type="button" onClick={() => openSubmissionCenter(entry.item)}><b>{isEmployeeUser && !isEmployeePreview ? "＋" : "⌕"}</b><span>{isEmployeeUser && !isEmployeePreview ? "เพิ่มหลักฐาน" : "ดูรายละเอียด"}<small>{isEmployeeUser && !isEmployeePreview ? "ไฟล์หรือลิงก์ผลงาน" : "ยังไม่มีหลักฐาน"}</small></span></button>}</span>
                       <span className="portfolio-evaluation"><b>{entry.evaluation?.totalScore.toFixed(0) ?? "—"}<small>คะแนนรวม</small></b><span><small>KPI {entry.evaluation?.kpiScore.toFixed(0) ?? "—"}</small><small>สกิล {entry.evaluation?.skillScore.toFixed(0) ?? "—"}</small><small>★ {entry.item.points} แต้ม</small></span></span>
-                      <span className="portfolio-state"><b className={entry.status}>{portfolioStatusLabel(entry.status)}</b><small>{entry.approvedSubmission?.reviewedBy ? `ตรวจโดย ${entry.approvedSubmission.reviewedBy}` : entry.latestSubmission ? `ส่ง ${formatUpdatedAt(entry.latestSubmission.submittedAt)}` : `เสร็จ ${formatUpdatedAt(entry.item.updatedAt)}`}</small><button onClick={() => openSubmissionCenter(entry.item)}>{entry.submissions.length ? `ดูหลักฐาน ${entry.submissions.length} รายการ` : isEmployeeUser && !isEmployeePreview ? "จัดเก็บผลงาน" : "ดูรายละเอียด"}</button></span>
+                      <span className="portfolio-state"><b className={entry.status}>{portfolioStatusLabel(entry.status)}</b><small>{entry.approvedSubmission?.reviewedBy ? `ตรวจโดย ${entry.approvedSubmission.reviewedBy}` : entry.latestSubmission ? `ส่ง ${formatUpdatedAt(entry.latestSubmission.submittedAt)}` : `เสร็จ ${formatUpdatedAt(entry.item.updatedAt)}`}</small><button type="button" onClick={() => openSubmissionCenter(entry.item)}>{entry.submissions.length ? `ดูหลักฐาน ${entry.submissions.length} รายการ` : isEmployeeUser && !isEmployeePreview ? "จัดเก็บผลงาน" : "ดูรายละเอียด"}</button></span>
                     </article>
                   );
                 })}
-                {!visiblePortfolioEntries.length && <div className="portfolio-empty"><span>⌕</span><strong>ไม่พบผลงานตามเงื่อนไข</strong><p>ลองเปลี่ยนคำค้นหา โปรเจกต์ หรือสถานะแฟ้ม</p><button onClick={() => { setPortfolioSearch(""); setPortfolioEmployeeId(isEmployeeUser ? currentUser?.employeeId ?? "all" : "all"); setPortfolioProjectId("all"); setPortfolioStatus("all"); }}>ล้างตัวกรอง</button></div>}
+                {!visiblePortfolioEntries.length && <div className="portfolio-empty" role="status"><span>⌕</span><strong>ไม่พบผลงานตามเงื่อนไข</strong><p>ลองเปลี่ยนคำค้นหา พนักงาน โปรเจกต์ หรือสถานะแฟ้ม</p><button onClick={() => { setPortfolioSearch(""); setPortfolioEmployeeId(isEmployeeUser ? currentUser?.employeeId ?? "all" : "all"); setPortfolioProjectId("all"); setPortfolioStatus("all"); setActiveDepartment("all"); }}>ล้างตัวกรองทั้งหมด</button></div>}
               </div>
               <div className="portfolio-audit-note"><span>i</span><p><strong>ข้อมูลพร้อมใช้ประกอบการประเมิน</strong> ตรวจสอบเนื้องาน หลักฐาน ผู้อนุมัติ KPI สกิล และหมายเหตุร่วมกัน ไม่ควรตัดสินพนักงานจากจำนวนไฟล์หรือคะแนนเพียงอย่างเดียว</p></div>
             </section>

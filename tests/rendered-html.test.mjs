@@ -937,3 +937,49 @@ test("locks employee evidence and signatures to their owner and applies Bangkok 
   assert.match(initialize, /datetime\(created_at, '\+7 hours'\)/);
   assert.match(initialize, /REDEMPTION_INVALID_MONTH/);
 });
+
+test("ships a readable and responsive Portfolio Finder", async () => {
+  const [page, styles] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+  ]);
+
+  // The search command is prominent, labelled and simple to clear.
+  assert.match(page, /aria-labelledby="portfolio-finder-title"/);
+  assert.match(page, /<label htmlFor="portfolio-search-input">ค้นหาทุกข้อมูลในแฟ้ม<\/label>/);
+  assert.match(page, /id="portfolio-search-input" type="search"/);
+  assert.match(page, /aria-label="ล้างคำค้นหา"/);
+  assert.match(page, /ล้างตัวกรองทั้งหมด/);
+
+  // Status totals follow all other active filters, while the selected status
+  // controls only the final result list.
+  assert.match(page, /const portfolioFilterMatches = useMemo/);
+  assert.match(page, /const visiblePortfolioEntries = useMemo\(\(\) => portfolioStatus === "all"/);
+  assert.match(page, /const portfolioStatusCounts = useMemo/);
+  for (const status of ["all", "approved", "submitted", "revision", "missing"]) {
+    assert.match(page, new RegExp(`count: portfolioStatusCounts\\.${status}`));
+  }
+  assert.match(page, /className="portfolio-status-tabs" role="group"/);
+  assert.match(page, /className="portfolio-active-filters"/);
+  assert.match(page, /visiblePortfolioAssetCount/);
+  assert.match(page, /เรียงผลงานล่าสุดก่อน/);
+  assert.match(page, /additionalEvidenceCount > 0/);
+  assert.match(page, /เปิดดูหลักฐานทั้งหมด/);
+
+  // The final scoped block wins over the legacy compact styles: key copy is at
+  // least 12px, controls have comfortable targets, and tablet/mobile cards do
+  // not restore the old 1020px horizontal table.
+  const portfolioStyles = styles.match(/\/\* Portfolio finder: readable search, visible filters and card-like results\. \*\/[\s\S]*$/)?.[0] ?? "";
+  assert.ok(portfolioStyles, "expected the final Portfolio Finder style block");
+  assert.match(portfolioStyles, /\.portfolio-search-input input \{[^}]*min-height: 54px[^}]*font-size: 15px !important/);
+  assert.match(portfolioStyles, /\.portfolio-filter-grid select \{[^}]*min-height: 46px[^}]*font-size: 14px !important/);
+  assert.match(portfolioStyles, /\.portfolio-assets a,\.portfolio-assets button \{[^}]*min-height: 44px/);
+  assert.match(portfolioStyles, /\.portfolio-owner-banner > div > small \{[^}]*font-size: 13px !important/);
+  assert.doesNotMatch(portfolioStyles, /font-size:\s*(?:[0-9]|1[01])px/i, "Portfolio Finder must not reintroduce unreadably small text");
+  assert.match(portfolioStyles, /@media \(max-width: 1320px\)[\s\S]*?\.portfolio-archive \{ overflow: visible; \}[\s\S]*?\.portfolio-archive-row \{ min-width: 0;/);
+  assert.match(portfolioStyles, /@media \(max-width: 520px\)[\s\S]*?\.portfolio-archive-row \{ grid-template-columns: 1fr;/);
+  assert.match(page, /className="portfolio-archive" role="region"/);
+  assert.match(page, /className="portfolio-archive-head" aria-hidden="true"/);
+  assert.match(page, /className="portfolio-archive-row" aria-label=/);
+  assert.match(page, /className="portfolio-empty" role="status"/);
+});
