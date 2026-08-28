@@ -163,7 +163,7 @@ test("builds the People Pulse KPI product bundle", async () => {
   assert.match(pageAsset, /signContract/);
   assert.match(pageAsset, /ACCESS & PERMISSIONS/);
   assert.match(pageAsset, /ผู้ใช้งานและสิทธิ์เข้าถึง/);
-  assert.match(pageAsset, /แยกคนสั่งงานกับคนทำงานให้ชัด/);
+  assert.match(pageAsset, /แยกคนสั่งงานและคนทำงานให้ชัดเจน/);
   assert.match(pageAsset, /งานของฉัน/);
   assert.match(pageAsset, /saveUserAccount/);
   assert.match(pageAsset, /ผู้ช่วย AI/);
@@ -969,7 +969,7 @@ test("ships a readable and responsive Portfolio Finder", async () => {
   // The final scoped block wins over the legacy compact styles: key copy is at
   // least 12px, controls have comfortable targets, and tablet/mobile cards do
   // not restore the old 1020px horizontal table.
-  const portfolioStyles = styles.match(/\/\* Portfolio finder: readable search, visible filters and card-like results\. \*\/[\s\S]*$/)?.[0] ?? "";
+  const portfolioStyles = styles.match(/\/\* Portfolio finder: readable search, visible filters and card-like results\. \*\/[\s\S]*?(?=\/\* Employee coordination tasks:)/)?.[0] ?? "";
   assert.ok(portfolioStyles, "expected the final Portfolio Finder style block");
   assert.match(portfolioStyles, /\.portfolio-search-input input \{[^}]*min-height: 54px[^}]*font-size: 15px !important/);
   assert.match(portfolioStyles, /\.portfolio-filter-grid select \{[^}]*min-height: 46px[^}]*font-size: 14px !important/);
@@ -1034,11 +1034,12 @@ test("adds a safe launch gate, owner-only contract flow and evidence-led work st
 });
 
 test("separates work assigners from workers without changing real permissions", async () => {
-  const [page, styles, dashboardRoute, accessControl] = await Promise.all([
+  const [page, styles, dashboardRoute, accessControl, kpiData] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../app/api/dashboard/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/access-control.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/kpi-data.ts", import.meta.url), "utf8"),
   ]);
 
   const accessStart = page.indexOf('{view === "access" && isAdmin && (');
@@ -1051,30 +1052,42 @@ test("separates work assigners from workers without changing real permissions", 
   // are labels for how people use the product, not new API or database roles.
   assert.match(page, /const assigningUserAccounts = userAccounts\.filter\(\(account\) => account\.role === "admin" \|\| account\.role === "manager"\)/);
   assert.match(page, /const workingUserAccounts = userAccounts\.filter\(\(account\) => account\.role === "employee"\)/);
-  assert.match(page, /กลุ่มนี้คือวิธีใช้ระบบ ไม่ใช่ชื่อตำแหน่งงาน/);
-  assert.match(accessPage, /<fieldset className="access-persona-selector wide"><legend>เลือกวิธีใช้งานหลัก<\/legend>/);
-  assert.match(accessPage, /type="radio" name="access-user-kind"/);
+  assert.match(accessPage, /className="access-operating-model"/);
+  assert.match(accessPage, /สิทธิ์ 3 ระดับในขั้นตอนทำงานเดียว/);
+  assert.match(accessPage, /ส่วนสิทธิ์จริงยังคงเป็น admin, manager และ employee/);
+  assert.match(accessPage, /activeAssigningUserCount/);
+  assert.match(accessPage, /activeWorkingUserCount/);
+  assert.match(accessPage, /บัญชีพักสิทธิ์/);
+  assert.match(accessPage, /className="access-workflow-list"/);
+  assert.match(accessPage, /วางแผนและมอบหมาย/);
+  assert.match(accessPage, /รับงานและประสานทีม/);
+  assert.match(accessPage, /ลงมือทำและส่งหลักฐาน/);
+  assert.match(accessPage, /ตรวจและอนุมัติ/);
+  assert.match(accessPage, /className="access-review-boundary" role="note"/);
+  assert.match(accessPage, /พนักงานสร้างงานประสานได้ แต่ตรวจอนุมัติเองไม่ได้/);
 
-  const roleSelect = accessPage.match(/<select value=\{userAccountForm\.role\}[\s\S]*?<\/select>/)?.[0] ?? "";
-  assert.ok(roleSelect, "expected the real-role selector");
-  const assignerOptions = roleSelect.match(/<optgroup label="คนสั่งงาน">([\s\S]*?)<\/optgroup>/)?.[1] ?? "";
-  const workerOptions = roleSelect.match(/<optgroup label="คนทำงาน">([\s\S]*?)<\/optgroup>/)?.[1] ?? "";
-  assert.match(assignerOptions, /<option value="manager">หัวหน้าทีม<\/option>/);
-  assert.match(assignerOptions, /<option value="admin">HR \/ Admin<\/option>/);
-  assert.doesNotMatch(assignerOptions, /value="employee"/);
-  assert.match(workerOptions, /<option value="employee">พนักงาน<\/option>/);
-  assert.doesNotMatch(workerOptions, /value="admin"|value="manager"/);
-  assert.deepEqual([...roleSelect.matchAll(/<option value="([^"]+)"/g)].map((match) => match[1]).sort(), ["admin", "employee", "manager"]);
+  const exactRoleSelector = accessPage.match(/<fieldset className="access-exact-role-selector wide">[\s\S]*?<\/fieldset>/)?.[0] ?? "";
+  assert.ok(exactRoleSelector, "expected the exact three-role selector");
+  const roleOptions = [...exactRoleSelector.matchAll(/\{ role: "(admin|manager|employee)", label: "([^"]+)", group: "([^"]+)", scope: "([^"]+)"/g)]
+    .map((match) => ({ role: match[1], label: match[2], group: match[3], scope: match[4] }));
+  assert.deepEqual(roleOptions, [
+    { role: "admin", label: "HR / Admin", group: "คนสั่งงาน", scope: "ทั้งองค์กร" },
+    { role: "manager", label: "หัวหน้าทีม", group: "คนสั่งงาน", scope: "เฉพาะทีม" },
+    { role: "employee", label: "พนักงาน", group: "คนทำงาน", scope: "ข้อมูลตนเอง" },
+  ]);
+  assert.match(exactRoleSelector, /type="radio" name="access-role" value=\{option\.role\}/);
+  assert.match(exactRoleSelector, /userAccountForm\.role === option\.role/);
 
-  // The summary, guide and directory all repeat the distinction in text, not
+  // The comparison table and directory repeat the distinction in text, not
   // only through color, while every account retains its exact role badge.
-  assert.match(accessPage, /label="คนสั่งงาน"/);
-  assert.match(accessPage, /label="คนทำงาน"/);
-  assert.match(accessPage, /className="access-rights-group assigner"/);
-  assert.match(accessPage, /className="access-rights-group worker"/);
-  assert.match(accessPage, /Manager|หัวหน้าทีม/);
+  const roleTable = accessPage.match(/<table className="access-role-table">[\s\S]*?<\/table>/)?.[0] ?? "";
+  assert.ok(roleTable, "expected a compact role-comparison table");
+  assert.match(roleTable, /ตารางเปรียบเทียบสิทธิ์ admin manager และ employee/);
+  assert.deepEqual([...roleTable.matchAll(/<code>(admin|manager|employee)<\/code>/g)].map((match) => match[1]), ["admin", "manager", "employee"]);
+  assert.match(roleTable, /<span className="assigner">คนสั่งงาน<\/span>/);
+  assert.match(roleTable, /<span className="worker">คนทำงาน<\/span>/);
   assert.match(accessPage, /ไม่เห็นเงินเดือนหรือเอกสารส่วนตัว/);
-  assert.match(accessPage, /ส่งหลักฐาน/);
+  assert.match(accessPage, /ดูข้อมูลตนเอง รับ–ส่งงาน และสร้างงานประสาน 0 แต้ม โดยไม่มีสิทธิ์ตรวจ/);
   assert.match(accessPage, /accessAccountGroups\.map/);
   assert.match(accessPage, /className=\{`access-user-kind \$\{group\.id\}`\}/);
   assert.doesNotMatch(accessPage, /\{userAccounts\.map/);
@@ -1088,12 +1101,195 @@ test("separates work assigners from workers without changing real permissions", 
   assert.match(accessControl, /if \(account\.role === "admin"\) return true/);
   assert.match(accessControl, /if \(account\.employeeId === employeeId\) return true/);
   assert.match(accessControl, /account\.role !== "manager" \|\| !account\.departmentId/);
+  assert.match(kpiData, /role: "admin" \| "manager" \| "employee"/);
+  assert.doesNotMatch(kpiData, /role: [^;\n]*(?:assigner|worker)/);
 
-  const accessStyles = styles.match(/\/\* Access roles: separate people who assign work from people who execute it\. \*\/[\s\S]*$/)?.[0] ?? "";
-  assert.ok(accessStyles, "expected a final access-role style block");
-  assert.match(accessStyles, /\.access-persona-selector \{[\s\S]*?grid-template-columns: 1fr 1fr/);
-  assert.match(accessStyles, /\.access-account-actions button \{ min-height: 44px/);
-  assert.match(accessStyles, /@media \(max-width: 1100px\)[\s\S]*?\.access-account-list > article\.access-account-row \{ grid-template-columns: 42px minmax\(0,1fr\) 140px auto/);
-  assert.match(accessStyles, /@media \(max-width: 680px\)[\s\S]*?\.access-persona-selector \{ grid-template-columns: 1fr/);
-  assert.match(accessStyles, /\.access-account-list > article\.access-account-row\.inactive \{ opacity: 1/);
+  const accessStyles = styles.match(/\/\* Access operating model: one compact workflow and a neutral role comparison\. \*\/[\s\S]*$/)?.[0] ?? "";
+  assert.ok(accessStyles, "expected the final access operating-model style block");
+  assert.match(accessStyles, /\.access-workflow-list \{[^}]*grid-template-columns: repeat\(4,minmax\(0,1fr\)\)/);
+  assert.match(accessStyles, /\.access-exact-role-selector \{[^}]*grid-template-columns: repeat\(3,minmax\(0,1fr\)\)/);
+  assert.match(accessStyles, /\.access-role-table-wrap \{ overflow-x: auto/);
+  assert.match(accessStyles, /@media \(max-width: 1120px\)[\s\S]*?\.access-workflow-list \{ grid-template-columns: 1fr 1fr/);
+  assert.match(accessStyles, /@media \(max-width: 760px\)[\s\S]*?\.access-workflow-list \{ grid-template-columns: 1fr/);
+  assert.match(accessStyles, /@media \(max-width: 760px\)[\s\S]*?\.access-exact-role-selector \{ grid-template-columns: 1fr/);
+  assert.match(accessStyles, /@media \(max-width: 480px\)[\s\S]*?\.access-model-counts \{ grid-template-columns: 1fr/);
+});
+
+test("allows safe employee team coordination without minting points or exposing teammate records", async () => {
+  const [page, styles, dashboardRoute, kpiData, schema, initialize, migration, packagedMigration] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/dashboard/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/kpi-data.ts", import.meta.url), "utf8"),
+    readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
+    readFile(new URL("../db/initialize.ts", import.meta.url), "utf8"),
+    readFile(new URL("../drizzle/0014_crazy_doctor_spectrum.sql", import.meta.url), "utf8"),
+    readFile(new URL("../dist/.openai/drizzle/0014_crazy_doctor_spectrum.sql", import.meta.url), "utf8"),
+  ]);
+
+  // Creator identity survives deploys and compatibility upgrades, so an
+  // employee can retrieve work they sent even when somebody else owns it.
+  assert.equal(packagedMigration, migration, "the production bundle must contain migration 0014 verbatim");
+  assert.match(migration, /ALTER TABLE `work_items` ADD `created_by_employee_id` text REFERENCES employees\(id\) ON DELETE SET NULL/);
+  assert.match(migration, /CREATE INDEX `work_items_creator_status_idx` ON `work_items` \(`created_by_employee_id`,`status`\)/);
+  assert.match(kpiData, /export type WorkItemRecord = \{[\s\S]*?createdByEmployeeId: string \| null;/);
+  assert.match(schema, /createdByEmployeeId: text\("created_by_employee_id"\)\.references\(\(\) => employees\.id, \{ onDelete: "set null" \}\)/);
+  assert.match(schema, /index\("work_items_creator_status_idx"\)\.on\(table\.createdByEmployeeId, table\.status\)/);
+  assert.match(initialize, /\["work_items", "created_by_employee_id", "TEXT REFERENCES employees\(id\) ON DELETE SET NULL"\]/);
+  assert.match(initialize, /CREATE INDEX IF NOT EXISTS work_items_creator_status_idx ON work_items \(created_by_employee_id, status\)/);
+
+  const saveWorkItemBlock = dashboardRoute.match(/if \(payload\.action === "saveWorkItem"\) \{[\s\S]*?(?=\n    if \(payload\.action === "reviewWorkSubmission"\))/)?.[0] ?? "";
+  assert.ok(saveWorkItemBlock, "expected the saveWorkItem action");
+  const employeeCreateStart = saveWorkItemBlock.indexOf("const actorEmployeeId");
+  const employeeCreateResponse = 'return Response.json({ workItem: savedWorkItem, project: savedProject, pointEntry: null, pointPolicy: "employee_request_no_points" });';
+  const employeeCreateEnd = saveWorkItemBlock.indexOf(employeeCreateResponse, employeeCreateStart);
+  assert.notEqual(employeeCreateStart, -1, "expected the employee create path");
+  assert.ok(employeeCreateEnd > employeeCreateStart, "expected the zero-point employee response");
+  const employeeCreateBlock = saveWorkItemBlock.slice(employeeCreateStart, employeeCreateEnd + employeeCreateResponse.length);
+
+  // Active employees may send to themselves or an active colleague in the
+  // same department. Inactive and cross-department recipients are rejected.
+  assert.match(employeeCreateBlock, /eq\(employees\.id, actorEmployeeId\), eq\(employees\.status, "active"\)/);
+  assert.match(employeeCreateBlock, /eq\(employees\.id, assigneeEmployeeId\), eq\(employees\.status, "active"\)/);
+  assert.match(employeeCreateBlock, /if \(!assignee\) return Response\.json\(\{ error: "กรุณาเลือกผู้รับผิดชอบที่กำลังใช้งานอยู่" \}, \{ status: 400 \}\)/);
+  assert.match(employeeCreateBlock, /if \(assigneeRole\.departmentId !== actorDepartmentId\) return Response\.json\(\{ error: "พนักงานมอบหมายงานได้เฉพาะตนเองหรือเพื่อนร่วมแผนกเดียวกัน" \}, \{ status: 403 \}\)/);
+  assert.doesNotMatch(employeeCreateBlock, /assignee(?:EmployeeId|\.id) === actorEmployee(?:Id|\.id)[\s\S]{0,100}(?:return|Response\.json)/);
+
+  // A fast application check gives a useful response before insert, while a
+  // database trigger closes the race between concurrent employee requests.
+  assert.match(dashboardRoute, /const EMPLOYEE_COORDINATION_OPEN_CREATOR_LIMIT = 12/);
+  assert.match(dashboardRoute, /const EMPLOYEE_COORDINATION_OPEN_PAIR_LIMIT = 5/);
+  assert.match(dashboardRoute, /const EMPLOYEE_COORDINATION_OPEN_RECIPIENT_LIMIT = 12/);
+  const quotaPrecheck = employeeCreateBlock.match(/const \[\[creatorCoordinationQuota\], \[recipientCoordinationQuota\]\] = await Promise\.all\(\[[\s\S]*?(?=\n\n        const now =)/)?.[0] ?? "";
+  assert.ok(quotaPrecheck, "expected the employee coordination quota precheck");
+  assert.match(quotaPrecheck, /creatorOpenCount: sql<number>`count\(\*\)`/);
+  assert.match(quotaPrecheck, /pairOpenCount: sql<number>`coalesce\(sum\(CASE WHEN \$\{workItems\.assigneeEmployeeId\} = \$\{assigneeEmployeeId\} THEN 1 ELSE 0 END\), 0\)`/);
+  assert.match(quotaPrecheck, /eq\(workItems\.createdByEmployeeId, actorEmployee\.id\)/);
+  assert.match(quotaPrecheck, /eq\(workItems\.points, 0\)/);
+  assert.match(quotaPrecheck, /eq\(workItems\.kind, "request"\)/);
+  assert.match(quotaPrecheck, /sql`\$\{workItems\.status\} <> 'done'`/);
+  assert.match(quotaPrecheck, /recipientOpenCount: sql<number>`count\(\*\)`/);
+  assert.match(quotaPrecheck, /eq\(workItems\.assigneeEmployeeId, assigneeEmployeeId\)/);
+  assert.match(quotaPrecheck, /sql`\$\{workItems\.createdByEmployeeId\} IS NOT NULL`/);
+  assert.match(quotaPrecheck, /creatorOpenCount \?\? 0\) >= EMPLOYEE_COORDINATION_OPEN_CREATOR_LIMIT/);
+  assert.match(quotaPrecheck, /pairOpenCount \?\? 0\) >= EMPLOYEE_COORDINATION_OPEN_PAIR_LIMIT/);
+  assert.match(quotaPrecheck, /recipientOpenCount \?\? 0\) >= EMPLOYEE_COORDINATION_OPEN_RECIPIENT_LIMIT/);
+  assert.match(quotaPrecheck, /คุณมีงานประสานที่ยังไม่เสร็จครบ \$\{EMPLOYEE_COORDINATION_OPEN_CREATOR_LIMIT\} งานแล้ว[\s\S]*?\{ status: 409 \}/);
+  assert.match(quotaPrecheck, /คุณมีงานประสานที่ยังไม่เสร็จให้พนักงานคนนี้ครบ \$\{EMPLOYEE_COORDINATION_OPEN_PAIR_LIMIT\} งานแล้ว[\s\S]*?\{ status: 409 \}/);
+  assert.match(quotaPrecheck, /พนักงานคนนี้มีงานประสานที่ยังไม่เสร็จจากทุกคนครบ \$\{EMPLOYEE_COORDINATION_OPEN_RECIPIENT_LIMIT\} งานแล้ว[\s\S]*?\{ status: 409 \}/);
+
+  const quotaTriggerStart = initialize.indexOf('DROP TRIGGER IF EXISTS employee_created_work_item_open_quota_guard');
+  const quotaTriggerEnd = initialize.indexOf('d1.prepare("DROP TRIGGER IF EXISTS reward_redemption_claim_guard")', quotaTriggerStart);
+  assert.notEqual(quotaTriggerStart, -1, "expected the runtime coordination quota trigger");
+  assert.ok(quotaTriggerEnd > quotaTriggerStart, "expected a stable quota-trigger boundary");
+  const quotaTrigger = initialize.slice(quotaTriggerStart, quotaTriggerEnd);
+  assert.match(quotaTrigger, /DROP TRIGGER IF EXISTS employee_created_work_item_open_quota_guard/);
+  assert.match(quotaTrigger, /CREATE TRIGGER employee_created_work_item_open_quota_guard/);
+  assert.match(quotaTrigger, /BEFORE INSERT ON work_items/);
+  assert.match(quotaTrigger, /NEW\.created_by_employee_id IS NOT NULL[\s\S]*?NEW\.points = 0[\s\S]*?NEW\.kind = 'request'[\s\S]*?NEW\.status <> 'done'/);
+  assert.match(quotaTrigger, />= 12 THEN RAISE\(ABORT, 'EMPLOYEE_WORK_OPEN_CREATOR_LIMIT'\)/);
+  assert.match(quotaTrigger, /assignee_employee_id = NEW\.assignee_employee_id[\s\S]*?>= 5 THEN RAISE\(ABORT, 'EMPLOYEE_WORK_OPEN_ASSIGNEE_LIMIT'\)/);
+  assert.match(quotaTrigger, /assignee_employee_id = NEW\.assignee_employee_id[\s\S]*?created_by_employee_id IS NOT NULL[\s\S]*?>= 12 THEN RAISE\(ABORT, 'EMPLOYEE_WORK_OPEN_RECIPIENT_LIMIT'\)/);
+  assert.match(employeeCreateBlock, /error\.message\.includes\("EMPLOYEE_WORK_OPEN_CREATOR_LIMIT"\)[\s\S]*?\{ status: 409 \}/);
+  assert.match(employeeCreateBlock, /error\.message\.includes\("EMPLOYEE_WORK_OPEN_ASSIGNEE_LIMIT"\)[\s\S]*?\{ status: 409 \}/);
+  assert.match(employeeCreateBlock, /error\.message\.includes\("EMPLOYEE_WORK_OPEN_RECIPIENT_LIMIT"\)[\s\S]*?\{ status: 409 \}/);
+
+  // Employee input cannot manufacture a scored mission or advance its state.
+  const employeeWorkItem = employeeCreateBlock.match(/const workItem = \{[\s\S]*?\n        \};/)?.[0] ?? "";
+  assert.ok(employeeWorkItem, "expected the forced employee work-item record");
+  assert.match(employeeWorkItem, /createdByEmployeeId: actorEmployee\.id/);
+  assert.match(employeeWorkItem, /kind: "request" as const/);
+  assert.match(employeeWorkItem, /status: "todo" as const/);
+  assert.match(employeeWorkItem, /progress: 0/);
+  assert.match(employeeWorkItem, /points: 0/);
+  assert.match(employeeCreateBlock, /const requestedProjectId = typeof payload\.projectId === "string" \? payload\.projectId\.trim\(\) : ""/);
+  assert.match(employeeCreateBlock, /projectId = `project-team-\$\{actorDepartmentId\}`/);
+  assert.match(employeeCreateBlock, /name: "งานภายในทีม"/);
+  assert.match(employeeCreateBlock, /departmentId: actorDepartmentId/);
+  assert.match(employeeCreateBlock, /requestedProject\.departmentId !== actorDepartmentId/);
+  assert.match(employeeCreateBlock, /requestedProject\.status !== "planned" && requestedProject\.status !== "active"/);
+  assert.match(employeeCreateBlock, /pointPolicy: "employee_request_no_points"/);
+
+  // Employee GET adds creator-owned outgoing work but keeps teammate
+  // submissions, HR records, evaluations and profile details out of scope.
+  const visibleScopeBlock = dashboardRoute.match(/const visibleEmployeeIds = new Set[\s\S]*?(?=\n    const launchReadiness =)/)?.[0] ?? "";
+  assert.match(visibleScopeBlock, /if \(employee\.id === currentUser\.employeeId\) return true/);
+  assert.match(visibleScopeBlock, /return currentUser\.role === "manager"/);
+  const scopedWorkBlock = dashboardRoute.match(/const scopedWorkItems = workItemRows[\s\S]*?(?=\n    const visibleProjectIds)/)?.[0] ?? "";
+  assert.match(scopedWorkBlock, /item\.assigneeEmployeeId === currentUser\.employeeId \|\| item\.createdByEmployeeId === currentUser\.employeeId/);
+  assert.match(scopedWorkBlock, /item\.points === 0 \? 0 : workPointValue/);
+  const employeeTeamOverview = dashboardRoute.match(/const employeePortalTeamOverview = currentUser\.role === "employee" \? \{[\s\S]*?\n    \} : \{ employees: \[\], evaluations: \[\], workItems: \[\] \};/)?.[0] ?? "";
+  assert.match(employeeTeamOverview, /email: "", manager: ""/);
+  assert.match(employeeTeamOverview, /kpiScores: \{\}, note: "", evaluator: ""/);
+  assert.match(employeeTeamOverview, /teamOverviewEmployeeIds\.has\(item\.assigneeEmployeeId\) && !\(item\.createdByEmployeeId !== null && item\.points === 0\)/);
+  assert.match(employeeTeamOverview, /description: ""/);
+  assert.match(employeeTeamOverview, /createdByEmployeeId: null/);
+  assert.match(employeeTeamOverview, /points: 0/);
+  const dashboardResponse = dashboardRoute.match(/return Response\.json\(\{\n      currentUser,[\s\S]*?\n    \}\);/)?.[0] ?? "";
+  assert.match(dashboardResponse, /workItems: scopedWorkItems/);
+  assert.match(dashboardResponse, /workSubmissions: workSubmissionRows\.filter\(\(row\) => visibleEmployeeIds\.has\(row\.employeeId\)\)/);
+  assert.match(dashboardResponse, /hrProfiles: currentUser\.role === "admin" \|\| currentUser\.role === "employee" \? hrProfileRows\.filter\(\(row\) => visibleEmployeeIds\.has\(row\.employeeId\)\) : \[\]/);
+  assert.match(dashboardResponse, /employeeProfiles: currentUser\.role === "admin" \? employeeProfileRows\.filter\([\s\S]*?\) : visibleProfileImages/);
+  assert.match(dashboardResponse, /userAccounts: currentUser\.role === "admin" \? userAccountRows : \[\]/);
+
+  // Approving a zero-point coordination request may close the work, but it
+  // must not create standard work points or an early/on-time bonus.
+  const reviewBlock = dashboardRoute.match(/if \(payload\.action === "reviewWorkSubmission"\) \{[\s\S]*?(?=\n    if \(payload\.action === "recordPointEvent"\))/)?.[0] ?? "";
+  assert.ok(reviewBlock, "expected the work-submission review action");
+  assert.match(reviewBlock, /const awardsPoints = status === "approved" && workItem\.points > 0/);
+  assert.match(reviewBlock, /awardsPoints \? db\.select\(\)\.from\(pointLedger\)[\s\S]*?: Promise\.resolve\(\[\]\)/);
+  assert.match(reviewBlock, /const balancedWorkPoints = status === "approved" \? awardsPoints \? workPointValue[\s\S]*?: 0 : workItem\.points/);
+  assert.match(reviewBlock, /const approvedWorkPoints = awardsPoints \?/);
+  assert.match(reviewBlock, /const newWorkPointEntry = !existingWorkPoint && approvedWorkPoints > 0 \?/);
+  assert.match(reviewBlock, /if \(awardsPoints && submissionDate <= workItem\.dueDate\)/);
+  assert.match(reviewBlock, /if \(awardsPoints\) \{[\s\S]*?pointEntry =/);
+
+  // The employee UI exposes a safe incoming/outgoing split and a reduced
+  // create form backed only by the shareable active-team roster.
+  assert.match(page, /canAssignTeamWork: boolean/);
+  assert.match(page, /canAssignTeamWork: false/);
+  assert.match(page, /const safeWorkRoster = useMemo[\s\S]*?\[\.\.\.teamOverview\.employees, \.\.\.employees\]/);
+  assert.match(page, /const activeSafeWorkRoster = safeWorkRoster\.filter\(\(employee\) => employee\.status === "active"\)/);
+  assert.match(page, /const employeeAssignedWorkItems = useMemo[\s\S]*?item\.assigneeEmployeeId === currentUser\.employeeId/);
+  assert.match(page, /const employeeCreatedWorkItems = useMemo[\s\S]*?workItemCreatorId\(item\) === currentUser\.employeeId/);
+  assert.match(page, /employeeTaskScope === "created" \? employeeCreatedWorkItems : employeeAssignedWorkItems/);
+  const employeeTaskLists = page.match(/const employeeAssignedWorkItems = useMemo[\s\S]*?(?=\n  const todayWorkItems =)/)?.[0] ?? "";
+  assert.match(employeeTaskLists, /workItems\.filter\(\(item\) => item\.assigneeEmployeeId === currentUser\.employeeId\)/);
+  assert.match(employeeTaskLists, /workItems\.filter\(\(item\) => workItemCreatorId\(item\) === currentUser\.employeeId\)/);
+  assert.doesNotMatch(employeeTaskLists, /officeSourceWorkItems/, "task lists must retain full incoming and outgoing work scope");
+  const officeSourceWorkBlock = page.match(/const officeSourceWorkItems = useMemo\([\s\S]*?\n  \);/)?.[0] ?? "";
+  assert.match(officeSourceWorkBlock, /currentUser\?\.role === "employee" \? teamOverview\.workItems : workItems/);
+  assert.match(officeSourceWorkBlock, /filter\(\(item\) => !\(item\.createdByEmployeeId && item\.points === 0\)\)/);
+  assert.match(page, /permissions\.canAssignTeamWork && !isEmployeePreview/);
+  assert.match(page, /<strong>งานที่ต้องทำ<\/strong><small>งานที่ฉันเป็นผู้รับผิดชอบ<\/small>/);
+  assert.match(page, /<strong>งานที่ฉันส่งต่อ<\/strong><small>งานประสานที่ฉันสร้างให้ตนเองหรือเพื่อนร่วมทีม<\/small>/);
+  assert.match(page, /งานประสานจากพนักงานมี 0 แต้ม ไม่นับเป็น KPI หรือภาระงานทางการ/);
+  assert.match(page, /kind: "request", title: workForm\.title[\s\S]*?status: "todo", progress: 0, points: 0/);
+
+  const workModalStart = page.indexOf("{showWorkForm && (");
+  const workModalEnd = page.indexOf("{showProjectForm && (", workModalStart);
+  assert.notEqual(workModalStart, -1, "expected the work modal");
+  assert.ok(workModalEnd > workModalStart, "expected a stable work-modal boundary");
+  const workModal = page.slice(workModalStart, workModalEnd);
+  const employeeModalStart = workModal.indexOf("{isEmployeeCoordinationCreate ? <>");
+  const employeeModalEnd = workModal.indexOf("</> : <>", employeeModalStart);
+  assert.notEqual(employeeModalStart, -1, "expected the employee coordination branch");
+  assert.ok(employeeModalEnd > employeeModalStart, "expected a separate manager form branch");
+  const employeeModal = workModal.slice(employeeModalStart, employeeModalEnd);
+  assert.match(employeeModal, /className="employee-coordinate-hero"/);
+  assert.match(employeeModal, /activeSafeWorkRoster\.map/);
+  assert.match(employeeModal, /รายชื่อนี้มาจากภาพรวมทีมที่แชร์ได้เท่านั้น/);
+  assert.match(employeeModal, /โปรเจกต์ <em>ไม่บังคับ<\/em>/);
+  assert.match(employeeModal, /งานประสานนี้ไม่มีแต้ม ไม่นับ KPI หรือภาระงานทางการ/);
+  assert.match(employeeModal, /ผู้สร้างอนุมัติเองไม่ได้ และการตรวจเป็นสิทธิ์ของหัวหน้าทีมหรือ HR เท่านั้น/);
+  assert.doesNotMatch(employeeModal, /value=\{workForm\.(?:kind|status|progress|points)\}/);
+
+  const coordinationStyles = styles.match(/\/\* Employee coordination tasks: separate owned work from safe, zero-point handoffs\. \*\/[\s\S]*?(?=\/\* Access operating model:)/)?.[0] ?? "";
+  assert.ok(coordinationStyles, "expected employee coordination styles");
+  assert.match(coordinationStyles, /\.employee-task-scope \{[^}]*grid-template-columns: 1fr 1fr/);
+  assert.match(coordinationStyles, /\.employee-coordinate-modal \{ width: min\(720px,100%\)/);
+  const finalEnhancementStyles = styles.match(/\/\* Employee coordination tasks: separate owned work from safe, zero-point handoffs\. \*\/[\s\S]*$/)?.[0] ?? "";
+  const responsiveStyles = finalEnhancementStyles.match(/@media \(max-width: 760px\) \{[\s\S]*?(?=\n\})/)?.[0] ?? "";
+  assert.match(responsiveStyles, /\.employee-task-scope \{ grid-template-columns: 1fr/);
+  assert.match(responsiveStyles, /\.employee-coordinate-grid \{ grid-template-columns: 1fr/);
 });

@@ -208,6 +208,7 @@ export const workItems = sqliteTable("work_items", {
   id: text("id").primaryKey(),
   projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
   assigneeEmployeeId: text("assignee_employee_id").notNull().references(() => employees.id, { onDelete: "cascade" }),
+  createdByEmployeeId: text("created_by_employee_id").references(() => employees.id, { onDelete: "set null" }),
   kind: text("kind", { enum: ["task", "request", "mission"] }).notNull().default("task"),
   title: text("title").notNull(),
   description: text("description").notNull().default(""),
@@ -221,6 +222,7 @@ export const workItems = sqliteTable("work_items", {
 }, (table) => [
   index("work_items_project_status_idx").on(table.projectId, table.status),
   index("work_items_assignee_status_idx").on(table.assigneeEmployeeId, table.status),
+  index("work_items_creator_status_idx").on(table.createdByEmployeeId, table.status),
   index("work_items_due_idx").on(table.dueDate),
 ]);
 

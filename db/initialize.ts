@@ -4,7 +4,7 @@ let initialization: Promise<unknown> | null = null;
 
 async function ensureColumn(
   d1: ReturnType<typeof getD1>,
-  table: "rewards" | "point_ledger" | "point_events" | "organization_policy_publish_claims",
+  table: "rewards" | "point_ledger" | "point_events" | "organization_policy_publish_claims" | "work_items",
   column: string,
   definition: string,
 ) {
@@ -203,6 +203,7 @@ export function ensureDatabase() {
       id TEXT PRIMARY KEY NOT NULL,
       project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
       assignee_employee_id TEXT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+      created_by_employee_id TEXT REFERENCES employees(id) ON DELETE SET NULL,
       kind TEXT NOT NULL DEFAULT 'task',
       title TEXT NOT NULL,
       description TEXT NOT NULL DEFAULT '',
@@ -384,6 +385,7 @@ export function ensureDatabase() {
 
     const compatibilityColumns = [
       ["organization_policy_publish_claims", "expected_content_hash", "TEXT NOT NULL DEFAULT ''"],
+      ["work_items", "created_by_employee_id", "TEXT REFERENCES employees(id) ON DELETE SET NULL"],
       ["rewards", "inventory_version", "INTEGER NOT NULL DEFAULT 0"],
       ["point_ledger", "policy_id", "TEXT REFERENCES organization_policies(id) ON DELETE SET NULL"],
       ["point_ledger", "policy_version", "INTEGER"],
@@ -410,6 +412,7 @@ export function ensureDatabase() {
       d1.prepare("CREATE UNIQUE INDEX IF NOT EXISTS point_cap_claim_source_unique ON point_cap_claims (source_type, source_id)"),
       d1.prepare("CREATE INDEX IF NOT EXISTS point_cap_claim_employee_month_idx ON point_cap_claims (employee_id, claim_month)"),
       d1.prepare("CREATE UNIQUE INDEX IF NOT EXISTS work_submissions_one_submitted_per_work_unique ON work_submissions (work_item_id) WHERE status = 'submitted'"),
+      d1.prepare("CREATE INDEX IF NOT EXISTS work_items_creator_status_idx ON work_items (created_by_employee_id, status)"),
       d1.prepare("CREATE INDEX IF NOT EXISTS point_ledger_policy_idx ON point_ledger (policy_id, policy_version)"),
       d1.prepare("CREATE INDEX IF NOT EXISTS point_events_policy_idx ON point_events (policy_id, policy_version)"),
       d1.prepare(`CREATE TRIGGER IF NOT EXISTS organization_policy_publish_claim_guard
@@ -446,6 +449,38 @@ export function ensureDatabase() {
         )
         BEGIN
           SELECT RAISE(ABORT, 'WORK_ITEM_TERMS_LOCKED');
+        END`),
+      d1.prepare("DROP TRIGGER IF EXISTS employee_created_work_item_open_quota_guard"),
+      d1.prepare(`CREATE TRIGGER employee_created_work_item_open_quota_guard
+        BEFORE INSERT ON work_items
+        WHEN NEW.created_by_employee_id IS NOT NULL
+          AND NEW.points = 0
+          AND NEW.kind = 'request'
+          AND NEW.status <> 'done'
+        BEGIN
+          SELECT CASE WHEN (
+            SELECT COUNT(*) FROM work_items
+            WHERE created_by_employee_id = NEW.created_by_employee_id
+              AND points = 0
+              AND kind = 'request'
+              AND status <> 'done'
+          ) >= 12 THEN RAISE(ABORT, 'EMPLOYEE_WORK_OPEN_CREATOR_LIMIT') END;
+          SELECT CASE WHEN (
+            SELECT COUNT(*) FROM work_items
+            WHERE created_by_employee_id = NEW.created_by_employee_id
+              AND assignee_employee_id = NEW.assignee_employee_id
+              AND points = 0
+              AND kind = 'request'
+              AND status <> 'done'
+          ) >= 5 THEN RAISE(ABORT, 'EMPLOYEE_WORK_OPEN_ASSIGNEE_LIMIT') END;
+          SELECT CASE WHEN (
+            SELECT COUNT(*) FROM work_items
+            WHERE assignee_employee_id = NEW.assignee_employee_id
+              AND created_by_employee_id IS NOT NULL
+              AND points = 0
+              AND kind = 'request'
+              AND status <> 'done'
+          ) >= 12 THEN RAISE(ABORT, 'EMPLOYEE_WORK_OPEN_RECIPIENT_LIMIT') END;
         END`),
       d1.prepare("DROP TRIGGER IF EXISTS reward_redemption_claim_guard"),
       d1.prepare(`CREATE TRIGGER reward_redemption_claim_guard

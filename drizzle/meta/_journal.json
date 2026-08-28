@@ -99,6 +99,13 @@
       "when": 1787807255990,
       "tag": "0013_bangkok_reward_month",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1787919839769,
+      "tag": "0014_crazy_doctor_spectrum",
+      "breakpoints": true
     }
   ]
 }

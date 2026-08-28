@@ -4210,3 +4210,183 @@ footer { border-top-color: #ccd9eb; color: #365d80 !important; }
   .access-account-list > article.access-account-row { grid-template-columns: 40px minmax(0,1fr); }
   .access-status { grid-column: 2; grid-row: auto; }
 }
+
+/* Employee coordination tasks: separate owned work from safe, zero-point handoffs. */
+.employee-task-scope {
+  margin-top: 20px;
+  border: 1px solid #c9d9eb;
+  border-radius: 17px;
+  padding: 8px;
+  background: #f4f7fc;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.employee-task-scope > button {
+  min-width: 0;
+  min-height: 76px;
+  border: 1px solid transparent;
+  border-radius: 13px;
+  padding: 10px 12px;
+  background: transparent;
+  color: #365d80;
+  cursor: pointer;
+  display: grid;
+  grid-template-columns: 38px minmax(0,1fr) auto;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+}
+.employee-task-scope > button:hover { background: rgba(255,255,255,.72); }
+.employee-task-scope > button.active { border-color: #8fb0d8; background: #fff; box-shadow: 0 7px 18px rgba(30,74,128,.08); }
+.employee-task-scope > button > span { width: 38px; height: 38px; border-radius: 11px; background: #e6eef9; color: #245fbe; display: grid; place-items: center; font-size: 17px; font-weight: 900; }
+.employee-task-scope > button:nth-child(2) > span { background: #fff0e3; color: #a65316; }
+.employee-task-scope > button p { min-width: 0; margin: 0; display: grid; gap: 2px; }
+.employee-task-scope > button strong { color: #173252 !important; font-size: 15px !important; line-height: 1.4; }
+.employee-task-scope > button small { color: #416586 !important; font-size: 13px !important; line-height: 1.4; }
+.employee-task-scope > button > b { min-width: 34px; border-radius: 99px; padding: 6px 8px; background: #eaf1fa; color: #245fbe; font-size: 13px; text-align: center; }
+.employee-task-scope-note { grid-column: 1 / -1; margin: 0; border-top: 1px solid #d7e2ef; padding: 9px 10px 2px; color: #416586 !important; font-size: 13px !important; line-height: 1.55; }
+.employee-task-scope-note > span { width: 22px; height: 22px; margin-right: 6px; border-radius: 7px; background: #e8f0fb; color: #245fbe; display: inline-grid; place-items: center; font-weight: 900; vertical-align: middle; }
+
+.simple-task-people { min-width: 0; display: grid; gap: 7px; }
+.simple-task-creator { min-width: 0; display: grid; grid-template-columns: 26px minmax(0,1fr); align-items: center; gap: 7px; }
+.simple-task-creator > span { width: 26px; height: 26px; border-radius: 8px; background: #eef3fa; color: #245fbe; display: grid; place-items: center; font-size: 12px; font-weight: 900; }
+.simple-task-creator p { min-width: 0; margin: 0; display: grid; }
+.simple-task-creator small { color: #416586 !important; font-size: 12px !important; }
+.simple-task-creator strong { overflow: hidden; color: #173252 !important; font-size: 13px !important; white-space: nowrap; text-overflow: ellipsis; }
+.simple-task-check { cursor: default; }
+.delegated-task-status { min-height: 42px; border: 1px solid #cbd9e9; border-radius: 11px; padding: 0 12px; background: #f4f7fc; color: #365d80; display: inline-flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 800; white-space: nowrap; }
+
+.employee-coordinate-modal { width: min(720px,100%); background: #fff !important; color: #173252; }
+.employee-coordinate-hero { position: relative; border-bottom: 1px solid #d3e0ee; padding: 23px 26px; background: linear-gradient(135deg,#f4f8fd,#fff8f1); display: grid; grid-template-columns: 50px minmax(0,1fr) 44px; align-items: start; gap: 13px; }
+.employee-coordinate-icon { width: 50px; height: 50px; border-radius: 15px; background: #245fbe; color: #fff; display: grid; place-items: center; font-size: 21px; font-weight: 950; box-shadow: 0 10px 22px rgba(36,95,190,.18); }
+.employee-coordinate-hero h2 { margin: 2px 0 3px; color: #173252 !important; font-size: 23px !important; line-height: 1.35; }
+.employee-coordinate-hero p:not(.eyebrow) { margin: 0; color: #416586 !important; font-size: 14px !important; line-height: 1.55; }
+.employee-coordinate-hero .modal-close { position: static; width: 44px; height: 44px; border: 1px solid #c4d6e9; background: #fff; color: #245fbe; }
+.employee-coordinate-body { padding: 22px 26px 6px; }
+.employee-coordinate-recipient-preview { border: 1px solid #c5d7eb; border-radius: 14px; padding: 11px 13px; background: #f5f9fe; display: grid; grid-template-columns: 38px minmax(0,1fr) auto; align-items: center; gap: 10px; }
+.employee-coordinate-recipient-preview > span { width: 38px; height: 38px; border-radius: 11px; background: #245fbe; color: #fff; display: grid; place-items: center; font-size: 13px; font-weight: 900; }
+.employee-coordinate-recipient-preview p { min-width: 0; margin: 0; display: grid; gap: 1px; }
+.employee-coordinate-recipient-preview small { color: #416586 !important; font-size: 13px !important; }
+.employee-coordinate-recipient-preview strong { overflow: hidden; color: #173252 !important; font-size: 15px !important; text-overflow: ellipsis; white-space: nowrap; }
+.employee-coordinate-recipient-preview > b { border-radius: 99px; padding: 6px 9px; background: #fff0e3; color: #955018; font-size: 13px; white-space: nowrap; }
+.employee-coordinate-grid { margin-top: 16px; padding: 0; gap: 13px; }
+.employee-coordinate-grid label { min-width: 0; }
+.employee-coordinate-grid label > span { color: #173252 !important; font-size: 14px !important; }
+.employee-coordinate-grid label > span em { color: #5d7691; font-size: 12px; font-style: normal; font-weight: 600; }
+.employee-coordinate-grid label > small { color: #52708f !important; font-size: 13px !important; line-height: 1.45; }
+.employee-coordinate-grid :is(input,select,textarea) { min-height: 48px; border-color: #c8d8e9; background: #fff; color: #173252; font-size: 14px; }
+.employee-coordinate-grid textarea { min-height: 104px; line-height: 1.55; }
+.employee-coordinate-policy { margin-top: 16px; border: 1px solid #e2c29c; border-radius: 14px; padding: 12px 13px; background: #fff8ef; display: grid; grid-template-columns: 38px minmax(0,1fr); align-items: start; gap: 10px; }
+.employee-coordinate-policy > span { width: 38px; height: 38px; border-radius: 11px; background: #d57c31; color: #fff; display: grid; place-items: center; font-size: 16px; font-weight: 950; }
+.employee-coordinate-policy p { margin: 0; display: grid; gap: 3px; }
+.employee-coordinate-policy strong { color: #713b12 !important; font-size: 14px !important; line-height: 1.45; }
+.employee-coordinate-policy small { color: #725136 !important; font-size: 13px !important; line-height: 1.55; }
+.employee-coordinate-modal .modal-actions { border-top-color: #d6e2ef; background: #f8fafc; }
+.employee-coordinate-modal .modal-actions button { min-height: 46px; font-size: 14px; }
+
+/* Access operating model: one compact workflow and a neutral role comparison. */
+.access-operating-model,.access-role-matrix-card { border: 1px solid #c7d8ea; border-radius: 20px; background: #fff; box-shadow: 0 12px 30px rgba(24,64,111,.08); }
+.access-operating-model { padding: 21px 23px; }
+.access-operating-model > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; }
+.access-operating-model h2 { margin: 2px 0 4px; color: #173252 !important; font-size: 21px !important; line-height: 1.35; }
+.access-operating-model header p:not(.eyebrow) { max-width: 760px; margin: 0; color: #416586 !important; font-size: 13px !important; line-height: 1.55; }
+.access-model-counts { flex: 0 0 auto; display: flex; align-items: stretch; gap: 7px; }
+.access-model-counts > span { min-width: 102px; border-left: 1px solid #d4e0ed; padding: 2px 10px; display: grid; align-content: center; gap: 1px; }
+.access-model-counts strong { color: #245fbe !important; font-size: 20px !important; line-height: 1.2; }
+.access-model-counts small { color: #52708f !important; font-size: 12px !important; line-height: 1.35; }
+.access-workflow-list { margin: 17px 0 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 8px; }
+.access-workflow-list li { min-width: 0; border: 1px solid #d5e1ee; border-radius: 13px; padding: 11px; background: #f8fafc; display: grid; grid-template-columns: 30px minmax(0,1fr); align-items: start; gap: 8px; }
+.access-workflow-list li > span { width: 30px; height: 30px; border-radius: 9px; background: #e7effa; color: #245fbe; display: grid; place-items: center; font-size: 13px; font-weight: 950; }
+.access-workflow-list li > div { min-width: 0; display: grid; gap: 2px; }
+.access-workflow-list li strong { color: #173252 !important; font-size: 14px !important; line-height: 1.4; }
+.access-workflow-list li small { color: #416586 !important; font-size: 12px !important; line-height: 1.45; }
+.access-workflow-list li > b { grid-column: 2; width: fit-content; border-radius: 99px; padding: 4px 7px; background: #edf2f8; color: #365d80; font: 700 12px/1.3 ui-monospace,SFMono-Regular,Menlo,monospace; }
+.access-review-boundary { margin: 11px 0 0; border-top: 1px solid #d7e2ee; padding: 11px 2px 0; color: #416586 !important; font-size: 13px !important; line-height: 1.55; }
+.access-review-boundary > span { width: 24px; height: 24px; margin-right: 7px; border-radius: 8px; background: #fff0e3; color: #a65316; display: inline-grid; place-items: center; font-weight: 900; vertical-align: middle; }
+.access-review-boundary strong { margin-right: 5px; color: #173252 !important; }
+.access-role-matrix-card { padding: 23px; }
+.access-role-matrix-card .access-card-heading { min-height: 0; margin-bottom: 14px; }
+.access-role-matrix-card .access-card-heading p:not(.eyebrow) { color: #416586 !important; font-size: 13px !important; line-height: 1.55; }
+.access-role-table-wrap { overflow-x: auto; border: 1px solid #d4e1ee; border-radius: 14px; outline: none; }
+.access-role-table-wrap:focus-visible { outline: 3px solid rgba(36,95,190,.28); outline-offset: 2px; }
+.access-role-table { width: 100%; min-width: 510px; border-collapse: collapse; color: #365d80; font-size: 13px; line-height: 1.5; }
+.access-role-table th,.access-role-table td { border-bottom: 1px solid #dbe5ef; padding: 11px 12px; text-align: left; vertical-align: top; }
+.access-role-table tr:last-child > * { border-bottom: 0; }
+.access-role-table thead th { background: #edf3fa; color: #365d80; font-size: 12px; font-weight: 850; }
+.access-role-table tbody th { min-width: 118px; background: #fafcfe; }
+.access-role-table tbody th strong { display: block; color: #173252 !important; font-size: 14px !important; }
+.access-role-table code { color: #597695; font: 700 12px/1.35 ui-monospace,SFMono-Regular,Menlo,monospace; }
+.access-role-table td:nth-child(2) { width: 105px; }
+.access-role-table td > span { display: inline-flex; border-radius: 99px; padding: 4px 8px; background: #e8f0fb; color: #245fbe; font-size: 12px; font-weight: 850; white-space: nowrap; }
+.access-role-table td > span.worker { background: #fff0e3; color: #955018; }
+.access-role-matrix-card .access-invite-note { margin-top: 13px; border: 1px solid #e5c9a8; background: #fff9f1; }
+.access-role-matrix-card .access-invite-note p { color: #725136 !important; font-size: 13px !important; line-height: 1.55; }
+.access-role-matrix-card .access-invite-note strong { color: #713b12 !important; font-size: 13px !important; }
+.access-form-card { border-color: #c7d8ea; box-shadow: 0 12px 30px rgba(24,64,111,.08); }
+.access-form-card .access-card-heading p:not(.eyebrow),.access-form-grid label > small { color: #416586 !important; font-size: 13px !important; }
+.access-form-actions button { min-height: 44px; font-size: 13px; }
+
+.access-exact-role-selector { min-width: 0; margin: 2px 0 0; border: 0; padding: 0; display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px; }
+.access-exact-role-selector legend { width: 100%; margin: 0 0 7px; padding: 0; color: #173252; font-size: 14px; line-height: 1.45; font-weight: 850; }
+.access-exact-role-selector > label { position: relative; min-width: 0; min-height: 76px; border: 1px solid #ceddec; border-radius: 13px; padding: 10px; background: #f9fbfd; cursor: pointer; display: grid; grid-template-columns: 34px minmax(0,1fr); align-items: center; gap: 8px; }
+.access-exact-role-selector > label:hover { border-color: #91afd2; background: #f4f8fd; }
+.access-exact-role-selector > label.selected { border-color: #245fbe; background: #edf4fc; box-shadow: inset 0 0 0 1px #245fbe; }
+.access-exact-role-selector > label.employee.selected { border-color: #d57c31; background: #fff5ea; box-shadow: inset 0 0 0 1px #d57c31; }
+.access-exact-role-selector input { position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0; }
+.access-exact-role-selector > label:has(input:focus-visible) { outline: 3px solid rgba(36,95,190,.3); outline-offset: 2px; }
+.access-exact-role-selector > label > span { width: 34px; height: 34px; border-radius: 10px; background: #e7eff9; color: #245fbe; display: grid; place-items: center; font-size: 11px; font-weight: 950; }
+.access-exact-role-selector > label.employee > span { background: #fff0e3; color: #a65316; }
+.access-exact-role-selector > label > div { min-width: 0; display: grid; gap: 1px; }
+.access-exact-role-selector > label strong { color: #173252 !important; font-size: 14px !important; line-height: 1.35; }
+.access-exact-role-selector > label small { color: #416586 !important; font-size: 12px !important; line-height: 1.35; }
+.access-exact-role-selector code { grid-column: 2; width: fit-content; border-radius: 99px; padding: 2px 6px; background: #e9eff6; color: #597695; font: 700 11px/1.3 ui-monospace,SFMono-Regular,Menlo,monospace; }
+.access-exact-role-selector > p { grid-column: 1 / -1; margin: 0; color: #547291 !important; font-size: 13px !important; line-height: 1.45; }
+.access-selected-role-note { border-left: 3px solid #245fbe; border-radius: 0 11px 11px 0; padding: 9px 11px; background: #f3f7fc; display: grid; gap: 2px; }
+.access-selected-role-note.worker { border-left-color: #d57c31; background: #fff7ee; }
+.access-selected-role-note strong { color: #173252 !important; font-size: 13px !important; line-height: 1.4; }
+.access-selected-role-note span { color: #416586; font-size: 13px; line-height: 1.5; }
+
+:is(.employee-task-scope > button,.employee-coordinate-modal button,.access-operating-model button,.access-role-matrix-card button):focus-visible { outline: 3px solid rgba(36,95,190,.3); outline-offset: 2px; }
+
+@media (max-width: 1120px) {
+  .access-operating-model > header { flex-direction: column; gap: 13px; }
+  .access-model-counts { width: 100%; }
+  .access-model-counts > span { flex: 1; }
+  .access-workflow-list { grid-template-columns: 1fr 1fr; }
+  .access-role-matrix-card { padding: 21px; }
+}
+
+@media (max-width: 760px) {
+  .employee-task-scope { grid-template-columns: 1fr; }
+  .employee-task-scope-note { grid-column: auto; }
+  .simple-task-people { grid-template-columns: minmax(0,1fr) minmax(0,1fr); }
+  .delegated-task-status { width: 100%; white-space: normal; text-align: center; }
+  .employee-coordinate-modal { max-height: calc(100vh - 18px); border-radius: 22px 22px 0 0; }
+  .employee-coordinate-hero { padding: 20px 18px; grid-template-columns: 44px minmax(0,1fr) 42px; gap: 10px; }
+  .employee-coordinate-icon { width: 44px; height: 44px; border-radius: 13px; }
+  .employee-coordinate-hero h2 { font-size: 20px !important; }
+  .employee-coordinate-body { padding: 18px 17px 5px; }
+  .employee-coordinate-grid { grid-template-columns: 1fr; }
+  .employee-coordinate-grid .wide { grid-column: auto; }
+  .access-operating-model { padding: 18px 15px; }
+  .access-model-counts { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); }
+  .access-model-counts > span { min-width: 0; border: 1px solid #d7e2ee; border-radius: 11px; padding: 8px; }
+  .access-workflow-list { grid-template-columns: 1fr; }
+  .access-role-matrix-card { padding: 18px 15px; }
+  .access-exact-role-selector { grid-template-columns: 1fr; }
+  .access-exact-role-selector > p { grid-column: auto; }
+}
+
+@media (max-width: 480px) {
+  .employee-task-scope > button { grid-template-columns: 34px minmax(0,1fr) auto; padding-inline: 9px; }
+  .employee-task-scope > button > span { width: 34px; height: 34px; }
+  .simple-task-people { grid-template-columns: 1fr; }
+  .employee-coordinate-hero { grid-template-columns: 40px minmax(0,1fr) 40px; padding-inline: 14px; }
+  .employee-coordinate-icon { width: 40px; height: 40px; }
+  .employee-coordinate-hero p:not(.eyebrow) { grid-column: 1 / -1; }
+  .employee-coordinate-recipient-preview { grid-template-columns: 36px minmax(0,1fr); }
+  .employee-coordinate-recipient-preview > b { grid-column: 2; width: fit-content; }
+  .access-model-counts { grid-template-columns: 1fr; }
+  .access-role-table { min-width: 480px; }
+}

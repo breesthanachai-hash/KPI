@@ -100,6 +100,9 @@ function publicPolicyAcknowledgement(acknowledgement: typeof policyAcknowledgeme
 }
 
 const BANGKOK_OFFSET_MS = 7 * 60 * 60 * 1000;
+const EMPLOYEE_COORDINATION_OPEN_CREATOR_LIMIT = 12;
+const EMPLOYEE_COORDINATION_OPEN_PAIR_LIMIT = 5;
+const EMPLOYEE_COORDINATION_OPEN_RECIPIENT_LIMIT = 12;
 
 function bangkokIsoDayFromTimestamp(value: string) {
   const timestamp = Date.parse(value);
@@ -116,6 +119,12 @@ function bangkokIsoDay() {
 
 function isoDayDistance(earlierDay: string, laterDay: string) {
   return Math.floor((Date.parse(`${laterDay}T00:00:00.000Z`) - Date.parse(`${earlierDay}T00:00:00.000Z`)) / 86_400_000);
+}
+
+function isValidIsoDay(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const timestamp = Date.parse(`${value}T00:00:00.000Z`);
+  return Number.isFinite(timestamp) && new Date(timestamp).toISOString().slice(0, 10) === value;
 }
 
 function isUniqueConstraintError(error: unknown) {
@@ -510,14 +519,17 @@ export async function GET(request: Request) {
       };
     })() : null;
     const scopedWorkItems = workItemRows
-      .filter((item) => visibleEmployeeIds.has(item.assigneeEmployeeId))
-      .map((item) => ({ ...item, points: workPointValue(item.kind, item.priority, activePointRules) }));
+      .filter((item) => currentUser.role === "employee"
+        ? item.assigneeEmployeeId === currentUser.employeeId || item.createdByEmployeeId === currentUser.employeeId
+        : visibleEmployeeIds.has(item.assigneeEmployeeId))
+      .map((item) => ({ ...item, points: item.points === 0 ? 0 : workPointValue(item.kind, item.priority, activePointRules) }));
     const visibleProjectIds = new Set(scopedWorkItems.map((item) => item.projectId));
     projectRows.filter((project) => visibleEmployeeIds.has(project.ownerEmployeeId)).forEach((project) => visibleProjectIds.add(project.id));
     const permissions = {
       canManageAccounts: currentUser.role === "admin",
       canManagePeople: currentUser.role === "admin",
       canManageWork: currentUser.role !== "employee",
+      canAssignTeamWork: !employeePreview && (currentUser.role !== "employee" || signedInEmployee?.status === "active"),
       canReviewWork: currentUser.role !== "employee",
       canViewTeam: currentUser.role !== "employee",
       canViewTeamOverview: currentUser.role !== "employee" || Boolean(currentUser.employeeId),
@@ -538,13 +550,14 @@ export async function GET(request: Request) {
         .filter((row) => teamOverviewEmployeeIds.has(row.employeeId))
         .map((row) => ({ ...row, id: `team-power:${row.employeeId}:${row.period}`, kpiScores: {}, note: "", evaluator: "" })),
       workItems: workItemRows
-        .filter((item) => teamOverviewEmployeeIds.has(item.assigneeEmployeeId))
+        .filter((item) => teamOverviewEmployeeIds.has(item.assigneeEmployeeId) && !(item.createdByEmployeeId !== null && item.points === 0))
         .map((item, index) => ({
           ...item,
           id: `team-load:${item.assigneeEmployeeId}:${index}`,
           projectId: "team-overview",
           title: item.kind === "mission" ? "ภารกิจของทีม" : item.kind === "request" ? "คำขอของทีม" : "งานของทีม",
           description: "",
+          createdByEmployeeId: null,
           points: 0,
           dueDate: item.dueDate < teamOverviewDate ? "2000-01-01" : item.dueDate === teamOverviewDate ? teamOverviewDate : "2999-12-31",
           createdAt: "",
@@ -1386,23 +1399,156 @@ export async function POST(request: Request) {
 
     if (payload.action === "saveWorkItem") {
       if (currentUser.role === "employee") {
-        const workItemId = payload.workItemId?.trim() ?? "";
-        const [assignedWorkItem] = workItemId ? await db.select().from(workItems).where(eq(workItems.id, workItemId)).limit(1) : [];
-        if (!assignedWorkItem || assignedWorkItem.assigneeEmployeeId !== currentUser.employeeId) return Response.json({ error: "แก้ไขได้เฉพาะงานที่มอบหมายให้คุณ" }, { status: 403 });
-        if (assignedWorkItem.status === "review" || assignedWorkItem.status === "done") return Response.json({ error: "งานที่ส่งตรวจหรือปิดแล้วไม่สามารถแก้ความคืบหน้าได้" }, { status: 409 });
-        const status = assignedWorkItem.status === "todo" && payload.status === "in_progress" ? "in_progress" as const : assignedWorkItem.status;
-        const progress = status === "todo" ? 0 : Math.min(90, Math.max(1, Math.round(Number(payload.progress) || assignedWorkItem.progress || 10)));
+        if (payload.workItemId !== undefined && typeof payload.workItemId !== "string") return Response.json({ error: "รหัสงานไม่ถูกต้อง" }, { status: 400 });
+        const workItemId = typeof payload.workItemId === "string" ? payload.workItemId.trim() : "";
+        if (workItemId) {
+          const [assignedWorkItem] = await db.select().from(workItems).where(eq(workItems.id, workItemId)).limit(1);
+          if (!assignedWorkItem || assignedWorkItem.assigneeEmployeeId !== currentUser.employeeId) return Response.json({ error: "แก้ไขได้เฉพาะงานที่มอบหมายให้คุณ" }, { status: 403 });
+          if (assignedWorkItem.status === "review" || assignedWorkItem.status === "done") return Response.json({ error: "งานที่ส่งตรวจหรือปิดแล้วไม่สามารถแก้ความคืบหน้าได้" }, { status: 409 });
+          const status = assignedWorkItem.status === "todo" && payload.status === "in_progress" ? "in_progress" as const : assignedWorkItem.status;
+          const progress = status === "todo" ? 0 : Math.min(90, Math.max(1, Math.round(Number(payload.progress) || assignedWorkItem.progress || 10)));
+          const now = new Date().toISOString();
+          const submittedEvidence = db.select({ id: workSubmissions.id }).from(workSubmissions).where(and(eq(workSubmissions.workItemId, workItemId), eq(workSubmissions.status, "submitted")));
+          const [savedWorkItem] = await db.update(workItems).set({ status, progress, updatedAt: now }).where(and(
+            eq(workItems.id, workItemId),
+            eq(workItems.assigneeEmployeeId, assignedWorkItem.assigneeEmployeeId),
+            eq(workItems.status, assignedWorkItem.status),
+            eq(workItems.updatedAt, assignedWorkItem.updatedAt),
+            notExists(submittedEvidence),
+          )).returning();
+          if (!savedWorkItem) return Response.json({ error: "งานนี้ถูกส่งตรวจหรือมีหลักฐานรอตรวจแล้ว กรุณาโหลดข้อมูลล่าสุดก่อนแก้ความคืบหน้า" }, { status: 409 });
+          return Response.json({ workItem: { ...savedWorkItem, points: savedWorkItem.points === 0 ? 0 : workPointValue(savedWorkItem.kind, savedWorkItem.priority, activePointRules) }, pointEntry: null });
+        }
+
+        const actorEmployeeId = currentUser.employeeId ?? "";
+        const [actorEmployee] = actorEmployeeId ? await db.select().from(employees).where(and(eq(employees.id, actorEmployeeId), eq(employees.status, "active"))).limit(1) : [];
+        if (!actorEmployee) return Response.json({ error: "บัญชีนี้ยังไม่ได้ผูกกับโปรไฟล์พนักงานที่ใช้งานอยู่" }, { status: 403 });
+        const actorRole = getRole(actorEmployee.roleId);
+        if (actorRole.id !== actorEmployee.roleId) return Response.json({ error: "ไม่พบตำแหน่งที่ผูกกับพนักงาน กรุณาให้ HR ตรวจสอบ" }, { status: 409 });
+        const actorDepartmentId = actorRole.departmentId;
+        if (!actorDepartmentId) return Response.json({ error: "ไม่พบแผนกจากตำแหน่งพนักงาน กรุณาให้ HR ตรวจสอบ" }, { status: 409 });
+
+        const rawTitle = typeof payload.title === "string" ? payload.title.trim() : "";
+        if (payload.description !== undefined && typeof payload.description !== "string") return Response.json({ error: "รายละเอียดงานไม่ถูกต้อง" }, { status: 400 });
+        const rawDescription = typeof payload.description === "string" ? payload.description.trim() : "";
+        if (!rawTitle) return Response.json({ error: "กรุณาระบุชื่องาน" }, { status: 400 });
+        if (rawTitle.length > 180) return Response.json({ error: "ชื่องานต้องไม่เกิน 180 ตัวอักษร" }, { status: 400 });
+        if (rawDescription.length > 1200) return Response.json({ error: "รายละเอียดงานต้องไม่เกิน 1,200 ตัวอักษร" }, { status: 400 });
+        const requestedPriority = payload.priority;
+        if (requestedPriority !== undefined && requestedPriority !== "low" && requestedPriority !== "medium" && requestedPriority !== "high" && requestedPriority !== "urgent") {
+          return Response.json({ error: "ระดับความสำคัญของงานไม่ถูกต้อง" }, { status: 400 });
+        }
+        const priority = requestedPriority ?? "medium" as const;
+        const dueDate = typeof payload.dueDate === "string" ? payload.dueDate.trim() : "";
+        const today = bangkokIsoDay();
+        if (!isValidIsoDay(dueDate)) return Response.json({ error: "กรุณาระบุกำหนดส่งในรูปแบบ YYYY-MM-DD" }, { status: 400 });
+        if (dueDate < today) return Response.json({ error: "กำหนดส่งต้องเป็นวันนี้หรือวันในอนาคต" }, { status: 400 });
+        if (isoDayDistance(today, dueDate) > 180) return Response.json({ error: "กำหนดส่งงานได้ล่วงหน้าไม่เกิน 180 วัน" }, { status: 400 });
+
+        const assigneeEmployeeId = typeof payload.assigneeEmployeeId === "string" ? payload.assigneeEmployeeId.trim() : "";
+        const [assignee] = assigneeEmployeeId ? await db.select().from(employees).where(and(eq(employees.id, assigneeEmployeeId), eq(employees.status, "active"))).limit(1) : [];
+        if (!assignee) return Response.json({ error: "กรุณาเลือกผู้รับผิดชอบที่กำลังใช้งานอยู่" }, { status: 400 });
+        const assigneeRole = getRole(assignee.roleId);
+        if (assigneeRole.id !== assignee.roleId) return Response.json({ error: "ไม่พบตำแหน่งของผู้รับผิดชอบ กรุณาให้ HR ตรวจสอบ" }, { status: 409 });
+        if (assigneeRole.departmentId !== actorDepartmentId) return Response.json({ error: "พนักงานมอบหมายงานได้เฉพาะตนเองหรือเพื่อนร่วมแผนกเดียวกัน" }, { status: 403 });
+
+        const [[creatorCoordinationQuota], [recipientCoordinationQuota]] = await Promise.all([
+          db.select({
+            creatorOpenCount: sql<number>`count(*)`,
+            pairOpenCount: sql<number>`coalesce(sum(CASE WHEN ${workItems.assigneeEmployeeId} = ${assigneeEmployeeId} THEN 1 ELSE 0 END), 0)`,
+          }).from(workItems).where(and(
+            eq(workItems.createdByEmployeeId, actorEmployee.id),
+            eq(workItems.points, 0),
+            eq(workItems.kind, "request"),
+            sql`${workItems.status} <> 'done'`,
+          )),
+          db.select({ recipientOpenCount: sql<number>`count(*)` }).from(workItems).where(and(
+            eq(workItems.assigneeEmployeeId, assigneeEmployeeId),
+            sql`${workItems.createdByEmployeeId} IS NOT NULL`,
+            eq(workItems.points, 0),
+            eq(workItems.kind, "request"),
+            sql`${workItems.status} <> 'done'`,
+          )),
+        ]);
+        if (Number(creatorCoordinationQuota?.creatorOpenCount ?? 0) >= EMPLOYEE_COORDINATION_OPEN_CREATOR_LIMIT) {
+          return Response.json({ error: `คุณมีงานประสานที่ยังไม่เสร็จครบ ${EMPLOYEE_COORDINATION_OPEN_CREATOR_LIMIT} งานแล้ว กรุณาปิดงานเดิมก่อนสร้างงานใหม่` }, { status: 409 });
+        }
+        if (Number(creatorCoordinationQuota?.pairOpenCount ?? 0) >= EMPLOYEE_COORDINATION_OPEN_PAIR_LIMIT) {
+          return Response.json({ error: `คุณมีงานประสานที่ยังไม่เสร็จให้พนักงานคนนี้ครบ ${EMPLOYEE_COORDINATION_OPEN_PAIR_LIMIT} งานแล้ว กรุณาปิดงานเดิมก่อนมอบหมายเพิ่ม` }, { status: 409 });
+        }
+        if (Number(recipientCoordinationQuota?.recipientOpenCount ?? 0) >= EMPLOYEE_COORDINATION_OPEN_RECIPIENT_LIMIT) {
+          return Response.json({ error: `พนักงานคนนี้มีงานประสานที่ยังไม่เสร็จจากทุกคนครบ ${EMPLOYEE_COORDINATION_OPEN_RECIPIENT_LIMIT} งานแล้ว กรุณารอให้ปิดงานเดิมก่อนมอบหมายเพิ่ม` }, { status: 409 });
+        }
+
         const now = new Date().toISOString();
-        const submittedEvidence = db.select({ id: workSubmissions.id }).from(workSubmissions).where(and(eq(workSubmissions.workItemId, workItemId), eq(workSubmissions.status, "submitted")));
-        const [savedWorkItem] = await db.update(workItems).set({ status, progress, updatedAt: now }).where(and(
-          eq(workItems.id, workItemId),
-          eq(workItems.assigneeEmployeeId, assignedWorkItem.assigneeEmployeeId),
-          eq(workItems.status, assignedWorkItem.status),
-          eq(workItems.updatedAt, assignedWorkItem.updatedAt),
-          notExists(submittedEvidence),
-        )).returning();
-        if (!savedWorkItem) return Response.json({ error: "งานนี้ถูกส่งตรวจหรือมีหลักฐานรอตรวจแล้ว กรุณาโหลดข้อมูลล่าสุดก่อนแก้ความคืบหน้า" }, { status: 409 });
-        return Response.json({ workItem: { ...savedWorkItem, points: workPointValue(savedWorkItem.kind, savedWorkItem.priority, activePointRules) }, pointEntry: null });
+        if (payload.projectId !== undefined && typeof payload.projectId !== "string") return Response.json({ error: "รหัสโปรเจกต์ไม่ถูกต้อง" }, { status: 400 });
+        const requestedProjectId = typeof payload.projectId === "string" ? payload.projectId.trim() : "";
+        let projectId = requestedProjectId;
+        let teamProject: typeof projects.$inferInsert | null = null;
+        if (requestedProjectId) {
+          const [requestedProject] = await db.select().from(projects).where(eq(projects.id, requestedProjectId)).limit(1);
+          if (!requestedProject) return Response.json({ error: "ไม่พบโปรเจกต์ที่เลือก" }, { status: 404 });
+          if (requestedProject.departmentId !== actorDepartmentId) return Response.json({ error: "เลือกได้เฉพาะโปรเจกต์ของแผนกตนเอง" }, { status: 403 });
+          if (requestedProject.status !== "planned" && requestedProject.status !== "active") return Response.json({ error: "โปรเจกต์ที่พักไว้หรือปิดแล้วไม่สามารถรับงานใหม่ได้" }, { status: 409 });
+        } else {
+          projectId = `project-team-${actorDepartmentId}`;
+          const [existingTeamProject] = await db.select().from(projects).where(eq(projects.id, projectId)).limit(1);
+          if (existingTeamProject && existingTeamProject.departmentId !== actorDepartmentId) return Response.json({ error: "โปรเจกต์งานภายในทีมมีข้อมูลแผนกไม่ตรงกัน กรุณาให้ HR ตรวจสอบ" }, { status: 409 });
+          teamProject = {
+            id: projectId,
+            name: "งานภายในทีม",
+            description: "งานและคำขอที่สมาชิกในแผนกมอบหมายให้กัน",
+            ownerEmployeeId: existingTeamProject?.ownerEmployeeId ?? actorEmployee.id,
+            departmentId: actorDepartmentId,
+            status: "active",
+            dueDate: existingTeamProject && existingTeamProject.dueDate > dueDate ? existingTeamProject.dueDate : dueDate,
+            color: existingTeamProject?.color || "forest",
+            createdAt: existingTeamProject?.createdAt ?? now,
+            updatedAt: now,
+          };
+        }
+
+        const workItem = {
+          id: `work-${crypto.randomUUID()}`,
+          projectId,
+          assigneeEmployeeId,
+          createdByEmployeeId: actorEmployee.id,
+          kind: "request" as const,
+          title: rawTitle,
+          description: rawDescription,
+          priority,
+          status: "todo" as const,
+          progress: 0,
+          points: 0,
+          dueDate,
+          createdAt: now,
+          updatedAt: now,
+        };
+        try {
+          if (teamProject) {
+            await db.batch([
+              db.insert(projects).values(teamProject).onConflictDoUpdate({
+                target: projects.id,
+                set: { name: teamProject.name, description: teamProject.description, status: "active", dueDate: sql`CASE WHEN ${projects.dueDate} > ${teamProject.dueDate} THEN ${projects.dueDate} ELSE ${teamProject.dueDate} END`, color: teamProject.color, updatedAt: now },
+              }),
+              db.insert(workItems).values(workItem),
+            ]);
+          } else {
+            await db.insert(workItems).values(workItem);
+          }
+        } catch (error) {
+          if (error instanceof Error && error.message.includes("EMPLOYEE_WORK_OPEN_CREATOR_LIMIT")) return Response.json({ error: `คุณมีงานประสานที่ยังไม่เสร็จครบ ${EMPLOYEE_COORDINATION_OPEN_CREATOR_LIMIT} งานแล้ว กรุณาปิดงานเดิมก่อนสร้างงานใหม่` }, { status: 409 });
+          if (error instanceof Error && error.message.includes("EMPLOYEE_WORK_OPEN_ASSIGNEE_LIMIT")) return Response.json({ error: `คุณมีงานประสานที่ยังไม่เสร็จให้พนักงานคนนี้ครบ ${EMPLOYEE_COORDINATION_OPEN_PAIR_LIMIT} งานแล้ว กรุณาปิดงานเดิมก่อนมอบหมายเพิ่ม` }, { status: 409 });
+          if (error instanceof Error && error.message.includes("EMPLOYEE_WORK_OPEN_RECIPIENT_LIMIT")) return Response.json({ error: `พนักงานคนนี้มีงานประสานที่ยังไม่เสร็จจากทุกคนครบ ${EMPLOYEE_COORDINATION_OPEN_RECIPIENT_LIMIT} งานแล้ว กรุณารอให้ปิดงานเดิมก่อนมอบหมายเพิ่ม` }, { status: 409 });
+          if (isUniqueConstraintError(error)) return Response.json({ error: "มีการสร้างงานนี้พร้อมกัน กรุณาลองใหม่" }, { status: 409 });
+          throw error;
+        }
+        const [[savedWorkItem], [savedProject]] = await Promise.all([
+          db.select().from(workItems).where(eq(workItems.id, workItem.id)).limit(1),
+          db.select().from(projects).where(eq(projects.id, projectId)).limit(1),
+        ]);
+        if (!savedWorkItem || !savedProject) return Response.json({ error: "สร้างงานไม่สำเร็จ กรุณาลองใหม่" }, { status: 500 });
+        return Response.json({ workItem: savedWorkItem, project: savedProject, pointEntry: null, pointPolicy: "employee_request_no_points" });
       }
       const now = new Date().toISOString();
       const workItemId = payload.workItemId?.trim() || `work-${crypto.randomUUID()}`;
@@ -1444,13 +1590,14 @@ export async function POST(request: Request) {
         id: existingWorkItem?.id ?? workItemId,
         projectId,
         assigneeEmployeeId,
+        createdByEmployeeId: existingWorkItem?.createdByEmployeeId ?? currentUser.employeeId ?? null,
         kind,
         title,
         description: payload.description === undefined ? existingWorkItem?.description ?? "" : payload.description.trim().slice(0, 1200),
         priority,
         status,
         progress,
-        points: workPointValue(kind, priority, activePointRules),
+        points: existingWorkItem?.points === 0 ? 0 : workPointValue(kind, priority, activePointRules),
         dueDate,
         createdAt: existingWorkItem?.createdAt ?? now,
         updatedAt: now,
@@ -1491,9 +1638,10 @@ export async function POST(request: Request) {
       if (!(await canAccessEmployee(currentUser, workItem.assigneeEmployeeId))) return Response.json({ error: "ไม่มีสิทธิ์ตรวจผลงานนี้" }, { status: 403 });
       if (currentUser.employeeId === workItem.assigneeEmployeeId) return Response.json({ error: "ผู้รับผิดชอบงานไม่สามารถตรวจหรืออนุมัติผลงานของตนเองได้ กรุณาให้ผู้ตรวจคนอื่นหรือ HR ดำเนินการ" }, { status: 403 });
       const submissionDate = bangkokIsoDayFromTimestamp(submission.submittedAt) ?? bangkokIsoDay();
+      const awardsPoints = status === "approved" && workItem.points > 0;
       const { policy: workPointPolicy, rules: workPointPolicyRules } = pointPolicyFromRows(pointPolicyRows, submissionDate);
-      if (status === "approved" && !workPointPolicy) return Response.json({ error: "ไม่มีกติกาแต้มที่ประกาศใช้ในวันที่ส่งงาน จึงยังอนุมัติผลงานไม่ได้" }, { status: 409 });
-      if (status === "approved" && workPointPolicy && (!workPointPolicy.contentHash || workPointPolicy.contentHash !== await policyIntegrityHash(workPointPolicy))) {
+      if (awardsPoints && !workPointPolicy) return Response.json({ error: "ไม่มีกติกาแต้มที่ประกาศใช้ในวันที่ส่งงาน จึงยังอนุมัติผลงานไม่ได้" }, { status: 409 });
+      if (awardsPoints && workPointPolicy && (!workPointPolicy.contentHash || workPointPolicy.contentHash !== await policyIntegrityHash(workPointPolicy))) {
         return Response.json({ error: "ตรวจสอบความถูกต้องของกติกาแต้มที่ใช้ในวันที่ส่งงานไม่ผ่าน กรุณาให้ HR ประกาศฉบับแก้ไขก่อนอนุมัติ" }, { status: 409 });
       }
       const now = new Date().toISOString();
@@ -1501,12 +1649,12 @@ export async function POST(request: Request) {
       const reviewerNote = payload.reviewerNote?.trim().slice(0, 1000) ?? "";
       const completionMonth = submissionDate.slice(0, 7);
       const [employeeLedgerRows, employeePointEventRows, employeeCapClaimRows] = await Promise.all([
-        db.select().from(pointLedger).where(eq(pointLedger.employeeId, workItem.assigneeEmployeeId)),
-        status === "approved" ? db.select().from(pointEvents).where(eq(pointEvents.employeeId, workItem.assigneeEmployeeId)) : Promise.resolve([]),
+        awardsPoints ? db.select().from(pointLedger).where(eq(pointLedger.employeeId, workItem.assigneeEmployeeId)) : Promise.resolve([]),
+        awardsPoints ? db.select().from(pointEvents).where(eq(pointEvents.employeeId, workItem.assigneeEmployeeId)) : Promise.resolve([]),
         db.select({ id: pointCapClaims.id }).from(pointCapClaims).where(and(eq(pointCapClaims.employeeId, workItem.assigneeEmployeeId), eq(pointCapClaims.claimMonth, completionMonth))),
       ]);
       const reviewedSubmission = { ...submission, status, reviewedBy: actor.name, reviewedAt: now, reviewerNote };
-      const balancedWorkPoints = status === "approved" ? workPointValue(workItem.kind, workItem.priority, workPointPolicyRules) : workItem.points;
+      const balancedWorkPoints = status === "approved" ? awardsPoints ? workPointValue(workItem.kind, workItem.priority, workPointPolicyRules) : 0 : workItem.points;
       const updatedWorkItem = status === "approved"
         ? { ...workItem, points: balancedWorkPoints, status: "done" as const, progress: 100, updatedAt: now }
         : { ...workItem, points: balancedWorkPoints, status: "in_progress" as const, progress: Math.min(90, workItem.progress), updatedAt: now };
@@ -1515,7 +1663,7 @@ export async function POST(request: Request) {
       let deadlinePointEntry = null;
       let deadlinePointEvent = null;
       let pointCapMessage: string | null = null;
-      const policyMetadata = pointPolicyMetadata(workPointPolicy);
+      const policyMetadata = pointPolicyMetadata(awardsPoints ? workPointPolicy : null);
       const pointCapClaim = {
         id: `point-cap-claim-${crypto.randomUUID()}`,
         employeeId: workItem.assigneeEmployeeId,
@@ -1546,8 +1694,8 @@ export async function POST(request: Request) {
       const positiveEventsThisMonth = employeePointEventRows.filter((event) => event.eventDate.startsWith(completionMonth) && event.eventType !== "monthly_evaluation" && event.points > 0).reduce((sum, event) => sum + event.points, 0);
       const workCapRemaining = Math.max(0, workPointEconomyPolicy.workAwardsMonthlyCap - workPointsThisMonth);
       const standardCapRemaining = Math.max(0, workPointEconomyPolicy.standardEarnMonthlyCap - workPointsThisMonth - positiveEventsThisMonth);
-      const approvedWorkPoints = existingWorkPoint ? existingWorkPoint.points : balancedWorkPoints <= workCapRemaining && balancedWorkPoints <= standardCapRemaining ? balancedWorkPoints : 0;
-      if (!existingWorkPoint && approvedWorkPoints < balancedWorkPoints) {
+      const approvedWorkPoints = awardsPoints ? existingWorkPoint ? existingWorkPoint.points : balancedWorkPoints <= workCapRemaining && balancedWorkPoints <= standardCapRemaining ? balancedWorkPoints : 0 : 0;
+      if (awardsPoints && !existingWorkPoint && approvedWorkPoints < balancedWorkPoints) {
         pointCapMessage = `งานผ่านแล้ว แต่พักแต้มรายการนี้ไว้เพราะครบเพดานแต้มงาน ${workPointEconomyPolicy.workAwardsMonthlyCap} แต้มต่อเดือน หรือเพดานแต้มบวกมาตรฐาน ${workPointEconomyPolicy.standardEarnMonthlyCap} แต้ม ระบบไม่ตัดเป็นแต้มเศษ`;
       }
       const sourceType = workItem.kind === "mission" ? "mission" as const : "task" as const;
@@ -1556,7 +1704,7 @@ export async function POST(request: Request) {
 
       let newDeadlineEvent: typeof pointEvents.$inferInsert | null = null;
       let newDeadlinePointEntry: typeof pointLedger.$inferInsert | null = null;
-      if (submissionDate <= workItem.dueDate) {
+      if (awardsPoints && submissionDate <= workItem.dueDate) {
         const eventType = submissionDate < workItem.dueDate ? "early_finish" as const : "on_time_finish" as const;
         const rule = workPointPolicyRules.events[eventType];
         const eventId = `point-event-deadline-${workItem.id}`;
@@ -1588,9 +1736,11 @@ export async function POST(request: Request) {
         if (isUniqueConstraintError(error)) return Response.json({ error: "มีการตรวจงานหรือคำนวณเพดานแต้มของพนักงานคนนี้พร้อมกัน กรุณาโหลดข้อมูลล่าสุดแล้วลองใหม่" }, { status: 409 });
         throw error;
       }
-      [pointEntry] = await db.select().from(pointLedger).where(eq(pointLedger.id, pointId)).limit(1);
-      [deadlinePointEvent] = await db.select().from(pointEvents).where(eq(pointEvents.id, `point-event-deadline-${workItem.id}`)).limit(1);
-      [deadlinePointEntry] = await db.select().from(pointLedger).where(eq(pointLedger.id, `points-deadline-${workItem.id}`)).limit(1);
+      if (awardsPoints) {
+        pointEntry = (await db.select().from(pointLedger).where(eq(pointLedger.id, pointId)).limit(1))[0] ?? null;
+        deadlinePointEvent = (await db.select().from(pointEvents).where(eq(pointEvents.id, `point-event-deadline-${workItem.id}`)).limit(1))[0] ?? null;
+        deadlinePointEntry = (await db.select().from(pointLedger).where(eq(pointLedger.id, `points-deadline-${workItem.id}`)).limit(1))[0] ?? null;
+      }
       return Response.json({ workSubmission: reviewedSubmission, workItem: updatedWorkItem, pointEntry, deadlinePointEntry, deadlinePointEvent, pointCapMessage });
     }
 

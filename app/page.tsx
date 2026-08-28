@@ -51,6 +51,7 @@ type AppPermissions = {
   canManageAccounts: boolean;
   canManagePeople: boolean;
   canManageWork: boolean;
+  canAssignTeamWork: boolean;
   canReviewWork: boolean;
   canViewTeam: boolean;
   canViewTeamOverview: boolean;
@@ -103,6 +104,8 @@ type OfficePersonModel = {
 type PortfolioStatusFilter = "all" | "approved" | "submitted" | "revision" | "missing";
 
 type WorkDueFilter = "all" | "today" | "overdue" | "week" | "review" | "done";
+
+type EmployeeTaskScope = "assigned" | "created";
 
 type WorkSection = "tasks" | "projects" | "points" | "rewards";
 
@@ -591,6 +594,10 @@ function workStatusLabel(status: WorkItemRecord["status"]) {
   return { todo: "ต้องทำ", in_progress: "กำลังทำ", review: "รอตรวจ", done: "เสร็จแล้ว" }[status];
 }
 
+function workItemCreatorId(item: WorkItemRecord) {
+  return item.createdByEmployeeId ?? "";
+}
+
 function workSubmissionStatusLabel(status: WorkSubmissionRecord["status"]) {
   return { submitted: "รอตรวจหลักฐาน", approved: "อนุมัติแล้ว", revision: "ส่งกลับให้แก้ไข" }[status];
 }
@@ -734,7 +741,7 @@ export default function Home() {
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [employeePreview, setEmployeePreview] = useState<EmployeePreview | null>(null);
   const isEmployeePreview = Boolean(employeePreview?.readOnly);
-  const [permissions, setPermissions] = useState<AppPermissions>({ canManageAccounts: false, canManagePeople: false, canManageWork: false, canReviewWork: false, canViewTeam: false, canViewTeamOverview: false, canViewOwnGrowth: false, canViewOwnRewards: false });
+  const [permissions, setPermissions] = useState<AppPermissions>({ canManageAccounts: false, canManagePeople: false, canManageWork: false, canAssignTeamWork: false, canReviewWork: false, canViewTeam: false, canViewTeamOverview: false, canViewOwnGrowth: false, canViewOwnRewards: false });
   const [teamOverview, setTeamOverview] = useState<EmployeeTeamOverview>({ employees: [], evaluations: [], workItems: [] });
   const [launchReadiness, setLaunchReadiness] = useState<LaunchReadiness | null>(null);
   const [accessDenied, setAccessDenied] = useState<{ email: string; name: string; anonymous: boolean } | null>(null);
@@ -773,6 +780,7 @@ export default function Home() {
   const [workFilter, setWorkFilter] = useState<"all" | WorkItemRecord["kind"]>("all");
   const [workSearch, setWorkSearch] = useState("");
   const [workDueFilter, setWorkDueFilter] = useState<WorkDueFilter>("all");
+  const [employeeTaskScope, setEmployeeTaskScope] = useState<EmployeeTaskScope>("assigned");
   const [workSection, setWorkSection] = useState<WorkSection>("tasks");
   const [pointPanel, setPointPanel] = useState<PointPanel>("overview");
   const [workAssigneeFilter, setWorkAssigneeFilter] = useState("all");
@@ -828,7 +836,7 @@ export default function Home() {
         if (!response.ok) throw new Error(body.error ?? "โหลดข้อมูลไม่สำเร็จ");
         setCurrentUser(body.currentUser ?? null);
         setEmployeePreview(body.employeePreview ?? null);
-        setPermissions(body.permissions ?? { canManageAccounts: false, canManagePeople: false, canManageWork: false, canReviewWork: false, canViewTeam: false, canViewTeamOverview: false, canViewOwnGrowth: false, canViewOwnRewards: false });
+        setPermissions(body.permissions ?? { canManageAccounts: false, canManagePeople: false, canManageWork: false, canAssignTeamWork: false, canReviewWork: false, canViewTeam: false, canViewTeamOverview: false, canViewOwnGrowth: false, canViewOwnRewards: false });
         setTeamOverview(body.teamOverview ?? { employees: [], evaluations: [], workItems: [] });
         setLaunchReadiness(body.launchReadiness ?? null);
         setUserAccounts(body.userAccounts ?? []);
@@ -921,6 +929,7 @@ export default function Home() {
         setHrEmployee(null);
         setShowAddEmployee(false);
         setShowWorkForm(false);
+        setEditingWorkItem(null);
         setShowProjectForm(false);
         setSubmissionWorkItem(null);
         setRewardToRedeem(null);
@@ -944,7 +953,11 @@ export default function Home() {
     [period, teamOverview.evaluations],
   );
   const officeSourceEmployees = currentUser?.role === "employee" ? teamOverview.employees : employees;
-  const officeSourceWorkItems = currentUser?.role === "employee" ? teamOverview.workItems : workItems;
+  const officeSourceWorkItems = useMemo(
+    () => (currentUser?.role === "employee" ? teamOverview.workItems : workItems)
+      .filter((item) => !(item.createdByEmployeeId && item.points === 0)),
+    [currentUser, teamOverview.workItems, workItems],
+  );
   const powerEvaluationsByEmployee = currentUser?.role === "employee" ? teamEvaluationsByEmployee : evaluationsByEmployee;
 
   const filteredEmployees = useMemo(() => {
@@ -996,6 +1009,14 @@ export default function Home() {
   const skillGapCount = workforceInsights.filter(({ evaluation, role }) => evaluation && (evaluation.skillScore < 80 || role.skills.some((skill) => (evaluation.skillScores[skill.id] ?? 0) < skill.targetLevel))).length;
   const visibleWorkforce = workforceInsights.filter(({ employee }) => filteredEmployees.some((item) => item.id === employee.id));
   const employeesById = useMemo(() => new Map(employees.map((employee) => [employee.id, employee])), [employees]);
+  const safeWorkRoster = useMemo(() => {
+    const roster = new Map<string, EmployeeRecord>();
+    const source = currentUser?.role === "employee" ? [...teamOverview.employees, ...employees] : employees;
+    source.forEach((employee) => roster.set(employee.id, employee));
+    return [...roster.values()];
+  }, [currentUser?.role, employees, teamOverview.employees]);
+  const safeWorkRosterById = useMemo(() => new Map(safeWorkRoster.map((employee) => [employee.id, employee])), [safeWorkRoster]);
+  const activeSafeWorkRoster = safeWorkRoster.filter((employee) => employee.status === "active");
   const employeeProfilesById = useMemo(() => new Map(employeeProfiles.map((profile) => [profile.employeeId, profile])), [employeeProfiles]);
   const profileEmployee = employeesById.get(profileEmployeeId) ?? employees[0] ?? null;
   const profileRecord = profileEmployee ? employeeProfilesById.get(profileEmployee.id) ?? null : null;
@@ -1100,10 +1121,21 @@ export default function Home() {
     const strength = evaluation ? role.skills.slice().sort((a, b) => (evaluation.skillScores[b.id] ?? 0) - (evaluation.skillScores[a.id] ?? 0))[0]?.name ?? role.shortName : role.shortName;
     return { employee, role, evaluation, openWork, strength };
   }).sort((a, b) => a.openWork - b.openWork || (b.evaluation?.skillScore ?? 0) - (a.evaluation?.skillScore ?? 0)).filter((candidate, index, all) => all.findIndex((item) => item.role.departmentId === candidate.role.departmentId) === index).slice(0, 4);
-  const todayWorkItems = workItems.filter((item) => item.status !== "done" && item.dueDate === todayDate);
-  const overdueWorkItems = workItems.filter((item) => item.status !== "done" && item.dueDate < todayDate);
-  const dueThisWeekWorkItems = workItems.filter((item) => item.status !== "done" && item.dueDate >= todayDate && item.dueDate <= weekEndDate);
-  const reviewQueueWorkItems = workItems.filter((item) => item.status === "review");
+  const employeeAssignedWorkItems = useMemo(() => currentUser?.role === "employee" && currentUser.employeeId
+    ? workItems.filter((item) => item.assigneeEmployeeId === currentUser.employeeId)
+    : [], [currentUser, workItems]);
+  const employeeCreatedWorkItems = useMemo(() => currentUser?.role === "employee" && currentUser.employeeId
+    ? workItems.filter((item) => workItemCreatorId(item) === currentUser.employeeId)
+    : [], [currentUser, workItems]);
+  const workListScopeItems = useMemo(() => currentUser?.role === "employee"
+    ? employeeTaskScope === "created" ? employeeCreatedWorkItems : employeeAssignedWorkItems
+    : workItems, [currentUser, employeeAssignedWorkItems, employeeCreatedWorkItems, employeeTaskScope, workItems]);
+  const todayWorkItems = workListScopeItems.filter((item) => item.status !== "done" && item.dueDate === todayDate);
+  const overdueWorkItems = workListScopeItems.filter((item) => item.status !== "done" && item.dueDate < todayDate);
+  const dueThisWeekWorkItems = workListScopeItems.filter((item) => item.status !== "done" && item.dueDate >= todayDate && item.dueDate <= weekEndDate);
+  const reviewQueueWorkItems = workListScopeItems.filter((item) => item.status === "review");
+  const employeeAssignedTodayCount = employeeAssignedWorkItems.filter((item) => item.status !== "done" && item.dueDate === todayDate).length;
+  const employeeAssignedReviewCount = employeeAssignedWorkItems.filter((item) => item.status === "review").length;
   const notificationReadIds = useMemo(() => new Set(notificationReads.map((item) => item.notificationId)), [notificationReads]);
   const notifications = useMemo<AppNotification[]>(() => {
     const items: AppNotification[] = [];
@@ -1240,29 +1272,29 @@ export default function Home() {
   const visibleWorkItems = useMemo(() => {
     const query = workSearch.trim().toLocaleLowerCase("th");
     const priorityRank: Record<WorkItemRecord["priority"], number> = { urgent: 0, high: 1, medium: 2, low: 3 };
-    return workItems.filter((item) => {
+    return workListScopeItems.filter((item) => {
       const project = projectsById.get(item.projectId);
-      const assignee = employeesById.get(item.assigneeEmployeeId);
+      const assignee = safeWorkRosterById.get(item.assigneeEmployeeId);
+      const creator = safeWorkRosterById.get(workItemCreatorId(item));
       const departmentMatches = activeDepartment === "all" || project?.departmentId === activeDepartment;
       const kindMatches = workFilter === "all" || item.kind === workFilter;
-      const assigneeMatches = workAssigneeFilter === "all" || item.assigneeEmployeeId === workAssigneeFilter;
-      const employeePortalMatches = currentUser?.role !== "employee" || item.assigneeEmployeeId === currentUser.employeeId;
+      const assigneeMatches = currentUser?.role === "employee" || workAssigneeFilter === "all" || item.assigneeEmployeeId === workAssigneeFilter;
       const dueMatches = (workDueFilter === "all" && item.status !== "done")
         || (workDueFilter === "today" && item.status !== "done" && item.dueDate === todayDate)
         || (workDueFilter === "overdue" && item.status !== "done" && item.dueDate < todayDate)
         || (workDueFilter === "week" && item.status !== "done" && item.dueDate >= todayDate && item.dueDate <= weekEndDate)
         || (workDueFilter === "review" && item.status === "review")
         || (workDueFilter === "done" && item.status === "done");
-      const queryMatches = !query || `${item.title} ${item.description} ${project?.name ?? ""} ${assignee?.name ?? ""}`.toLocaleLowerCase("th").includes(query);
-      return employeePortalMatches && departmentMatches && kindMatches && assigneeMatches && dueMatches && queryMatches;
+      const queryMatches = !query || `${item.title} ${item.description} ${project?.name ?? ""} ${assignee?.name ?? ""} ${creator?.name ?? ""}`.toLocaleLowerCase("th").includes(query);
+      return departmentMatches && kindMatches && assigneeMatches && dueMatches && queryMatches;
     }).sort((a, b) => {
       if (a.status === "done" && b.status !== "done") return 1;
       if (a.status !== "done" && b.status === "done") return -1;
       const dueOrder = a.dueDate.localeCompare(b.dueDate);
       return dueOrder || priorityRank[a.priority] - priorityRank[b.priority];
     });
-  }, [activeDepartment, currentUser, employeesById, projectsById, todayDate, weekEndDate, workAssigneeFilter, workDueFilter, workFilter, workItems, workSearch]);
-  const workCompletion = workItems.length ? workItems.filter((item) => item.status === "done").length / workItems.length * 100 : 0;
+  }, [activeDepartment, currentUser?.role, projectsById, safeWorkRosterById, todayDate, weekEndDate, workAssigneeFilter, workDueFilter, workFilter, workListScopeItems, workSearch]);
+  const workCompletion = workListScopeItems.length ? workListScopeItems.filter((item) => item.status === "done").length / workListScopeItems.length * 100 : 0;
   const workSubmissionsByItem = useMemo(() => {
     const grouped = new Map<string, WorkSubmissionRecord[]>();
     workSubmissions.slice().sort((a, b) => b.submittedAt.localeCompare(a.submittedAt)).forEach((submission) => {
@@ -1328,7 +1360,7 @@ export default function Home() {
   const hasPortfolioFilters = Boolean(portfolioSearch.trim() || activeDepartment !== "all" || portfolioProjectId !== "all" || portfolioStatus !== "all" || (currentUser?.role !== "employee" && portfolioEmployeeId !== "all"));
   const visiblePortfolioAssetCount = visiblePortfolioEntries.reduce((total, entry) => total + entry.submissions.reduce((count, submission) => count + Number(Boolean(submission.linkUrl)) + Number(Boolean(submission.storageKey)), 0), 0);
   const activeWorkSubmissions = submissionWorkItem ? workSubmissionsByItem.get(submissionWorkItem.id) ?? [] : [];
-  const submissionAssignee = submissionWorkItem ? employeesById.get(submissionWorkItem.assigneeEmployeeId) ?? null : null;
+  const submissionAssignee = submissionWorkItem ? safeWorkRosterById.get(submissionWorkItem.assigneeEmployeeId) ?? null : null;
   const activeProofGuide = submissionAssignee ? roleProofGuides[submissionAssignee.roleId] ?? defaultProofGuide : defaultProofGuide;
   const canSubmitActiveWorkProof = Boolean(!isEmployeePreview && currentUser?.role === "employee" && currentUser.employeeId && currentUser.employeeId === submissionWorkItem?.assigneeEmployeeId);
   const totalPoints = [...pointBalances.values()].reduce((sum, points) => sum + points, 0);
@@ -1437,11 +1469,16 @@ export default function Home() {
       setWorkSection("rewards");
       return;
     }
+    const notificationWorkItem = notification.workItemId ? workItems.find((item) => item.id === notification.workItemId) : null;
+    if (currentUser?.role === "employee" && currentUser.employeeId && notificationWorkItem) {
+      const isOutgoingTeamTask = workItemCreatorId(notificationWorkItem) === currentUser.employeeId && notificationWorkItem.assigneeEmployeeId !== currentUser.employeeId;
+      setEmployeeTaskScope(isOutgoingTeamTask ? "created" : "assigned");
+    }
     setView("work");
     setWorkSection("tasks");
     setWorkDueFilter(notification.dueFilter ?? "all");
     setWorkFilter(notification.kind === "quest" ? "mission" : "all");
-    setWorkSearch(notification.workItemId ? workItems.find((item) => item.id === notification.workItemId)?.title ?? "" : "");
+    setWorkSearch(notificationWorkItem?.title ?? "");
   };
 
   const comparePowerProfile = (employeeId: string) => {
@@ -1621,6 +1658,11 @@ export default function Home() {
   };
 
   const openWorkItemForm = (item?: WorkItemRecord) => {
+    const employeeCoordinationCreate = currentUser?.role === "employee" && !item;
+    if (employeeCoordinationCreate && (!permissions.canAssignTeamWork || guardEmployeePreviewMutation("สร้างงานประสานทีม"))) return;
+    const defaultEmployeeRecipient = currentUser?.employeeId && activeSafeWorkRoster.some((employee) => employee.id === currentUser.employeeId)
+      ? currentUser.employeeId
+      : activeSafeWorkRoster[0]?.id ?? "";
     setEditingWorkItem(item ?? null);
     setWorkForm(item ? {
       projectId: item.projectId,
@@ -1634,32 +1676,45 @@ export default function Home() {
       points: item.points,
       dueDate: item.dueDate,
     } : {
-      projectId: projects[0]?.id ?? "",
-      assigneeEmployeeId: employees[0]?.id ?? "",
-      kind: "task",
+      projectId: employeeCoordinationCreate ? "" : projects[0]?.id ?? "",
+      assigneeEmployeeId: employeeCoordinationCreate ? defaultEmployeeRecipient : employees[0]?.id ?? "",
+      kind: employeeCoordinationCreate ? "request" : "task",
       title: "",
       description: "",
       priority: "medium",
       status: "todo",
       progress: 0,
-      points: workPointValue("task", "medium", activePointPolicyRules),
-      dueDate: "2026-09-05",
+      points: employeeCoordinationCreate ? 0 : workPointValue("task", "medium", activePointPolicyRules),
+      dueDate: addIsoDays(todayDate, 7),
     });
     setShowWorkForm(true);
   };
 
   const saveWorkItem = async (event: React.FormEvent) => {
     event.preventDefault();
+    const employeeCoordinationCreate = currentUser?.role === "employee" && !editingWorkItem;
+    if (employeeCoordinationCreate && (!permissions.canAssignTeamWork || guardEmployeePreviewMutation("สร้างงานประสานทีม"))) return;
     setIsSaving(true);
     try {
-      const response = await fetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "saveWorkItem", workItemId: editingWorkItem?.id, ...workForm }) });
-      const body = await response.json() as { workItem?: WorkItemRecord; pointEntry?: PointLedgerRecord | null; error?: string };
+      const requestBody = employeeCoordinationCreate
+        ? { action: "saveWorkItem", projectId: workForm.projectId, assigneeEmployeeId: workForm.assigneeEmployeeId, kind: "request", title: workForm.title, description: workForm.description, priority: workForm.priority, status: "todo", progress: 0, points: 0, dueDate: workForm.dueDate }
+        : { action: "saveWorkItem", workItemId: editingWorkItem?.id, ...workForm };
+      const response = await fetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(requestBody) });
+      const body = await response.json() as { workItem?: WorkItemRecord; project?: ProjectRecord; pointEntry?: PointLedgerRecord | null; error?: string };
       if (!response.ok || !body.workItem) throw new Error(body.error ?? "บันทึกงานไม่สำเร็จ");
       setWorkItems((items) => [...items.filter((item) => item.id !== body.workItem?.id), body.workItem as WorkItemRecord]);
+      if (body.project) setProjects((items) => [...items.filter((project) => project.id !== body.project?.id), body.project as ProjectRecord]);
       if (body.pointEntry) setPointLedger((items) => [...items.filter((item) => item.id !== body.pointEntry?.id), body.pointEntry as PointLedgerRecord]);
       setShowWorkForm(false);
       setEditingWorkItem(null);
-      showToast(body.pointEntry ? `ทำภารกิจสำเร็จ รับ ${body.pointEntry.points} แต้ม` : "บันทึกงานและความคืบหน้าแล้ว");
+      if (employeeCoordinationCreate) {
+        const recipient = safeWorkRosterById.get(body.workItem.assigneeEmployeeId);
+        setEmployeeTaskScope("created");
+        setWorkDueFilter("all");
+        showToast(`ส่งงานประสานให้ ${recipient?.name ?? "ผู้รับงาน"} แล้ว · งานนี้ไม่มีแต้ม`);
+      } else {
+        showToast(body.pointEntry ? `ทำภารกิจสำเร็จ รับ ${body.pointEntry.points} แต้ม` : "บันทึกงานและความคืบหน้าแล้ว");
+      }
     } catch (error) {
       showToast(error instanceof Error ? error.message : "บันทึกงานไม่สำเร็จ");
     } finally {
@@ -2280,6 +2335,7 @@ export default function Home() {
 
   const isAdmin = currentUser?.role === "admin";
   const isEmployeeUser = currentUser?.role === "employee";
+  const isEmployeeCoordinationCreate = Boolean(isEmployeeUser && !editingWorkItem);
   const assigningUserAccounts = userAccounts.filter((account) => account.role === "admin" || account.role === "manager");
   const workingUserAccounts = userAccounts.filter((account) => account.role === "employee");
   const activeAssigningUserCount = assigningUserAccounts.filter((account) => account.status === "active").length;
@@ -2290,10 +2346,10 @@ export default function Home() {
     ? "ดูแลทั้งองค์กร จัดการคน กฎ งาน การประเมิน แต้ม เงินเดือน และบัญชีผู้ใช้"
     : userAccountForm.role === "manager"
       ? "มอบหมายงาน ติดตามทีม ตรวจผลงาน และประเมินลูกทีม โดยไม่เห็นเงินเดือนหรือเอกสารส่วนตัว"
-      : "รับงาน อัปเดตความคืบหน้า ส่งหลักฐาน และดูข้อมูลส่วนตัวของตนเองเท่านั้น";
+      : "รับงาน อัปเดตความคืบหน้า ส่งหลักฐาน และสร้างงานประสาน 0 แต้มให้ตนเองหรือเพื่อนร่วมทีม โดยไม่มีสิทธิ์ตรวจอนุมัติ";
   const accessAccountGroups = [
     { id: "assigner", title: "คนสั่งงาน", description: "HR / Admin และหัวหน้าทีม — วางแผน มอบหมาย ติดตาม และตรวจผลงาน", accounts: assigningUserAccounts, activeCount: activeAssigningUserCount },
-    { id: "worker", title: "คนทำงาน", description: "พนักงาน — รับงาน ลงมือทำ ส่งหลักฐาน และติดตามการเติบโตของตัวเอง", accounts: workingUserAccounts, activeCount: activeWorkingUserCount },
+    { id: "worker", title: "คนทำงาน", description: "พนักงาน — รับงาน ส่งหลักฐาน และสร้างงานประสาน 0 แต้ม โดยหัวหน้าหรือ HR เป็นผู้ตรวจ", accounts: workingUserAccounts, activeCount: activeWorkingUserCount },
   ] as const;
   const launchReadinessSteps = launchReadiness ? [
     {
@@ -2339,7 +2395,7 @@ export default function Home() {
         ? "ยังไม่ควรเปิดให้พนักงานใช้งานจริง"
         : "อยู่ระหว่างเตรียมความพร้อมก่อนเปิดใช้";
   const currentUserRoleLabel = currentUser?.role === "admin" ? "HR / Admin" : currentUser?.role === "manager" ? "หัวหน้าทีม" : "พนักงาน";
-  const currentUserEmployee = currentUser?.employeeId ? employeesById.get(currentUser.employeeId) ?? null : null;
+  const currentUserEmployee = currentUser?.employeeId ? safeWorkRosterById.get(currentUser.employeeId) ?? null : null;
   const activeRewardEmployeeId = isAdmin ? rewardEmployeeId : currentUser?.employeeId ?? "";
   const activeRewardBalance = pointBalances.get(activeRewardEmployeeId) ?? 0;
   const activeRewardRedemptions = rewardRedemptions
@@ -2477,7 +2533,7 @@ export default function Home() {
         <nav aria-label="เมนูหลัก">
           {isEmployeeUser ? <>
             <span className="nav-section-label">พื้นที่ของฉัน</span>
-            <button className={view === "work" && workSection === "tasks" ? "active" : ""} onClick={() => { setActiveDepartment("all"); setWorkSection("tasks"); setWorkAssigneeFilter(currentUser?.employeeId ?? "all"); setWorkDueFilter("all"); setWorkSearch(""); setView("work"); }}><span aria-hidden="true">✓</span><b>งานของฉัน</b><em>{workItems.filter((item) => item.status !== "done").length}</em></button>
+            <button className={view === "work" && workSection === "tasks" ? "active" : ""} onClick={() => { setActiveDepartment("all"); setEmployeeTaskScope("assigned"); setWorkSection("tasks"); setWorkAssigneeFilter(currentUser?.employeeId ?? "all"); setWorkDueFilter("all"); setWorkSearch(""); setView("work"); }}><span aria-hidden="true">✓</span><b>งานของฉัน</b><em>{employeeAssignedWorkItems.filter((item) => item.status !== "done").length}</em></button>
             <button className={view === "portfolio" ? "active" : ""} onClick={() => { setPortfolioEmployeeId(currentUser?.employeeId ?? "all"); setView("portfolio"); }}><span aria-hidden="true">◇</span><b>แฟ้มผลงานของฉัน</b></button>
             <span className="nav-section-label">ทีมของฉัน</span>
             <button className={view === "office" ? "active" : ""} onClick={() => setView("office")}><span aria-hidden="true">⌂</span><b>สำนักงานของทีม</b><em>{officePressureCount}</em></button>
@@ -2604,8 +2660,8 @@ export default function Home() {
               <div><p className="eyebrow">MY WORKSPACE</p><h2>สวัสดี {currentUserEmployee.name}</h2><p>{getRole(currentUserEmployee.roleId).name} · วันนี้จัดการงานและการเติบโตของคุณได้จากหน้าจอเดียว</p></div>
             </div>
             <div className="employee-welcome-stats">
-              <button onClick={() => { setWorkDueFilter("today"); setWorkSection("tasks"); }}><span>✓</span><p><small>งานวันนี้</small><strong>{todayWorkItems.length}</strong></p></button>
-              <button onClick={() => { setWorkDueFilter("review"); setWorkSection("tasks"); }}><span>⌕</span><p><small>รอตรวจ</small><strong>{reviewQueueWorkItems.length}</strong></p></button>
+              <button onClick={() => { setEmployeeTaskScope("assigned"); setWorkDueFilter("today"); setWorkSection("tasks"); }}><span>✓</span><p><small>งานวันนี้</small><strong>{employeeAssignedTodayCount}</strong></p></button>
+              <button onClick={() => { setEmployeeTaskScope("assigned"); setWorkDueFilter("review"); setWorkSection("tasks"); }}><span>⌕</span><p><small>รอตรวจ</small><strong>{employeeAssignedReviewCount}</strong></p></button>
               <button onClick={() => setView("peopleOps")}><span>↗</span><p><small>พร้อมเติบโต</small><strong>{promotionReadiness}%</strong></p></button>
               <button onClick={() => { setPointPanel("overview"); setWorkSection("points"); }}><span>★</span><p><small>แต้มคงเหลือ</small><strong>{formatMoney(pointBalances.get(currentUserEmployee.id) ?? 0)}</strong></p></button>
             </div>
@@ -3390,12 +3446,19 @@ export default function Home() {
               <footer className="launch-readiness-note"><span aria-hidden="true">i</span><p><strong>ศูนย์นี้ไม่ลบหรือแก้ข้อมูลให้อัตโนมัติ</strong> HR ต้องตรวจข้อมูลจริง ทบทวนกฎหมาย ยืนยันคำเชิญเว็บไซต์ และทดสอบกับพนักงานกลุ่มเล็กก่อนเปิดใช้ทั้งองค์กร</p></footer>
             </section>
 
-            <div className="access-summary-grid">
-              <article className="access-hero-card"><span>◎</span><div><p className="eyebrow">CLEAR WORK ROLES</p><h2>แยกคนสั่งงานกับคนทำงานให้ชัด</h2><p>คนสั่งงานใช้เครื่องมือวางแผน มอบหมาย และตรวจผลงาน ส่วนคนทำงานเห็นเฉพาะงานและข้อมูลส่วนตัวที่จำเป็นต่อการทำงาน</p></div></article>
-              <MetricCard label="คนสั่งงาน" value={`${assigningUserAccounts.length} คน`} copy={`กำลังใช้งาน ${activeAssigningUserCount} คน · HR และหัวหน้าทีม`} tone="positive" icon="→" />
-              <MetricCard label="คนทำงาน" value={`${workingUserAccounts.length} คน`} copy={`กำลังใช้งาน ${activeWorkingUserCount} คน · พนักงาน`} icon="✓" />
-              <MetricCard label="บัญชีใช้งาน" value={`${userAccounts.filter((account) => account.status === "active").length} บัญชี`} copy={`${userAccounts.filter((account) => account.status === "inactive").length} บัญชีพักสิทธิ์`} tone="positive" icon="◎" />
-            </div>
+            <section className="access-operating-model" aria-labelledby="access-operating-title">
+              <header>
+                <div><p className="eyebrow">ACCESS WORKFLOW</p><h2 id="access-operating-title">สิทธิ์ 3 ระดับในขั้นตอนทำงานเดียว</h2><p>ชื่อ “คนสั่งงาน” และ “คนทำงาน” ช่วยอธิบายวิธีใช้ระบบ ส่วนสิทธิ์จริงยังคงเป็น admin, manager และ employee</p></div>
+                <div className="access-model-counts" aria-label="สรุปบัญชีตามกลุ่ม"><span><strong>{activeAssigningUserCount}</strong><small>คนสั่งงานใช้งาน</small></span><span><strong>{activeWorkingUserCount}</strong><small>คนทำงานใช้งาน</small></span><span><strong>{userAccounts.filter((account) => account.status === "inactive").length}</strong><small>บัญชีพักสิทธิ์</small></span></div>
+              </header>
+              <ol className="access-workflow-list">
+                <li><span>1</span><div><strong>วางแผนและมอบหมาย</strong><small>HR / Admin หรือหัวหน้าทีมสร้างงานหลัก</small></div><b>admin · manager</b></li>
+                <li><span>2</span><div><strong>รับงานและประสานทีม</strong><small>พนักงานรับงาน หรือสร้างรีเควสต์ 0 แต้มให้ทีม</small></div><b>employee</b></li>
+                <li><span>3</span><div><strong>ลงมือทำและส่งหลักฐาน</strong><small>ผู้รับงานอัปเดตความคืบหน้าและส่งผลงาน</small></div><b>employee</b></li>
+                <li><span>4</span><div><strong>ตรวจและอนุมัติ</strong><small>แยกผู้ทำงานออกจากผู้ตรวจเพื่อความเป็นธรรม</small></div><b>admin · manager</b></li>
+              </ol>
+              <p className="access-review-boundary" role="note"><span aria-hidden="true">i</span><strong>พนักงานสร้างงานประสานได้ แต่ตรวจอนุมัติเองไม่ได้</strong> งานที่พนักงานสร้างถูกกำหนดเป็นรีเควสต์ 0 แต้ม ผู้รับงานเป็นผู้อัปเดต และเฉพาะหัวหน้าทีมหรือ HR เท่านั้นที่ตรวจผลงาน</p>
+            </section>
 
             <div className="access-main-grid">
               <form className="access-form-card" id="user-access-form" onSubmit={saveUserAccount}>
@@ -3403,28 +3466,33 @@ export default function Home() {
                 <div className="form-grid access-form-grid">
                   <label className="wide"><span>ชื่อที่แสดง</span><input required value={userAccountForm.displayName} onChange={(event) => setUserAccountForm((form) => ({ ...form, displayName: event.target.value }))} placeholder="ชื่อ–นามสกุล" /></label>
                   <label className="wide"><span>อีเมลที่ใช้เข้าสู่ระบบ</span><input required type="email" value={userAccountForm.email} onChange={(event) => setUserAccountForm((form) => ({ ...form, email: event.target.value }))} placeholder="name@company.com" /></label>
-                  <fieldset className="access-persona-selector wide"><legend>เลือกวิธีใช้งานหลัก</legend><label className={selectedUserKind === "assigner" ? "selected assigner" : "assigner"}><input type="radio" name="access-user-kind" checked={selectedUserKind === "assigner"} onChange={() => setUserAccountForm((form) => ({ ...form, role: form.role === "admin" ? "admin" : "manager" }))} /><span>→</span><div><strong>คนสั่งงาน</strong><small>HR / Admin หรือหัวหน้าทีม</small></div></label><label className={selectedUserKind === "worker" ? "selected worker" : "worker"}><input type="radio" name="access-user-kind" checked={selectedUserKind === "worker"} onChange={() => setUserAccountForm((form) => ({ ...form, role: "employee" }))} /><span>✓</span><div><strong>คนทำงาน</strong><small>พนักงานผู้รับงานและส่งผลงาน</small></div></label><p>กลุ่มนี้คือวิธีใช้ระบบ ไม่ใช่ชื่อตำแหน่งงาน</p></fieldset>
-                  <label><span>ประเภทสิทธิ์</span><select value={userAccountForm.role} onChange={(event) => setUserAccountForm((form) => ({ ...form, role: event.target.value as UserAccountRecord["role"] }))}><optgroup label="คนสั่งงาน"><option value="manager">หัวหน้าทีม</option><option value="admin">HR / Admin</option></optgroup><optgroup label="คนทำงาน"><option value="employee">พนักงาน</option></optgroup></select></label>
-                  <label><span>สถานะ</span><select value={userAccountForm.status} onChange={(event) => setUserAccountForm((form) => ({ ...form, status: event.target.value as UserAccountRecord["status"] }))}><option value="active">ใช้งาน</option><option value="inactive">พักสิทธิ์</option></select></label>
-                  <div className={`access-role-choice wide ${selectedUserKind}`} aria-live="polite"><span>{selectedUserKind === "assigner" ? "→" : "✓"}</span><div><small>ประเภทผู้ใช้</small><strong>{selectedUserKindLabel} · {userAccountForm.role === "admin" ? "HR / Admin" : userAccountForm.role === "manager" ? "หัวหน้าทีม" : "พนักงาน"}</strong><p>{selectedUserRoleGuide}</p></div></div>
+                  <fieldset className="access-exact-role-selector wide"><legend>เลือกบทบาทและขอบเขตสิทธิ์</legend>{([
+                    { role: "admin", label: "HR / Admin", group: "คนสั่งงาน", scope: "ทั้งองค์กร", icon: "HR" },
+                    { role: "manager", label: "หัวหน้าทีม", group: "คนสั่งงาน", scope: "เฉพาะทีม", icon: "ทีม" },
+                    { role: "employee", label: "พนักงาน", group: "คนทำงาน", scope: "ข้อมูลตนเอง", icon: "คน" },
+                  ] as const).map((option) => <label key={option.role} className={`${option.role} ${userAccountForm.role === option.role ? "selected" : ""}`}><input type="radio" name="access-role" value={option.role} checked={userAccountForm.role === option.role} onChange={() => setUserAccountForm((form) => ({ ...form, role: option.role }))} /><span aria-hidden="true">{option.icon}</span><div><strong>{option.label}</strong><small>{option.group} · {option.scope}</small></div><code>{option.role}</code></label>)}<p>เลือกจากข้อมูลที่ต้องเห็นและงานที่ต้องทำ ระบบยังคงใช้บทบาทจริง admin, manager และ employee</p></fieldset>
+                  <label className="wide"><span>สถานะบัญชี</span><select value={userAccountForm.status} onChange={(event) => setUserAccountForm((form) => ({ ...form, status: event.target.value as UserAccountRecord["status"] }))}><option value="active">ใช้งาน</option><option value="inactive">พักสิทธิ์</option></select></label>
+                  <div className={`access-selected-role-note wide ${selectedUserKind}`} aria-live="polite"><strong>{selectedUserKindLabel} · {userAccountForm.role === "admin" ? "HR / Admin" : userAccountForm.role === "manager" ? "หัวหน้าทีม" : "พนักงาน"}</strong><span>{selectedUserRoleGuide}</span></div>
                   {userAccountForm.role !== "admin" && <label className="wide"><span>ผูกกับโปรไฟล์พนักงาน</span><select required value={userAccountForm.employeeId} onChange={(event) => setUserAccountForm((form) => ({ ...form, employeeId: event.target.value }))}><option value="">เลือกพนักงาน</option>{employees.filter((employee) => employee.status === "active" && (!userAccounts.some((account) => account.employeeId === employee.id && account.id !== userAccountForm.accountId))).map((employee) => <option key={employee.id} value={employee.id}>{employee.name} · {getRole(employee.roleId).name}</option>)}</select></label>}
                   {userAccountForm.role === "manager" && <label className="wide"><span>ทีมที่ดูแล</span><select value={userAccountForm.departmentId} onChange={(event) => setUserAccountForm((form) => ({ ...form, departmentId: event.target.value }))}><option value="">ใช้แผนกตามโปรไฟล์พนักงาน</option>{Array.from(new Map(roles.map((role) => [role.departmentId, role.department])).entries()).map(([departmentId, department]) => <option key={departmentId} value={departmentId}>{department}</option>)}</select></label>}
                 </div>
                 <div className="access-form-actions">{userAccountForm.accountId && <button type="button" onClick={() => setUserAccountForm({ accountId: "", email: "", displayName: "", role: "employee", employeeId: "", departmentId: "", status: "active" })}>ยกเลิกการแก้ไข</button>}<button className="primary" disabled={isSaving}>{isSaving ? "กำลังบันทึก..." : userAccountForm.accountId ? "บันทึกการแก้ไข" : "เพิ่มผู้ใช้งาน"}</button></div>
               </form>
 
-              <aside className="access-rights-card">
-                <div className="access-card-heading"><div><p className="eyebrow">ROLE GUIDE</p><h2>ใครสั่งงาน ใครทำงาน</h2><p>ชื่อกลุ่มช่วยให้เลือกสิทธิ์ถูก โดยระบบยังควบคุมรายละเอียดตามบทบาทด้านล่าง</p></div></div>
-                <section className="access-rights-group assigner" aria-labelledby="assigner-rights-title">
-                  <header><span>→</span><div><strong id="assigner-rights-title">คนสั่งงาน</strong><small>สร้างงาน ติดตาม และตรวจผล</small></div></header>
-                  <article className="admin"><span>HR</span><div><strong>HR / Admin</strong><p>จัดการทั้งองค์กร: พนักงาน เอกสาร เงินเดือน กฎ การประเมิน งาน แต้ม รางวัล และบัญชีผู้ใช้</p></div></article>
-                  <article className="manager"><span>ทีม</span><div><strong>หัวหน้าทีม</strong><p>มอบหมายงาน ติดตามโปรเจกต์ ตรวจผลงาน และประเมินลูกทีม โดยไม่เห็นเงินเดือนหรือเอกสารส่วนตัว</p></div></article>
-                </section>
-                <section className="access-rights-group worker" aria-labelledby="worker-rights-title">
-                  <header><span>✓</span><div><strong id="worker-rights-title">คนทำงาน</strong><small>รับงาน ลงมือทำ และส่งหลักฐาน</small></div></header>
-                  <article className="employee"><span>คน</span><div><strong>พนักงาน</strong><p>ดูงานของตนเอง อัปเดตความคืบหน้า ส่งหลักฐาน ดูแฟ้มผลงาน ค่าพลัง การเติบโต เงินเดือน แต้ม และรางวัลของตนเอง</p></div></article>
-                </section>
-                <div className="access-invite-note"><span>i</span><p><strong>ขั้นสุดท้ายก่อนใช้งานจริง</strong> หลังเพิ่มบัญชีในหน้านี้ ให้เจ้าของเว็บไซต์เชิญอีเมลเดียวกันเข้าถึงเว็บไซต์ด้วย เพื่อให้พนักงานเปิดระบบได้</p></div>
+              <aside className="access-role-matrix-card" aria-labelledby="access-role-matrix-title">
+                <div className="access-card-heading"><div><p className="eyebrow">ROLE COMPARISON</p><h2 id="access-role-matrix-title">เทียบสิทธิ์ตามบทบาทจริง</h2><p>เลือกบทบาทตามขอบเขตข้อมูลและหน้าที่ ไม่ใช่ตามชื่อตำแหน่งงานอย่างเดียว</p></div></div>
+                <div className="access-role-table-wrap" tabIndex={0} aria-label="เลื่อนเพื่อดูตารางสิทธิ์ทั้งหมด">
+                  <table className="access-role-table">
+                    <caption className="sr-only">ตารางเปรียบเทียบสิทธิ์ admin manager และ employee</caption>
+                    <thead><tr><th scope="col">บทบาท</th><th scope="col">กลุ่ม</th><th scope="col">ขอบเขตหลัก</th></tr></thead>
+                    <tbody>
+                      <tr><th scope="row"><strong>HR / Admin</strong><code>admin</code></th><td><span className="assigner">คนสั่งงาน</span></td><td>จัดการทั้งองค์กร ข้อมูล HR บัญชี งาน และตรวจอนุมัติ</td></tr>
+                      <tr><th scope="row"><strong>หัวหน้าทีม</strong><code>manager</code></th><td><span className="assigner">คนสั่งงาน</span></td><td>มอบหมายและตรวจงานเฉพาะทีม โดยไม่เห็นเงินเดือนหรือเอกสารส่วนตัว</td></tr>
+                      <tr><th scope="row"><strong>พนักงาน</strong><code>employee</code></th><td><span className="worker">คนทำงาน</span></td><td>ดูข้อมูลตนเอง รับ–ส่งงาน และสร้างงานประสาน 0 แต้ม โดยไม่มีสิทธิ์ตรวจ</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div className="access-invite-note"><span>i</span><p><strong>ขั้นสุดท้ายก่อนใช้งานจริง</strong> หลังเพิ่มบัญชี ให้เจ้าของเว็บไซต์เชิญอีเมลเดียวกันเข้าถึงเว็บไซต์ แล้วทดสอบการเข้าสู่ระบบด้วยบัญชีจริง</p></div>
               </aside>
             </div>
 
@@ -3537,7 +3605,7 @@ export default function Home() {
           <section className="mission-layout">
             <nav className="work-section-tabs" aria-label="เลือกส่วนจัดการงาน">
               {([
-                { id: "tasks", icon: "✓", label: "รายการงาน", copy: "งานที่ต้องทำ", value: workItems.filter((item) => item.status !== "done").length },
+                { id: "tasks", icon: "✓", label: "รายการงาน", copy: "งานที่ต้องทำ", value: (isEmployeeUser ? employeeAssignedWorkItems : workItems).filter((item) => item.status !== "done").length },
                 { id: "projects", icon: "◇", label: "โปรเจกต์", copy: "ติดตามภาพรวม", value: projects.length },
                 { id: "points", icon: "★", label: isEmployeeUser ? "แต้มของฉัน" : "จัดการแต้ม", copy: isEmployeeUser ? "ยอด กฎ ประวัติ" : "รอบ กฎ ประวัติ", value: totalPoints },
                 { id: "rewards", icon: "♢", label: isEmployeeUser ? "ร้านรางวัล" : "รางวัล", copy: "ใช้แต้มแลกของ", value: rewards.filter((reward) => reward.isActive).length },
@@ -3553,16 +3621,22 @@ export default function Home() {
             {workSection === "tasks" && <section className="simple-todo-card" aria-labelledby="simple-todo-title">
               <div className="simple-todo-heading">
                 <div><p className="eyebrow">งานของวันนี้</p><h2 id="simple-todo-title">{isEmployeeUser ? "ฉันต้องทำอะไรต่อ?" : "ทีมต้องทำอะไรต่อ?"}</h2><p>รายการเดียวจบ เรียงงานเร่งด่วนและกำหนดส่งให้แล้ว</p></div>
-                {permissions.canManageWork && <div className="simple-todo-create"><button className="secondary-button" onClick={() => setShowProjectForm(true)}>สร้างโปรเจกต์</button><button className="primary-button" onClick={() => openWorkItemForm()}><span>＋</span> เพิ่มงาน</button></div>}
+                {(permissions.canManageWork || (isEmployeeUser && permissions.canAssignTeamWork && !isEmployeePreview)) && <div className="simple-todo-create">{permissions.canManageWork && <button type="button" className="secondary-button" onClick={() => setShowProjectForm(true)}>สร้างโปรเจกต์</button>}<button type="button" className="primary-button" onClick={() => openWorkItemForm()}><span aria-hidden="true">＋</span> {isEmployeeUser ? "สร้างงานประสาน" : "เพิ่มงาน"}</button></div>}
               </div>
+
+              {isEmployeeUser && <div className="employee-task-scope" aria-label="เลือกขอบเขตรายการงาน">
+                <button type="button" aria-pressed={employeeTaskScope === "assigned"} className={employeeTaskScope === "assigned" ? "active" : ""} onClick={() => { setEmployeeTaskScope("assigned"); setWorkDueFilter("all"); }}><span aria-hidden="true">✓</span><p><strong>งานที่ต้องทำ</strong><small>งานที่ฉันเป็นผู้รับผิดชอบ</small></p><b>{employeeAssignedWorkItems.filter((item) => item.status !== "done").length}</b></button>
+                <button type="button" aria-pressed={employeeTaskScope === "created"} className={employeeTaskScope === "created" ? "active" : ""} onClick={() => { setEmployeeTaskScope("created"); setWorkDueFilter("all"); }}><span aria-hidden="true">→</span><p><strong>งานที่ฉันส่งต่อ</strong><small>งานประสานที่ฉันสร้างให้ตนเองหรือเพื่อนร่วมทีม</small></p><b>{employeeCreatedWorkItems.filter((item) => item.status !== "done").length}</b></button>
+                <p className="employee-task-scope-note"><span aria-hidden="true">i</span> งานประสานจากพนักงานมี 0 แต้ม ไม่นับเป็น KPI หรือภาระงานทางการ ผู้รับงานเป็นผู้อัปเดต และเฉพาะหัวหน้าหรือ HR เท่านั้นที่ตรวจอนุมัติได้</p>
+              </div>}
 
               <div className="simple-todo-overview" aria-label="เลือกดูงานแบบรวดเร็ว">
                 {([
-                  { id: "all", label: "งานที่ต้องทำ", value: workItems.filter((item) => item.status !== "done").length, icon: "☷" },
+                  { id: "all", label: employeeTaskScope === "created" && isEmployeeUser ? "กำลังติดตาม" : "งานที่ต้องทำ", value: workListScopeItems.filter((item) => item.status !== "done").length, icon: "☷" },
                   { id: "today", label: "กำหนดวันนี้", value: todayWorkItems.length, icon: "●" },
                   { id: "overdue", label: "เกินกำหนด", value: overdueWorkItems.length, icon: "!" },
                   { id: "review", label: "รอตรวจ", value: reviewQueueWorkItems.length, icon: "⌕" },
-                  { id: "done", label: "เสร็จแล้ว", value: workItems.filter((item) => item.status === "done").length, icon: "✓" },
+                  { id: "done", label: "เสร็จแล้ว", value: workListScopeItems.filter((item) => item.status === "done").length, icon: "✓" },
                 ] as const).map((filter) => <button key={filter.id} className={`${workDueFilter === filter.id ? "active" : ""} ${filter.id}`} onClick={() => setWorkDueFilter(filter.id)}><span>{filter.icon}</span><strong>{filter.value}</strong><small>{filter.label}</small></button>)}
               </div>
 
@@ -3583,7 +3657,10 @@ export default function Home() {
               <div className="simple-task-list">
                 {visibleWorkItems.map((item) => {
                   const project = projectsById.get(item.projectId);
-                  const assignee = employeesById.get(item.assigneeEmployeeId);
+                  const assignee = safeWorkRosterById.get(item.assigneeEmployeeId);
+                  const creatorId = workItemCreatorId(item);
+                  const creator = creatorId ? safeWorkRosterById.get(creatorId) : null;
+                  const isCurrentEmployeeAssignee = Boolean(isEmployeeUser && currentUser?.employeeId === item.assigneeEmployeeId);
                   const submissions = workSubmissionsByItem.get(item.id) ?? [];
                   const dueState = item.status === "done" ? "done" : item.dueDate < todayDate ? "overdue" : item.dueDate === todayDate ? "today" : "upcoming";
                   const actionLabel = item.status === "todo" ? "เริ่มงาน" : item.status === "in_progress" && isEmployeeUser ? "ส่งงาน" : item.status === "in_progress" ? "ดูรายละเอียด" : item.status === "review" && isEmployeeUser ? "ดูงานที่ส่ง" : item.status === "review" ? "ตรวจงาน" : "ดูผลงาน";
@@ -3592,7 +3669,7 @@ export default function Home() {
                     <article className={`simple-task-row ${dueState}`} key={item.id}>
                       <span className={`simple-task-check ${item.status}`} aria-hidden="true">{item.status === "done" ? "✓" : item.status === "review" ? "⌕" : item.status === "in_progress" ? "→" : ""}</span>
                       <div className="simple-task-main">
-                        <div className="simple-task-labels"><span className={`simple-task-status ${item.status}`}>{workStatusLabel(item.status)}</span><span className={`work-priority ${item.priority}`}>{workPriorityLabel(item.priority)}</span><small>{project?.name ?? "ไม่ระบุโปรเจกต์"}</small></div>
+                        <div className="simple-task-labels"><span className={`simple-task-status ${item.status}`}>{workStatusLabel(item.status)}</span><span className={`work-priority ${item.priority}`}>{workPriorityLabel(item.priority)}</span><small>{project?.name ?? "งานทั่วไป · ไม่ผูกโปรเจกต์"}</small></div>
                         <h3>{item.title}</h3>
                         <p>{item.description || "ยังไม่มีรายละเอียดเพิ่มเติม"}</p>
                         <div className="simple-task-meta">
@@ -3602,14 +3679,17 @@ export default function Home() {
                         </div>
                       </div>
                       <div className="simple-task-side">
-                        <div className="simple-task-owner">{assignee ? <EmployeeAvatar employee={assignee} profile={employeeProfilesById.get(assignee.id)} className="avatar-simple-task" /> : <i className="avatar-media avatar-simple-task">PP</i>}<span><small>ผู้รับผิดชอบ</small><strong>{assignee?.name ?? "ยังไม่ระบุ"}</strong></span></div>
+                        <div className="simple-task-people">
+                          <div className="simple-task-owner">{assignee ? <EmployeeAvatar employee={assignee} profile={employeeProfilesById.get(assignee.id)} className="avatar-simple-task" /> : <i className="avatar-media avatar-simple-task">PP</i>}<span><small>ผู้รับงาน</small><strong>{assignee?.name ?? "สมาชิกทีม"}</strong></span></div>
+                          <div className="simple-task-creator"><span aria-hidden="true">→</span><p><small>ผู้สร้างงาน</small><strong>{creator?.name ?? (creatorId ? "สมาชิกทีม" : "HR / หัวหน้าทีม")}</strong></p></div>
+                        </div>
                         <div className="simple-task-progress"><span><small>ความคืบหน้า</small><strong>{item.progress}%</strong></span><i><b style={{ width: `${item.progress}%` }} /></i></div>
                       </div>
-                      <div className="simple-task-actions">{!isEmployeeUser && <button onClick={() => openWorkItemForm(item)}>แก้ไขงาน</button>}<button className="primary" disabled={quickUpdatingWorkId === item.id} onClick={() => isEmployeePreview ? openSubmissionCenter(item) : item.status === "todo" ? void startWorkItem(item) : openSubmissionCenter(item)}>{quickUpdatingWorkId === item.id ? "กำลังเริ่ม..." : visibleActionLabel}</button></div>
+                      <div className="simple-task-actions">{!isEmployeeUser && <button onClick={() => openWorkItemForm(item)}>แก้ไขงาน</button>}{isEmployeeUser && !isCurrentEmployeeAssignee ? <span className="delegated-task-status">ผู้รับงานเป็นผู้อัปเดต</span> : <button className="primary" disabled={quickUpdatingWorkId === item.id} onClick={() => isEmployeePreview ? openSubmissionCenter(item) : item.status === "todo" ? void startWorkItem(item) : openSubmissionCenter(item)}>{quickUpdatingWorkId === item.id ? "กำลังเริ่ม..." : visibleActionLabel}</button>}</div>
                     </article>
                   );
                 })}
-                {!visibleWorkItems.length && <div className="simple-task-empty"><span>✓</span><strong>ไม่พบงานในรายการนี้</strong><p>ลองเลือก “งานที่ต้องทำ” หรือล้างตัวกรองเพื่อดูงานอีกครั้ง</p><button onClick={() => { setWorkSearch(""); setWorkFilter("all"); setWorkDueFilter("all"); setWorkAssigneeFilter(isEmployeeUser ? currentUser?.employeeId ?? "all" : "all"); }}>แสดงงานที่ต้องทำ</button></div>}
+                {!visibleWorkItems.length && <div className="simple-task-empty"><span>✓</span><strong>{isEmployeeUser && employeeTaskScope === "created" ? "ยังไม่มีงานที่คุณส่งต่อ" : "ไม่พบงานในรายการนี้"}</strong><p>{isEmployeeUser && employeeTaskScope === "created" ? "สร้างงานประสานให้ตนเองหรือเพื่อนร่วมทีมได้จากปุ่มด้านบน" : "ลองเลือก “งานที่ต้องทำ” หรือล้างตัวกรองเพื่อดูงานอีกครั้ง"}</p><button onClick={() => { setEmployeeTaskScope("assigned"); setWorkSearch(""); setWorkFilter("all"); setWorkDueFilter("all"); setWorkAssigneeFilter(isEmployeeUser ? currentUser?.employeeId ?? "all" : "all"); }}>แสดงงานที่ต้องทำ</button></div>}
               </div>
             </section>}
 
@@ -3853,29 +3933,50 @@ export default function Home() {
       )}
 
       {showWorkForm && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setShowWorkForm(false)}>
-          <form className="work-form-modal" onSubmit={saveWorkItem} role="dialog" aria-modal="true" aria-labelledby="work-form-title">
-            <div className="work-form-hero">
-              <div><p className="eyebrow">MISSION CONTROL</p><h2 id="work-form-title">{editingWorkItem ? "อัปเดตงานและความคืบหน้า" : "เพิ่มงานหรือภารกิจใหม่"}</h2><p>กำหนดผู้รับผิดชอบและเป้าหมาย ระบบจะคำนวณแต้มมาตรฐานให้อัตโนมัติ</p></div>
-              <button type="button" className="modal-close dark" onClick={() => setShowWorkForm(false)} aria-label="ปิดหน้าต่าง">×</button>
-              <div className="work-form-preview"><span className={`work-kind ${workForm.kind}`}>{workKindLabel(workForm.kind)}</span><strong>{workForm.title || "ชื่องานหรือภารกิจ"}</strong><small>{projectsById.get(workForm.projectId)?.name ?? "เลือกโปรเจกต์"}</small><b>★ {workForm.points} แต้ม</b></div>
-            </div>
-            <div className="work-form-body">
-              <div className="form-grid work-form-grid">
-                <label className="wide"><span>ชื่องาน / รีเควสต์ / ภารกิจ</span><input required value={workForm.title} onChange={(event) => setWorkForm((form) => ({ ...form, title: event.target.value }))} placeholder="เช่น สรุปข้อมูลลูกค้าเพื่อส่งทีมขาย" /></label>
-                <label><span>ประเภท</span><select value={workForm.kind} onChange={(event) => { const kind = event.target.value as WorkItemRecord["kind"]; setWorkForm((form) => ({ ...form, kind, points: workPointValue(kind, form.priority, activePointPolicyRules) })); }}><option value="task">งาน</option><option value="request">รีเควสต์</option><option value="mission">ภารกิจ</option></select></label>
-                <label><span>ระดับความสำคัญ</span><select value={workForm.priority} onChange={(event) => { const priority = event.target.value as WorkItemRecord["priority"]; setWorkForm((form) => ({ ...form, priority, points: workPointValue(form.kind, priority, activePointPolicyRules) })); }}><option value="low">ทั่วไป</option><option value="medium">ปานกลาง</option><option value="high">สำคัญ</option><option value="urgent">เร่งด่วน</option></select></label>
-                <label><span>โปรเจกต์</span><select required value={workForm.projectId} onChange={(event) => setWorkForm((form) => ({ ...form, projectId: event.target.value }))}>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
-                <label><span>ผู้รับผิดชอบ</span><select required value={workForm.assigneeEmployeeId} onChange={(event) => setWorkForm((form) => ({ ...form, assigneeEmployeeId: event.target.value }))}>{employees.filter((employee) => employee.status === "active").map((employee) => <option key={employee.id} value={employee.id}>{employee.name} · {getRole(employee.roleId).shortName}</option>)}</select></label>
-                <label><span>สถานะ</span><select value={workForm.status === "review" || workForm.status === "done" ? "in_progress" : workForm.status} onChange={(event) => { const status = event.target.value as "todo" | "in_progress"; setWorkForm((form) => ({ ...form, status, progress: status === "todo" ? Math.min(form.progress, 20) : Math.max(1, Math.min(form.progress, 90)) })); }}><option value="todo">ต้องทำ</option><option value="in_progress">กำลังทำ</option></select><small>รอตรวจจะเกิดเมื่อพนักงานส่งหลักฐาน และเสร็จแล้วเมื่อผู้ตรวจอนุมัติ</small></label>
-                <label><span>กำหนดเสร็จ</span><input required type="date" value={workForm.dueDate} onChange={(event) => setWorkForm((form) => ({ ...form, dueDate: event.target.value }))} /></label>
-                <label className="auto-point-field"><span>แต้มมาตรฐานอัตโนมัติ</span><input readOnly value={`${workForm.points} แต้ม`} /><small>แก้เองไม่ได้ เพื่อให้ทุกคนได้รับแต้มตามกติกาเดียวกัน</small></label>
-                <label className="wide work-progress-field"><span>ความคืบหน้า <b>{Math.min(workForm.progress, 90)}%</b></span><input type="range" min="0" max="90" step="5" value={Math.min(workForm.progress, 90)} onChange={(event) => { const progress = Number(event.target.value); setWorkForm((form) => ({ ...form, progress, status: progress > 0 ? "in_progress" : "todo" })); }} style={{ "--range-value": `${Math.min(workForm.progress, 90)}%` } as React.CSSProperties} /></label>
-                <label className="wide"><span>รายละเอียดและเกณฑ์สำเร็จ</span><textarea value={workForm.description} onChange={(event) => setWorkForm((form) => ({ ...form, description: event.target.value }))} placeholder="อธิบายสิ่งที่ต้องส่งมอบ หรือเงื่อนไขที่ถือว่าภารกิจสำเร็จ" /></label>
+        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) { setShowWorkForm(false); setEditingWorkItem(null); } }}>
+          <form className={`work-form-modal ${isEmployeeCoordinationCreate ? "employee-coordinate-modal" : ""}`} onSubmit={saveWorkItem} role="dialog" aria-modal="true" aria-labelledby="work-form-title" aria-describedby={isEmployeeCoordinationCreate ? "employee-coordinate-description" : undefined}>
+            {isEmployeeCoordinationCreate ? <>
+              <header className="employee-coordinate-hero">
+                <span className="employee-coordinate-icon" aria-hidden="true">→</span>
+                <div><p className="eyebrow">TEAM COORDINATION</p><h2 id="work-form-title">สร้างงานประสานให้ทีม</h2><p id="employee-coordinate-description">ส่งสิ่งที่ต้องการให้ตนเองหรือเพื่อนร่วมทีม โดยเห็นเฉพาะรายชื่อทีมที่ระบบอนุญาต</p></div>
+                <button type="button" className="modal-close" onClick={() => { setShowWorkForm(false); setEditingWorkItem(null); }} aria-label="ปิดหน้าต่างสร้างงานประสาน">×</button>
+              </header>
+              <div className="employee-coordinate-body">
+                <div className="employee-coordinate-recipient-preview" aria-live="polite"><span aria-hidden="true">ถึง</span><p><small>ผู้รับงาน</small><strong>{safeWorkRosterById.get(workForm.assigneeEmployeeId)?.name ?? "กรุณาเลือกผู้รับงาน"}</strong></p><b>{workForm.priority === "urgent" ? "เร่งด่วน" : workPriorityLabel(workForm.priority)}</b></div>
+                <div className="form-grid employee-coordinate-grid">
+                  <label className="wide"><span>ผู้รับงาน</span><select required value={workForm.assigneeEmployeeId} onChange={(event) => setWorkForm((form) => ({ ...form, assigneeEmployeeId: event.target.value }))}><option value="">เลือกตนเองหรือเพื่อนร่วมทีม</option>{activeSafeWorkRoster.map((employee) => <option key={employee.id} value={employee.id}>{employee.id === currentUser?.employeeId ? `ฉันเอง · ${employee.name}` : `${employee.name} · ${getRole(employee.roleId).shortName}`}</option>)}</select><small>รายชื่อนี้มาจากภาพรวมทีมที่แชร์ได้เท่านั้น</small></label>
+                  <label className="wide"><span>ชื่องาน</span><input autoFocus required value={workForm.title} onChange={(event) => setWorkForm((form) => ({ ...form, title: event.target.value }))} placeholder="เช่น ขอข้อมูลยอดขายสำหรับสรุปรายสัปดาห์" /></label>
+                  <label className="wide"><span>รายละเอียดและสิ่งที่ต้องส่งมอบ</span><textarea required value={workForm.description} onChange={(event) => setWorkForm((form) => ({ ...form, description: event.target.value }))} placeholder="บอกบริบท สิ่งที่ต้องการ และรูปแบบผลลัพธ์ให้ชัดเจน" /></label>
+                  <label><span>กำหนดส่ง</span><input required min={todayDate} type="date" value={workForm.dueDate} onChange={(event) => setWorkForm((form) => ({ ...form, dueDate: event.target.value }))} /></label>
+                  <label><span>ความสำคัญ</span><select value={workForm.priority} onChange={(event) => setWorkForm((form) => ({ ...form, priority: event.target.value as WorkItemRecord["priority"] }))}><option value="low">ทั่วไป</option><option value="medium">ปานกลาง</option><option value="high">สำคัญ</option><option value="urgent">เร่งด่วน</option></select></label>
+                  <label className="wide"><span>โปรเจกต์ <em>ไม่บังคับ</em></span><select value={workForm.projectId} onChange={(event) => setWorkForm((form) => ({ ...form, projectId: event.target.value }))}><option value="">ไม่ผูกโปรเจกต์</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
+                </div>
+                <div className="employee-coordinate-policy" role="note"><span aria-hidden="true">0</span><p><strong>งานประสานนี้ไม่มีแต้ม ไม่นับ KPI หรือภาระงานทางการ</strong><small>ระบบจะสร้างเป็นรีเควสต์สถานะ “ต้องทำ” ผู้รับงานเป็นผู้อัปเดตความคืบหน้า ผู้สร้างอนุมัติเองไม่ได้ และการตรวจเป็นสิทธิ์ของหัวหน้าทีมหรือ HR เท่านั้น</small></p></div>
               </div>
-              <div className="mission-point-note"><span>★</span><p><strong>แต้มจะมอบหลังส่งหลักฐานและหัวหน้าอนุมัติ</strong> การเปลี่ยนสถานะเป็น “เสร็จแล้ว” อย่างเดียวจะยังไม่ได้แต้ม และงานเดิมรับแต้มได้เพียงครั้งเดียว</p></div>
-            </div>
-            <div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setShowWorkForm(false)}>ยกเลิก</button><button className="primary-button" disabled={isSaving}>{isSaving ? "กำลังบันทึก..." : editingWorkItem ? "บันทึกความคืบหน้า" : "สร้างรายการ"}</button></div>
+              <div className="modal-actions"><button type="button" className="secondary-button" onClick={() => { setShowWorkForm(false); setEditingWorkItem(null); }}>ยกเลิก</button><button className="primary-button" disabled={isSaving || !workForm.assigneeEmployeeId}>{isSaving ? "กำลังส่งงาน..." : "ส่งงานประสาน"}</button></div>
+            </> : <>
+              <div className="work-form-hero">
+                <div><p className="eyebrow">MISSION CONTROL</p><h2 id="work-form-title">{editingWorkItem ? "อัปเดตงานและความคืบหน้า" : "เพิ่มงานหรือภารกิจใหม่"}</h2><p>กำหนดผู้รับผิดชอบและเป้าหมาย ระบบจะคำนวณแต้มมาตรฐานให้อัตโนมัติ</p></div>
+                <button type="button" className="modal-close dark" onClick={() => { setShowWorkForm(false); setEditingWorkItem(null); }} aria-label="ปิดหน้าต่าง">×</button>
+                <div className="work-form-preview"><span className={`work-kind ${workForm.kind}`}>{workKindLabel(workForm.kind)}</span><strong>{workForm.title || "ชื่องานหรือภารกิจ"}</strong><small>{projectsById.get(workForm.projectId)?.name ?? "เลือกโปรเจกต์"}</small><b>★ {workForm.points} แต้ม</b></div>
+              </div>
+              <div className="work-form-body">
+                <div className="form-grid work-form-grid">
+                  <label className="wide"><span>ชื่องาน / รีเควสต์ / ภารกิจ</span><input required value={workForm.title} onChange={(event) => setWorkForm((form) => ({ ...form, title: event.target.value }))} placeholder="เช่น สรุปข้อมูลลูกค้าเพื่อส่งทีมขาย" /></label>
+                  <label><span>ประเภท</span><select value={workForm.kind} onChange={(event) => { const kind = event.target.value as WorkItemRecord["kind"]; setWorkForm((form) => ({ ...form, kind, points: workPointValue(kind, form.priority, activePointPolicyRules) })); }}><option value="task">งาน</option><option value="request">รีเควสต์</option><option value="mission">ภารกิจ</option></select></label>
+                  <label><span>ระดับความสำคัญ</span><select value={workForm.priority} onChange={(event) => { const priority = event.target.value as WorkItemRecord["priority"]; setWorkForm((form) => ({ ...form, priority, points: workPointValue(form.kind, priority, activePointPolicyRules) })); }}><option value="low">ทั่วไป</option><option value="medium">ปานกลาง</option><option value="high">สำคัญ</option><option value="urgent">เร่งด่วน</option></select></label>
+                  <label><span>โปรเจกต์</span><select required value={workForm.projectId} onChange={(event) => setWorkForm((form) => ({ ...form, projectId: event.target.value }))}>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
+                  <label><span>ผู้รับผิดชอบ</span><select required value={workForm.assigneeEmployeeId} onChange={(event) => setWorkForm((form) => ({ ...form, assigneeEmployeeId: event.target.value }))}>{employees.filter((employee) => employee.status === "active").map((employee) => <option key={employee.id} value={employee.id}>{employee.name} · {getRole(employee.roleId).shortName}</option>)}</select></label>
+                  <label><span>สถานะ</span><select value={workForm.status === "review" || workForm.status === "done" ? "in_progress" : workForm.status} onChange={(event) => { const status = event.target.value as "todo" | "in_progress"; setWorkForm((form) => ({ ...form, status, progress: status === "todo" ? Math.min(form.progress, 20) : Math.max(1, Math.min(form.progress, 90)) })); }}><option value="todo">ต้องทำ</option><option value="in_progress">กำลังทำ</option></select><small>รอตรวจจะเกิดเมื่อพนักงานส่งหลักฐาน และเสร็จแล้วเมื่อผู้ตรวจอนุมัติ</small></label>
+                  <label><span>กำหนดเสร็จ</span><input required type="date" value={workForm.dueDate} onChange={(event) => setWorkForm((form) => ({ ...form, dueDate: event.target.value }))} /></label>
+                  <label className="auto-point-field"><span>แต้มมาตรฐานอัตโนมัติ</span><input readOnly value={`${workForm.points} แต้ม`} /><small>แก้เองไม่ได้ เพื่อให้ทุกคนได้รับแต้มตามกติกาเดียวกัน</small></label>
+                  <label className="wide work-progress-field"><span>ความคืบหน้า <b>{Math.min(workForm.progress, 90)}%</b></span><input type="range" min="0" max="90" step="5" value={Math.min(workForm.progress, 90)} onChange={(event) => { const progress = Number(event.target.value); setWorkForm((form) => ({ ...form, progress, status: progress > 0 ? "in_progress" : "todo" })); }} style={{ "--range-value": `${Math.min(workForm.progress, 90)}%` } as React.CSSProperties} /></label>
+                  <label className="wide"><span>รายละเอียดและเกณฑ์สำเร็จ</span><textarea value={workForm.description} onChange={(event) => setWorkForm((form) => ({ ...form, description: event.target.value }))} placeholder="อธิบายสิ่งที่ต้องส่งมอบ หรือเงื่อนไขที่ถือว่าภารกิจสำเร็จ" /></label>
+                </div>
+                <div className="mission-point-note"><span>★</span><p><strong>แต้มจะมอบหลังส่งหลักฐานและหัวหน้าอนุมัติ</strong> การเปลี่ยนสถานะเป็น “เสร็จแล้ว” อย่างเดียวจะยังไม่ได้แต้ม และงานเดิมรับแต้มได้เพียงครั้งเดียว</p></div>
+              </div>
+              <div className="modal-actions"><button type="button" className="secondary-button" onClick={() => { setShowWorkForm(false); setEditingWorkItem(null); }}>ยกเลิก</button><button className="primary-button" disabled={isSaving}>{isSaving ? "กำลังบันทึก..." : editingWorkItem ? "บันทึกความคืบหน้า" : "สร้างรายการ"}</button></div>
+            </>}
           </form>
         </div>
       )}
