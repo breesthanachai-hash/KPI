@@ -1,6 +1,6 @@
 "use client";
 
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { Fragment, lazy, Suspense, useEffect, useMemo, useState } from "react";
 import type { Office3DPerson } from "./office-3d";
 import AiAssistant, { type PeopleAiActionId, type PeopleAiContext } from "./ai-assistant";
 import {
@@ -703,7 +703,7 @@ const viewMeta: Record<View, { eyebrow: string; title: string; description: stri
   portfolio: { eyebrow: "EMPLOYEE WORK PORTFOLIO", title: "แฟ้มผลงานพนักงาน", description: "ค้นหางานที่ส่งมอบแล้ว ไฟล์ ลิงก์ ผู้ตรวจ และผลประเมินของแต่ละคนได้จากที่เดียว" },
   work: { eyebrow: "จัดการงาน", title: "งานของทีม", description: "เลือกงาน เริ่มทำ ส่งหลักฐาน และติดตามความคืบหน้าได้จากรายการเดียว" },
   office: { eyebrow: "สำนักงาน 3D ของทีม", title: "สำนักงานจำลอง 3D", description: "ดูตัวละครพนักงานเดิน เลือกห้อง และทำกิจกรรมตามภาระงานจริงในบรรยากาศสำนักงานสมัยใหม่" },
-  access: { eyebrow: "ACCESS & PERMISSIONS", title: "ผู้ใช้งานและสิทธิ์เข้าถึง", description: "ผูกอีเมลเข้าสู่ระบบกับพนักงาน และกำหนดว่าใครเป็น HR หัวหน้าทีม หรือพนักงาน" },
+  access: { eyebrow: "ACCESS & PERMISSIONS", title: "ผู้ใช้งานและสิทธิ์เข้าถึง", description: "แยกคนสั่งงานและคนทำงานให้ชัดเจน พร้อมกำหนดข้อมูลที่แต่ละคนเห็นและจัดการได้" },
 };
 
 export default function Home() {
@@ -2280,6 +2280,21 @@ export default function Home() {
 
   const isAdmin = currentUser?.role === "admin";
   const isEmployeeUser = currentUser?.role === "employee";
+  const assigningUserAccounts = userAccounts.filter((account) => account.role === "admin" || account.role === "manager");
+  const workingUserAccounts = userAccounts.filter((account) => account.role === "employee");
+  const activeAssigningUserCount = assigningUserAccounts.filter((account) => account.status === "active").length;
+  const activeWorkingUserCount = workingUserAccounts.filter((account) => account.status === "active").length;
+  const selectedUserKind = userAccountForm.role === "employee" ? "worker" : "assigner";
+  const selectedUserKindLabel = selectedUserKind === "assigner" ? "คนสั่งงาน" : "คนทำงาน";
+  const selectedUserRoleGuide = userAccountForm.role === "admin"
+    ? "ดูแลทั้งองค์กร จัดการคน กฎ งาน การประเมิน แต้ม เงินเดือน และบัญชีผู้ใช้"
+    : userAccountForm.role === "manager"
+      ? "มอบหมายงาน ติดตามทีม ตรวจผลงาน และประเมินลูกทีม โดยไม่เห็นเงินเดือนหรือเอกสารส่วนตัว"
+      : "รับงาน อัปเดตความคืบหน้า ส่งหลักฐาน และดูข้อมูลส่วนตัวของตนเองเท่านั้น";
+  const accessAccountGroups = [
+    { id: "assigner", title: "คนสั่งงาน", description: "HR / Admin และหัวหน้าทีม — วางแผน มอบหมาย ติดตาม และตรวจผลงาน", accounts: assigningUserAccounts, activeCount: activeAssigningUserCount },
+    { id: "worker", title: "คนทำงาน", description: "พนักงาน — รับงาน ลงมือทำ ส่งหลักฐาน และติดตามการเติบโตของตัวเอง", accounts: workingUserAccounts, activeCount: activeWorkingUserCount },
+  ] as const;
   const launchReadinessSteps = launchReadiness ? [
     {
       title: "ยืนยันล้างหรือเก็บข้อมูลตัวอย่างแยกจากงานจริง",
@@ -3376,10 +3391,10 @@ export default function Home() {
             </section>
 
             <div className="access-summary-grid">
-              <article className="access-hero-card"><span>◎</span><div><p className="eyebrow">SECURE TEAM ACCESS</p><h2>ให้แต่ละคนเห็นเฉพาะสิ่งที่ควรเห็น</h2><p>ผูกอีเมลที่ใช้เข้าสู่ระบบกับโปรไฟล์พนักงานหนึ่งคน จากนั้นระบบจะกรองงาน ภารกิจ แฟ้มผลงาน แต้ม และรางวัลให้อัตโนมัติ</p></div></article>
-              <MetricCard label="บัญชีใช้งาน" value={`${userAccounts.filter((account) => account.status === "active").length} บัญชี`} copy={`${userAccounts.filter((account) => account.status === "inactive").length} บัญชีพักสิทธิ์`} tone="positive" icon="✓" />
-              <MetricCard label="พนักงาน" value={`${userAccounts.filter((account) => account.role === "employee").length} บัญชี`} copy="เห็นข้อมูลของตัวเองเท่านั้น" icon="♙" />
-              <MetricCard label="หัวหน้าทีม" value={`${userAccounts.filter((account) => account.role === "manager").length} บัญชี`} copy="เห็นงานและผลงานของทีม" icon="◇" />
+              <article className="access-hero-card"><span>◎</span><div><p className="eyebrow">CLEAR WORK ROLES</p><h2>แยกคนสั่งงานกับคนทำงานให้ชัด</h2><p>คนสั่งงานใช้เครื่องมือวางแผน มอบหมาย และตรวจผลงาน ส่วนคนทำงานเห็นเฉพาะงานและข้อมูลส่วนตัวที่จำเป็นต่อการทำงาน</p></div></article>
+              <MetricCard label="คนสั่งงาน" value={`${assigningUserAccounts.length} คน`} copy={`กำลังใช้งาน ${activeAssigningUserCount} คน · HR และหัวหน้าทีม`} tone="positive" icon="→" />
+              <MetricCard label="คนทำงาน" value={`${workingUserAccounts.length} คน`} copy={`กำลังใช้งาน ${activeWorkingUserCount} คน · พนักงาน`} icon="✓" />
+              <MetricCard label="บัญชีใช้งาน" value={`${userAccounts.filter((account) => account.status === "active").length} บัญชี`} copy={`${userAccounts.filter((account) => account.status === "inactive").length} บัญชีพักสิทธิ์`} tone="positive" icon="◎" />
             </div>
 
             <div className="access-main-grid">
@@ -3388,8 +3403,10 @@ export default function Home() {
                 <div className="form-grid access-form-grid">
                   <label className="wide"><span>ชื่อที่แสดง</span><input required value={userAccountForm.displayName} onChange={(event) => setUserAccountForm((form) => ({ ...form, displayName: event.target.value }))} placeholder="ชื่อ–นามสกุล" /></label>
                   <label className="wide"><span>อีเมลที่ใช้เข้าสู่ระบบ</span><input required type="email" value={userAccountForm.email} onChange={(event) => setUserAccountForm((form) => ({ ...form, email: event.target.value }))} placeholder="name@company.com" /></label>
-                  <label><span>ระดับสิทธิ์</span><select value={userAccountForm.role} onChange={(event) => setUserAccountForm((form) => ({ ...form, role: event.target.value as UserAccountRecord["role"] }))}><option value="employee">พนักงาน</option><option value="manager">หัวหน้าทีม</option><option value="admin">HR / Admin</option></select></label>
+                  <fieldset className="access-persona-selector wide"><legend>เลือกวิธีใช้งานหลัก</legend><label className={selectedUserKind === "assigner" ? "selected assigner" : "assigner"}><input type="radio" name="access-user-kind" checked={selectedUserKind === "assigner"} onChange={() => setUserAccountForm((form) => ({ ...form, role: form.role === "admin" ? "admin" : "manager" }))} /><span>→</span><div><strong>คนสั่งงาน</strong><small>HR / Admin หรือหัวหน้าทีม</small></div></label><label className={selectedUserKind === "worker" ? "selected worker" : "worker"}><input type="radio" name="access-user-kind" checked={selectedUserKind === "worker"} onChange={() => setUserAccountForm((form) => ({ ...form, role: "employee" }))} /><span>✓</span><div><strong>คนทำงาน</strong><small>พนักงานผู้รับงานและส่งผลงาน</small></div></label><p>กลุ่มนี้คือวิธีใช้ระบบ ไม่ใช่ชื่อตำแหน่งงาน</p></fieldset>
+                  <label><span>ประเภทสิทธิ์</span><select value={userAccountForm.role} onChange={(event) => setUserAccountForm((form) => ({ ...form, role: event.target.value as UserAccountRecord["role"] }))}><optgroup label="คนสั่งงาน"><option value="manager">หัวหน้าทีม</option><option value="admin">HR / Admin</option></optgroup><optgroup label="คนทำงาน"><option value="employee">พนักงาน</option></optgroup></select></label>
                   <label><span>สถานะ</span><select value={userAccountForm.status} onChange={(event) => setUserAccountForm((form) => ({ ...form, status: event.target.value as UserAccountRecord["status"] }))}><option value="active">ใช้งาน</option><option value="inactive">พักสิทธิ์</option></select></label>
+                  <div className={`access-role-choice wide ${selectedUserKind}`} aria-live="polite"><span>{selectedUserKind === "assigner" ? "→" : "✓"}</span><div><small>ประเภทผู้ใช้</small><strong>{selectedUserKindLabel} · {userAccountForm.role === "admin" ? "HR / Admin" : userAccountForm.role === "manager" ? "หัวหน้าทีม" : "พนักงาน"}</strong><p>{selectedUserRoleGuide}</p></div></div>
                   {userAccountForm.role !== "admin" && <label className="wide"><span>ผูกกับโปรไฟล์พนักงาน</span><select required value={userAccountForm.employeeId} onChange={(event) => setUserAccountForm((form) => ({ ...form, employeeId: event.target.value }))}><option value="">เลือกพนักงาน</option>{employees.filter((employee) => employee.status === "active" && (!userAccounts.some((account) => account.employeeId === employee.id && account.id !== userAccountForm.accountId))).map((employee) => <option key={employee.id} value={employee.id}>{employee.name} · {getRole(employee.roleId).name}</option>)}</select></label>}
                   {userAccountForm.role === "manager" && <label className="wide"><span>ทีมที่ดูแล</span><select value={userAccountForm.departmentId} onChange={(event) => setUserAccountForm((form) => ({ ...form, departmentId: event.target.value }))}><option value="">ใช้แผนกตามโปรไฟล์พนักงาน</option>{Array.from(new Map(roles.map((role) => [role.departmentId, role.department])).entries()).map(([departmentId, department]) => <option key={departmentId} value={departmentId}>{department}</option>)}</select></label>}
                 </div>
@@ -3397,10 +3414,16 @@ export default function Home() {
               </form>
 
               <aside className="access-rights-card">
-                <div className="access-card-heading"><div><p className="eyebrow">ROLE GUIDE</p><h2>แต่ละสิทธิ์ทำอะไรได้</h2></div></div>
-                <article className="admin"><span>01</span><div><strong>HR / Admin</strong><p>จัดการพนักงาน เอกสาร เงินเดือน การประเมิน งาน แต้ม และบัญชีผู้ใช้ทั้งหมด</p></div></article>
-                <article className="manager"><span>02</span><div><strong>หัวหน้าทีม</strong><p>เห็นคนในทีม มอบหมายงาน ติดตามโปรเจกต์ ตรวจผลงาน และประเมินผล โดยไม่เห็นข้อมูลเงินเดือนหรือเอกสารส่วนตัว</p></div></article>
-                <article className="employee"><span>03</span><div><strong>พนักงาน</strong><p>ใช้พอร์ทัลส่วนตัวสำหรับงาน แฟ้มผลงาน สำนักงานและค่าพลังทีม การเติบโต เงินเดือน แต้ม และรางวัล โดยไม่เห็นเครื่องมือบริหารหรือข้อมูลส่วนตัวของผู้อื่น</p></div></article>
+                <div className="access-card-heading"><div><p className="eyebrow">ROLE GUIDE</p><h2>ใครสั่งงาน ใครทำงาน</h2><p>ชื่อกลุ่มช่วยให้เลือกสิทธิ์ถูก โดยระบบยังควบคุมรายละเอียดตามบทบาทด้านล่าง</p></div></div>
+                <section className="access-rights-group assigner" aria-labelledby="assigner-rights-title">
+                  <header><span>→</span><div><strong id="assigner-rights-title">คนสั่งงาน</strong><small>สร้างงาน ติดตาม และตรวจผล</small></div></header>
+                  <article className="admin"><span>HR</span><div><strong>HR / Admin</strong><p>จัดการทั้งองค์กร: พนักงาน เอกสาร เงินเดือน กฎ การประเมิน งาน แต้ม รางวัล และบัญชีผู้ใช้</p></div></article>
+                  <article className="manager"><span>ทีม</span><div><strong>หัวหน้าทีม</strong><p>มอบหมายงาน ติดตามโปรเจกต์ ตรวจผลงาน และประเมินลูกทีม โดยไม่เห็นเงินเดือนหรือเอกสารส่วนตัว</p></div></article>
+                </section>
+                <section className="access-rights-group worker" aria-labelledby="worker-rights-title">
+                  <header><span>✓</span><div><strong id="worker-rights-title">คนทำงาน</strong><small>รับงาน ลงมือทำ และส่งหลักฐาน</small></div></header>
+                  <article className="employee"><span>คน</span><div><strong>พนักงาน</strong><p>ดูงานของตนเอง อัปเดตความคืบหน้า ส่งหลักฐาน ดูแฟ้มผลงาน ค่าพลัง การเติบโต เงินเดือน แต้ม และรางวัลของตนเอง</p></div></article>
+                </section>
                 <div className="access-invite-note"><span>i</span><p><strong>ขั้นสุดท้ายก่อนใช้งานจริง</strong> หลังเพิ่มบัญชีในหน้านี้ ให้เจ้าของเว็บไซต์เชิญอีเมลเดียวกันเข้าถึงเว็บไซต์ด้วย เพื่อให้พนักงานเปิดระบบได้</p></div>
               </aside>
             </div>
@@ -3408,18 +3431,22 @@ export default function Home() {
             <section className="access-account-card">
               <div className="access-card-heading"><div><p className="eyebrow">TEAM ACCOUNTS</p><h2>บัญชีผู้ใช้งานทั้งหมด</h2><p>บัญชีจะผูกอัตโนมัติเมื่ออีเมลนั้นเข้าสู่ระบบครั้งแรก</p></div><span>{userAccounts.length} บัญชี</span></div>
               <div className="access-account-list">
-                {userAccounts.map((account) => {
-                  const employee = account.employeeId ? employeesById.get(account.employeeId) : null;
-                  const roleName = account.role === "admin" ? "HR / Admin" : account.role === "manager" ? "หัวหน้าทีม" : "พนักงาน";
-                  return <article key={account.id} className={account.status}>
-                    <span className="access-account-avatar">{makeInitials(account.displayName)}</span>
-                    <div className="access-account-person"><strong>{account.displayName}</strong><small>{account.email}</small></div>
-                    <span className={`access-role-pill ${account.role}`}>{roleName}</span>
-                    <div className="access-account-link"><strong>{employee?.name ?? (account.role === "admin" ? "สิทธิ์ระดับองค์กร" : "ยังไม่ผูกโปรไฟล์")}</strong><small>{employee ? getRole(employee.roleId).name : account.lastLoginAt ? `เข้าใช้ล่าสุด ${formatUpdatedAt(account.lastLoginAt)}` : "ยังไม่เคยเข้าสู่ระบบ"}</small></div>
-                    <b className={`access-status ${account.status}`}>{account.status === "active" ? "ใช้งาน" : "พักสิทธิ์"}</b>
-                    <span className="access-account-actions"><button onClick={() => editUserAccount(account)}>แก้ไข</button><button disabled={isSaving || account.id === currentUser?.id} onClick={() => void toggleUserAccount(account)}>{account.status === "active" ? "พักสิทธิ์" : "เปิดสิทธิ์"}</button></span>
-                  </article>;
-                })}
+                {accessAccountGroups.map((group) => <Fragment key={group.id}>
+                  <div className={`access-account-group-heading ${group.id}`}><span>{group.id === "assigner" ? "→" : "✓"}</span><div><strong>{group.title}</strong><small>{group.description}</small></div><b>{group.activeCount}/{group.accounts.length} ใช้งาน</b></div>
+                  {group.accounts.map((account) => {
+                    const employee = account.employeeId ? employeesById.get(account.employeeId) : null;
+                    const roleName = account.role === "admin" ? "HR / Admin" : account.role === "manager" ? "หัวหน้าทีม" : "พนักงาน";
+                    return <article key={account.id} className={`${account.status} access-account-row`}>
+                      <span className="access-account-avatar">{makeInitials(account.displayName)}</span>
+                      <div className="access-account-person"><strong>{account.displayName}</strong><small>{account.email}</small></div>
+                      <div className="access-account-role"><strong className={`access-user-kind ${group.id}`}>{group.title}</strong><span className={`access-role-pill ${account.role}`}>{roleName}</span></div>
+                      <div className="access-account-link"><strong>{employee?.name ?? (account.role === "admin" ? "สิทธิ์ระดับองค์กร" : "ยังไม่ผูกโปรไฟล์")}</strong><small>{employee ? `ผูกโปรไฟล์แล้ว · ${getRole(employee.roleId).name}` : account.role === "admin" ? "ไม่ต้องผูกโปรไฟล์พนักงาน" : "กรุณาเลือกโปรไฟล์ก่อนเปิดใช้"}</small><small className="access-login-state">{account.lastLoginAt ? `เข้าใช้ล่าสุด ${formatUpdatedAt(account.lastLoginAt)}` : "ยังไม่เคยเข้าสู่ระบบ"}</small></div>
+                      <b className={`access-status ${account.status}`}>{account.status === "active" ? "ใช้งาน" : "พักสิทธิ์"}</b>
+                      <span className="access-account-actions"><button aria-label={`แก้ไขสิทธิ์ของ ${account.displayName}`} onClick={() => editUserAccount(account)}>แก้ไข</button><button aria-label={`${account.status === "active" ? "พักสิทธิ์" : "เปิดสิทธิ์"}ของ ${account.displayName}`} disabled={isSaving || account.id === currentUser?.id} onClick={() => void toggleUserAccount(account)}>{account.status === "active" ? "พักสิทธิ์" : "เปิดสิทธิ์"}</button></span>
+                    </article>;
+                  })}
+                  {!group.accounts.length && <div className={`access-account-group-empty ${group.id}`}>ยังไม่มีบัญชี{group.title}</div>}
+                </Fragment>)}
                 {!userAccounts.length && <div className="empty-state">ยังไม่มีบัญชีผู้ใช้งาน</div>}
               </div>
             </section>

@@ -163,7 +163,7 @@ test("builds the People Pulse KPI product bundle", async () => {
   assert.match(pageAsset, /signContract/);
   assert.match(pageAsset, /ACCESS & PERMISSIONS/);
   assert.match(pageAsset, /ผู้ใช้งานและสิทธิ์เข้าถึง/);
-  assert.match(pageAsset, /ให้แต่ละคนเห็นเฉพาะสิ่งที่ควรเห็น/);
+  assert.match(pageAsset, /แยกคนสั่งงานกับคนทำงานให้ชัด/);
   assert.match(pageAsset, /งานของฉัน/);
   assert.match(pageAsset, /saveUserAccount/);
   assert.match(pageAsset, /ผู้ช่วย AI/);
@@ -1031,4 +1031,69 @@ test("adds a safe launch gate, owner-only contract flow and evidence-led work st
   // showing a misleading unknown-email state to a signed-out visitor.
   assert.match(page, /accessDenied\.anonymous \? "เข้าสู่ระบบเพื่อใช้งาน"/);
   assert.match(page, /\/signin-with-chatgpt\?return_to=\//);
+});
+
+test("separates work assigners from workers without changing real permissions", async () => {
+  const [page, styles, dashboardRoute, accessControl] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/dashboard/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/access-control.ts", import.meta.url), "utf8"),
+  ]);
+
+  const accessStart = page.indexOf('{view === "access" && isAdmin && (');
+  const accessEnd = page.indexOf('{view === "portfolio" && (', accessStart);
+  assert.notEqual(accessStart, -1, "expected the access page to remain admin-only");
+  assert.ok(accessEnd > accessStart, "expected a stable access-page boundary");
+  const accessPage = page.slice(accessStart, accessEnd);
+
+  // The two visible cohorts are derived from the existing three roles. They
+  // are labels for how people use the product, not new API or database roles.
+  assert.match(page, /const assigningUserAccounts = userAccounts\.filter\(\(account\) => account\.role === "admin" \|\| account\.role === "manager"\)/);
+  assert.match(page, /const workingUserAccounts = userAccounts\.filter\(\(account\) => account\.role === "employee"\)/);
+  assert.match(page, /กลุ่มนี้คือวิธีใช้ระบบ ไม่ใช่ชื่อตำแหน่งงาน/);
+  assert.match(accessPage, /<fieldset className="access-persona-selector wide"><legend>เลือกวิธีใช้งานหลัก<\/legend>/);
+  assert.match(accessPage, /type="radio" name="access-user-kind"/);
+
+  const roleSelect = accessPage.match(/<select value=\{userAccountForm\.role\}[\s\S]*?<\/select>/)?.[0] ?? "";
+  assert.ok(roleSelect, "expected the real-role selector");
+  const assignerOptions = roleSelect.match(/<optgroup label="คนสั่งงาน">([\s\S]*?)<\/optgroup>/)?.[1] ?? "";
+  const workerOptions = roleSelect.match(/<optgroup label="คนทำงาน">([\s\S]*?)<\/optgroup>/)?.[1] ?? "";
+  assert.match(assignerOptions, /<option value="manager">หัวหน้าทีม<\/option>/);
+  assert.match(assignerOptions, /<option value="admin">HR \/ Admin<\/option>/);
+  assert.doesNotMatch(assignerOptions, /value="employee"/);
+  assert.match(workerOptions, /<option value="employee">พนักงาน<\/option>/);
+  assert.doesNotMatch(workerOptions, /value="admin"|value="manager"/);
+  assert.deepEqual([...roleSelect.matchAll(/<option value="([^"]+)"/g)].map((match) => match[1]).sort(), ["admin", "employee", "manager"]);
+
+  // The summary, guide and directory all repeat the distinction in text, not
+  // only through color, while every account retains its exact role badge.
+  assert.match(accessPage, /label="คนสั่งงาน"/);
+  assert.match(accessPage, /label="คนทำงาน"/);
+  assert.match(accessPage, /className="access-rights-group assigner"/);
+  assert.match(accessPage, /className="access-rights-group worker"/);
+  assert.match(accessPage, /Manager|หัวหน้าทีม/);
+  assert.match(accessPage, /ไม่เห็นเงินเดือนหรือเอกสารส่วนตัว/);
+  assert.match(accessPage, /ส่งหลักฐาน/);
+  assert.match(accessPage, /accessAccountGroups\.map/);
+  assert.match(accessPage, /className=\{`access-user-kind \$\{group\.id\}`\}/);
+  assert.doesNotMatch(accessPage, /\{userAccounts\.map/);
+  assert.match(accessPage, /aria-label=\{`แก้ไขสิทธิ์ของ \$\{account\.displayName\}`\}/);
+  assert.match(accessPage, /className="access-login-state"/);
+
+  // Existing server boundaries remain authoritative: only admins receive the
+  // account directory, managers stay department-scoped and employees self-only.
+  assert.match(dashboardRoute, /canManageAccounts: currentUser\.role === "admin"/);
+  assert.match(dashboardRoute, /userAccounts: currentUser\.role === "admin" \? userAccountRows : \[\]/);
+  assert.match(accessControl, /if \(account\.role === "admin"\) return true/);
+  assert.match(accessControl, /if \(account\.employeeId === employeeId\) return true/);
+  assert.match(accessControl, /account\.role !== "manager" \|\| !account\.departmentId/);
+
+  const accessStyles = styles.match(/\/\* Access roles: separate people who assign work from people who execute it\. \*\/[\s\S]*$/)?.[0] ?? "";
+  assert.ok(accessStyles, "expected a final access-role style block");
+  assert.match(accessStyles, /\.access-persona-selector \{[\s\S]*?grid-template-columns: 1fr 1fr/);
+  assert.match(accessStyles, /\.access-account-actions button \{ min-height: 44px/);
+  assert.match(accessStyles, /@media \(max-width: 1100px\)[\s\S]*?\.access-account-list > article\.access-account-row \{ grid-template-columns: 42px minmax\(0,1fr\) 140px auto/);
+  assert.match(accessStyles, /@media \(max-width: 680px\)[\s\S]*?\.access-persona-selector \{ grid-template-columns: 1fr/);
+  assert.match(accessStyles, /\.access-account-list > article\.access-account-row\.inactive \{ opacity: 1/);
 });
