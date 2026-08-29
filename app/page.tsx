@@ -3,6 +3,7 @@
 import { Fragment, lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import type { Office3DPerson } from "./office-3d";
 import AiAssistant, { type PeopleAiActionId, type PeopleAiContext } from "./ai-assistant";
+import AiRobotMascot from "./ai-robot-mascot";
 import {
   type ApplicationDocumentRecord,
   type AttendanceRecord,
@@ -1039,10 +1040,12 @@ export default function Home() {
     return () => window.clearTimeout(timer);
   }, [canManageEmployeeFiles, view]);
 
+  const hasBlockingOverlay = Boolean(selectedEmployee || skillProfileEmployee || hrEmployee || showAddEmployee || showWorkForm || showProjectForm || submissionWorkItem || rewardToRedeem || showProfileEditor || showContractForm || contractToSign || showOrganizationDocumentForm || showEmployeeWarningForm || showEmployeeRecognitionForm || showNotifications || showUserMenu);
+
   useEffect(() => {
-    const hasOpenOverlay = Boolean(selectedEmployee || skillProfileEmployee || hrEmployee || showAddEmployee || showWorkForm || showProjectForm || submissionWorkItem || rewardToRedeem || showProfileEditor || showContractForm || contractToSign || showOrganizationDocumentForm || showEmployeeWarningForm || showEmployeeRecognitionForm || showNotifications || showUserMenu);
+    const hasOpenOverlay = Boolean(hasBlockingOverlay || showAiAssistant);
     if (!hasOpenOverlay) return;
-    lastFocusedElementRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    if (!lastFocusedElementRef.current) lastFocusedElementRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     const focusFrame = window.requestAnimationFrame(() => {
@@ -1088,6 +1091,7 @@ export default function Home() {
         setShowEmployeeRecognitionForm(false);
         setShowNotifications(false);
         setShowUserMenu(false);
+        setShowAiAssistant(false);
       }
     };
     document.addEventListener("keydown", onKeyDown);
@@ -1098,7 +1102,7 @@ export default function Home() {
       lastFocusedElementRef.current?.focus();
       lastFocusedElementRef.current = null;
     };
-  }, [selectedEmployee, skillProfileEmployee, hrEmployee, showAddEmployee, showWorkForm, showProjectForm, submissionWorkItem, rewardToRedeem, showProfileEditor, showContractForm, contractToSign, showOrganizationDocumentForm, showEmployeeWarningForm, showEmployeeRecognitionForm, showNotifications, showUserMenu]);
+  }, [hasBlockingOverlay, selectedEmployee, skillProfileEmployee, hrEmployee, showAddEmployee, showWorkForm, showProjectForm, submissionWorkItem, rewardToRedeem, showProfileEditor, showContractForm, contractToSign, showOrganizationDocumentForm, showEmployeeWarningForm, showEmployeeRecognitionForm, showNotifications, showUserMenu, showAiAssistant]);
 
   const evaluationsByEmployee = useMemo(
     () => new Map(evaluations.filter((evaluation) => evaluation.period === period).map((evaluation) => [evaluation.employeeId, evaluation])),
@@ -2822,6 +2826,13 @@ export default function Home() {
     })),
   };
 
+  const openPeopleAi = () => {
+    lastFocusedElementRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setShowNotifications(false);
+    setShowUserMenu(false);
+    setShowAiAssistant(true);
+  };
+
   const handlePeopleAiAction = (action: PeopleAiActionId) => {
     if (action === "open_today") {
       setView("work");
@@ -2904,7 +2915,7 @@ export default function Home() {
             <span className="nav-section-label">พื้นที่ทำงาน</span>
             <button className={view === "work" && !(workSection === "points" && pointPanel === "policies") ? "active" : ""} onClick={() => { setActiveDepartment("all"); setWorkSection("tasks"); setWorkDueFilter("all"); setWorkSearch(""); setView("work"); }}><span aria-hidden="true">✓</span><b>งาน</b><em>{workItems.filter((item) => item.status !== "done").length}</em></button>
             <button className={view === "portfolio" ? "active" : ""} onClick={() => setView("portfolio")}><span aria-hidden="true">◇</span><b>แฟ้มผลงาน</b></button>
-            <button className={showAiAssistant ? "active" : ""} onClick={() => setShowAiAssistant(true)}><span aria-hidden="true">AI</span><b>ผู้ช่วย AI</b><em>ใหม่</em></button>
+            <button className={showAiAssistant ? "active" : ""} onClick={openPeopleAi}><span aria-hidden="true">AI</span><b>ผู้ช่วย AI</b><em>ใหม่</em></button>
             <button className={view === "office" ? "active" : ""} onClick={() => setView("office")}><span aria-hidden="true">⌂</span><b>สำนักงานจำลอง</b><em>{officePressureCount}</em></button>
             <button className={view === "overview" ? "active" : ""} onClick={() => setView("overview")}><span aria-hidden="true">◫</span><b>ภาพรวมทีม</b></button>
             <span className="nav-section-label">ทีมและผลงาน</span>
@@ -4803,7 +4814,10 @@ export default function Home() {
         </div>
       )}
 
-      {!isEmployeeUser && <AiAssistant open={showAiAssistant} context={peopleAiContext} onClose={() => setShowAiAssistant(false)} onSystemAction={handlePeopleAiAction} />}
+      {!isEmployeeUser && <>
+        <AiRobotMascot open={showAiAssistant} suspended={hasBlockingOverlay} onOpen={openPeopleAi} />
+        <AiAssistant open={showAiAssistant} context={peopleAiContext} onClose={() => setShowAiAssistant(false)} onSystemAction={handlePeopleAiAction} />
+      </>}
       <div className={`toast ${toast ? `show ${toast.tone}` : ""}`} role={toast?.tone === "error" ? "alert" : "status"} aria-live={toast?.tone === "error" ? "assertive" : "polite"} aria-atomic="true"><span>{toast?.tone === "error" ? "!" : "✓"}</span>{toast?.message}</div>
     </main>
   );

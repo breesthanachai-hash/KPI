@@ -519,7 +519,7 @@ test("ships a private employee portal with safe team overview and self-only acti
 
   assert.match(page, /const employeeViews: View\[\] = \["work", "portfolio", "office", "power", "peopleOps"\]/);
   assert.match(page, /section\.id !== "projects"/);
-  assert.match(page, /!isEmployeeUser && <AiAssistant/);
+  assert.match(page, /!isEmployeeUser && <>[\s\S]*?<AiRobotMascot[\s\S]*?<AiAssistant/);
   assert.match(page, /item\.assigneeEmployeeId === currentUser\.employeeId/);
   assert.match(page, /const activeRewardEmployeeId = isAdmin \? rewardEmployeeId : currentUser\?\.employeeId \?\? ""/);
   assert.match(page, /บัญชีที่ใช้ Points/);

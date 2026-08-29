@@ -248,14 +248,13 @@ export default function AiAssistant({ open, context, onClose, onSystemAction }: 
   useEffect(() => {
     if (!open) return;
     messageEndRef.current?.scrollIntoView({ block: "end" });
+  }, [messages, open]);
+
+  useEffect(() => {
+    if (!open) return;
     const timer = window.setTimeout(() => inputRef.current?.focus(), 180);
-    const onKeyDown = (event: KeyboardEvent) => event.key === "Escape" && onClose();
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      window.clearTimeout(timer);
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, [messages, onClose, open]);
+    return () => window.clearTimeout(timer);
+  }, [open]);
 
   const openTasks = useMemo(() => context.tasks.filter((task) => task.status !== "done").length, [context.tasks]);
 
@@ -282,8 +281,8 @@ export default function AiAssistant({ open, context, onClose, onSystemAction }: 
   return (
     <>
       {open && <div className="ai-assistant-layer open">
-        <button className="ai-assistant-backdrop" onClick={onClose} aria-label="ปิด People AI" tabIndex={open ? 0 : -1} />
-        <aside className="ai-assistant-panel" role="dialog" aria-modal="true" aria-labelledby="people-ai-title">
+        <button className="ai-assistant-backdrop" onClick={onClose} aria-label="ปิด People AI" tabIndex={-1} />
+        <aside id="people-ai-panel" className="ai-assistant-panel" role="dialog" aria-modal="true" aria-labelledby="people-ai-title" tabIndex={-1}>
           <header className="ai-assistant-header">
             <div className="ai-assistant-brand"><span aria-hidden="true">AI</span><div><small>ผู้ช่วยงานอัจฉริยะ</small><h2 id="people-ai-title">People AI</h2></div></div>
             <div className="ai-assistant-header-actions"><button onClick={clearConversation} aria-label="เริ่มบทสนทนาใหม่">เริ่มใหม่</button><button className="ai-assistant-close" onClick={onClose} aria-label="ปิดแชท">×</button></div>
