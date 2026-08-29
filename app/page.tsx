@@ -8,10 +8,13 @@ import {
   type AttendanceRecord,
   type EmployeeRecord,
   type EmployeeProfileRecord,
+  type EmployeeRecognitionDto,
   type EmploymentContractRecord,
+  type EmployeeWarningDto,
   type EvaluationRecord,
   type HrProfileRecord,
   type NotificationReadRecord,
+  type OrganizationDocumentDto,
   type PointEventRecord,
   type PointEventType,
   type PointLedgerRecord,
@@ -43,7 +46,7 @@ import {
 
 const Office3D = lazy(() => import("./office-3d"));
 
-type View = "overview" | "employees" | "profiles" | "skills" | "power" | "peopleOps" | "hr" | "portfolio" | "work" | "office" | "access";
+type View = "overview" | "employees" | "profiles" | "organizationDocs" | "skills" | "power" | "peopleOps" | "hr" | "portfolio" | "work" | "office" | "access";
 
 type CurrentUser = UserAccountRecord & { authenticatedName: string };
 
@@ -57,6 +60,9 @@ type AppPermissions = {
   canViewTeamOverview: boolean;
   canViewOwnGrowth: boolean;
   canViewOwnRewards: boolean;
+  canManageOrganizationDocuments: boolean;
+  canManageEmployeeWarnings: boolean;
+  canManageEmployeeRecognitions: boolean;
 };
 type EmployeeTeamOverview = { employees: EmployeeRecord[]; evaluations: EvaluationRecord[]; workItems: WorkItemRecord[] };
 
@@ -142,6 +148,81 @@ type PolicyAcknowledgementRecord = {
 };
 
 type OrganizationPolicyDraft = Pick<OrganizationPolicyRecord, "title" | "summary" | "content" | "effectiveDate" | "acknowledgementRequired"> & { category: OrganizationPolicyCategory };
+
+type OrganizationDocumentCategory = "lease" | "employment" | "hr" | "legal" | "finance" | "operations" | "other";
+type OrganizationDocumentStatus = "draft" | "active" | "expired" | "archived";
+type OrganizationDocumentRecord = OrganizationDocumentDto;
+
+type EmployeeWarningLevel = "first" | "second" | "final";
+type EmployeeWarningStatus = "draft" | "issued" | "acknowledged" | "resolved" | "withdrawn";
+type EmployeeWarningRecord = EmployeeWarningDto;
+
+type EmployeeRecognitionType = "certificate" | "award" | "honor" | "training" | "license" | "other";
+type EmployeeRecognitionStatus = "active" | "expired" | "revoked";
+type EmployeeRecognitionRecord = EmployeeRecognitionDto;
+
+type OrganizationDocumentTab = "library" | "templates";
+
+const organizationDocumentCategoryMeta: Record<OrganizationDocumentCategory, { label: string; icon: string }> = {
+  lease: { label: "สัญญาเช่า", icon: "⌂" },
+  employment: { label: "การจ้างงาน", icon: "✎" },
+  hr: { label: "เอกสาร HR", icon: "HR" },
+  legal: { label: "กฎหมาย", icon: "§" },
+  finance: { label: "การเงิน", icon: "฿" },
+  operations: { label: "การดำเนินงาน", icon: "▤" },
+  other: { label: "อื่น ๆ", icon: "◇" },
+};
+
+const organizationDocumentStatusLabels: Record<OrganizationDocumentStatus, string> = {
+  draft: "ฉบับร่าง",
+  active: "ใช้งานอยู่",
+  expired: "หมดอายุ",
+  archived: "เก็บถาวร",
+};
+
+const organizationDocumentAllowedStatuses: Record<OrganizationDocumentStatus, OrganizationDocumentStatus[]> = {
+  draft: ["active", "archived"],
+  active: ["expired", "archived"],
+  expired: ["active", "archived"],
+  archived: [],
+};
+
+const employeeWarningLevelLabels: Record<EmployeeWarningLevel, string> = {
+  first: "ครั้งที่ 1",
+  second: "ครั้งที่ 2",
+  final: "ครั้งสุดท้าย",
+};
+
+const employeeWarningStatusLabels: Record<EmployeeWarningStatus, string> = {
+  draft: "ฉบับร่าง",
+  issued: "ออกเอกสารแล้ว",
+  acknowledged: "รับทราบแล้ว",
+  resolved: "ปิดเรื่องแล้ว",
+  withdrawn: "เพิกถอนแล้ว",
+};
+
+const employeeRecognitionTypeLabels: Record<EmployeeRecognitionType, string> = {
+  certificate: "เกียรติบัตร",
+  award: "รางวัล",
+  honor: "เกียรติยศ",
+  training: "ใบรับรองการอบรม",
+  license: "ใบอนุญาตวิชาชีพ",
+  other: "อื่น ๆ",
+};
+
+const employeeRecognitionStatusLabels: Record<EmployeeRecognitionStatus, string> = {
+  active: "ใช้งานอยู่",
+  expired: "หมดอายุ",
+  revoked: "เพิกถอนแล้ว",
+};
+
+const organizationDocumentTemplates: { id: string; title: string; category: OrganizationDocumentCategory; description: string; href: string }[] = [
+  { id: "office-lease", title: "แม่แบบสัญญาเช่าสำนักงาน / พื้นที่", category: "lease", description: "โครงสร้างสัญญาเช่าสำหรับกรอกคู่สัญญา พื้นที่ ระยะเวลา และค่าใช้จ่าย", href: "/templates/office-lease-agreement-template.docx" },
+  { id: "employment-agreement", title: "แม่แบบสัญญาจ้างพนักงาน", category: "employment", description: "แบบร่างเงื่อนไขการจ้าง หน้าที่ ค่าตอบแทน และการลงนาม", href: "/templates/employment-agreement-template.docx" },
+  { id: "confidentiality-nda", title: "แม่แบบสัญญารักษาความลับ (NDA)", category: "legal", description: "ใช้เป็นจุดเริ่มต้นสำหรับกำหนดข้อมูลลับและหน้าที่รักษาความลับ", href: "/templates/confidentiality-nda-template.docx" },
+  { id: "employee-warning", title: "แม่แบบหนังสือเตือนพนักงาน", category: "hr", description: "แบบร่างบันทึกข้อเท็จจริง สิ่งที่ต้องปรับปรุง และวันติดตามผล", href: "/templates/employee-warning-letter-template.docx" },
+  { id: "asset-handover", title: "แม่แบบรับ–คืนทรัพย์สินบริษัท", category: "operations", description: "บันทึกรายการอุปกรณ์ ผู้รับมอบ สภาพ และการส่งคืน", href: "/templates/asset-handover-return-template.docx" },
+];
 
 type NotificationKind = "quest" | "deadline" | "review" | "reward";
 
@@ -703,6 +784,7 @@ const viewMeta: Record<View, { eyebrow: string; title: string; description: stri
   overview: { eyebrow: "ภาพรวมองค์กร", title: "ภาพรวม KPI พนักงาน", description: "ติดตามเป้าหมาย ประเมินผลงาน และวางแผนพัฒนาทีมในที่เดียว" },
   employees: { eyebrow: "ทะเบียนและการประเมิน", title: "พนักงานและผลประเมิน", description: "ค้นหา เพิ่มพนักงาน และบันทึกผล KPI พร้อมระดับสกิลรายบุคคล" },
   profiles: { eyebrow: "EMPLOYEE DIGITAL DOSSIER", title: "แฟ้มประวัติพนักงาน", description: "รวมข้อมูลส่วนตัว เอกสารสมัครงาน การตรวจเอกสาร และสัญญาจ้างพร้อมลายเซ็นอิเล็กทรอนิกส์" },
+  organizationDocs: { eyebrow: "ORGANIZATION DOCUMENT CENTER", title: "เอกสารองค์กร", description: "จัดเก็บสัญญา เอกสาร HR และแม่แบบฉบับร่าง พร้อมค้นหาและดาวน์โหลดจากที่เดียว" },
   skills: { eyebrow: "COMPETENCY MATRIX", title: "ภาพรวมสกิลของทีม", description: "มองเห็นจุดแข็ง ช่องว่าง และความพร้อมของแต่ละสายงาน" },
   power: { eyebrow: "TEAM POWER RATINGS", title: "ค่าพลังพนักงาน", description: "ดูค่าพลังรวมและ 6 สกิลหลักในรูปแบบการ์ด พร้อมเปรียบเทียบจุดเด่นของพนักงานแบบตัวต่อตัว" },
   peopleOps: { eyebrow: "PEOPLE OPERATING SYSTEM", title: "เวลาเข้างานและเส้นทางเติบโต", description: "ลงเวลา อนุมัติวันลา ยืนยันสกิล เพิ่มค่าตอบแทน และเห็นความพร้อมเลื่อนตำแหน่งในระบบเดียว" },
@@ -736,12 +818,15 @@ export default function Home() {
   const [employeeProfiles, setEmployeeProfiles] = useState<EmployeeProfileRecord[]>([]);
   const [applicationDocuments, setApplicationDocuments] = useState<ApplicationDocumentRecord[]>([]);
   const [employmentContracts, setEmploymentContracts] = useState<EmploymentContractRecord[]>([]);
+  const [organizationDocuments, setOrganizationDocuments] = useState<OrganizationDocumentRecord[]>([]);
+  const [employeeWarnings, setEmployeeWarnings] = useState<EmployeeWarningRecord[]>([]);
+  const [employeeRecognitions, setEmployeeRecognitions] = useState<EmployeeRecognitionRecord[]>([]);
   const [userAccounts, setUserAccounts] = useState<UserAccountRecord[]>([]);
   const [notificationReads, setNotificationReads] = useState<NotificationReadRecord[]>([]);
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [employeePreview, setEmployeePreview] = useState<EmployeePreview | null>(null);
   const isEmployeePreview = Boolean(employeePreview?.readOnly);
-  const [permissions, setPermissions] = useState<AppPermissions>({ canManageAccounts: false, canManagePeople: false, canManageWork: false, canAssignTeamWork: false, canReviewWork: false, canViewTeam: false, canViewTeamOverview: false, canViewOwnGrowth: false, canViewOwnRewards: false });
+  const [permissions, setPermissions] = useState<AppPermissions>({ canManageAccounts: false, canManagePeople: false, canManageWork: false, canAssignTeamWork: false, canReviewWork: false, canViewTeam: false, canViewTeamOverview: false, canViewOwnGrowth: false, canViewOwnRewards: false, canManageOrganizationDocuments: false, canManageEmployeeWarnings: false, canManageEmployeeRecognitions: false });
   const [teamOverview, setTeamOverview] = useState<EmployeeTeamOverview>({ employees: [], evaluations: [], workItems: [] });
   const [launchReadiness, setLaunchReadiness] = useState<LaunchReadiness | null>(null);
   const [accessDenied, setAccessDenied] = useState<{ email: string; name: string; anonymous: boolean } | null>(null);
@@ -773,6 +858,9 @@ export default function Home() {
   const [showProfileEditor, setShowProfileEditor] = useState(false);
   const [showContractForm, setShowContractForm] = useState(false);
   const [contractToSign, setContractToSign] = useState<EmploymentContractRecord | null>(null);
+  const [showOrganizationDocumentForm, setShowOrganizationDocumentForm] = useState(false);
+  const [showEmployeeWarningForm, setShowEmployeeWarningForm] = useState(false);
+  const [showEmployeeRecognitionForm, setShowEmployeeRecognitionForm] = useState(false);
   const [uploadingDocumentType, setUploadingDocumentType] = useState<ApplicationDocumentRecord["documentType"] | null>(null);
   const [uploadingProfileImage, setUploadingProfileImage] = useState(false);
   const [powerLeftId, setPowerLeftId] = useState("");
@@ -792,6 +880,10 @@ export default function Home() {
   const [portfolioStatus, setPortfolioStatus] = useState<PortfolioStatusFilter>("all");
   const [monthlyPointMonth, setMonthlyPointMonth] = useState(bangkokIsoMonth());
   const [pointHistoryEmployeeId, setPointHistoryEmployeeId] = useState("all");
+  const [organizationDocumentTab, setOrganizationDocumentTab] = useState<OrganizationDocumentTab>("library");
+  const [organizationDocumentSearch, setOrganizationDocumentSearch] = useState("");
+  const [organizationDocumentCategoryFilter, setOrganizationDocumentCategoryFilter] = useState<"all" | OrganizationDocumentCategory>("all");
+  const [organizationDocumentStatusFilter, setOrganizationDocumentStatusFilter] = useState<"all" | OrganizationDocumentStatus>("all");
   const [selectedPolicyId, setSelectedPolicyId] = useState("");
   const [policyDraft, setPolicyDraft] = useState<OrganizationPolicyDraft>(blankOrganizationPolicyDraft);
   const [complianceChecklist, setComplianceChecklist] = useState<Record<ComplianceChecklistId, boolean>>(() => Object.fromEntries(complianceChecklistItems.map((item) => [item.id, false])) as Record<ComplianceChecklistId, boolean>);
@@ -808,6 +900,12 @@ export default function Home() {
   const [profileForm, setProfileForm] = useState<Omit<EmployeeProfileRecord, "employeeId" | "updatedAt">>({ personalEmail: "", phone: "", birthDate: "", nationalIdLast4: "", address: "", emergencyName: "", emergencyPhone: "", startDate: "", employmentType: "permanent", education: "", experienceYears: 0, applicationSource: "" });
   const [contractForm, setContractForm] = useState({ title: "สัญญาจ้างพนักงาน", version: "1.0", status: "sent" as "draft" | "sent", effectiveDate: "2026-09-01", expiryDate: "", documentId: "" });
   const [signatureForm, setSignatureForm] = useState({ signedName: "", consent: false });
+  const [organizationDocumentForm, setOrganizationDocumentForm] = useState({ title: "", category: "other" as OrganizationDocumentCategory, description: "", documentNumber: "", version: "1.0", owner: "ฝ่ายทรัพยากรบุคคล", effectiveDate: bangkokIsoDate(), expiryDate: "", note: "", status: "draft" as "draft" | "active" });
+  const [organizationDocumentFile, setOrganizationDocumentFile] = useState<File | null>(null);
+  const [employeeWarningForm, setEmployeeWarningForm] = useState({ warningNumber: "", level: "first" as EmployeeWarningLevel, subject: "", incidentDate: bangkokIsoDate(), issuedDate: bangkokIsoDate(), facts: "", correctiveAction: "", reviewDate: "", employeeStatement: "", status: "draft" as "draft" | "issued" });
+  const [employeeWarningFile, setEmployeeWarningFile] = useState<File | null>(null);
+  const [employeeRecognitionForm, setEmployeeRecognitionForm] = useState({ recognitionType: "certificate" as EmployeeRecognitionType, title: "", issuer: "", issuedDate: bangkokIsoDate(), expiryDate: "", credentialId: "", verificationUrl: "", description: "", status: "active" as const });
+  const [employeeRecognitionFile, setEmployeeRecognitionFile] = useState<File | null>(null);
   const [pointEventForm, setPointEventForm] = useState({ employeeId: "", eventType: "attendance_on_time" as PointEventType, eventDate: bangkokIsoDate(), note: "", evidenceUrl: "" });
   const [attendanceForm, setAttendanceForm] = useState({ employeeId: "", workDate: bangkokIsoDate(), status: "present" as AttendanceRecord["status"], clockIn: "09:00", clockOut: "", leaveType: "personal" as NonNullable<AttendanceRecord["leaveType"]>, note: "" });
   const [skillAchievementForm, setSkillAchievementForm] = useState({ skillId: "", level: 2, evidenceUrl: "", note: "" });
@@ -820,7 +918,7 @@ export default function Home() {
     if (previewEmployeeId) dashboardParams.set("previewEmployeeId", previewEmployeeId);
     fetch(`/api/dashboard?${dashboardParams.toString()}`, { signal: controller.signal })
       .then(async (response) => {
-        const body = await response.json() as { currentUser?: CurrentUser; employeePreview?: EmployeePreview | null; permissions?: AppPermissions; teamOverview?: EmployeeTeamOverview; launchReadiness?: LaunchReadiness; userAccounts?: UserAccountRecord[]; notificationReads?: NotificationReadRecord[]; employees?: EmployeeRecord[]; evaluations?: EvaluationRecord[]; hrProfiles?: HrProfileRecord[]; attendanceRecords?: AttendanceRecord[]; skillAchievements?: SkillAchievementRecord[]; talentActions?: TalentActionRecord[]; projects?: ProjectRecord[]; workItems?: WorkItemRecord[]; workSubmissions?: WorkSubmissionRecord[]; rewards?: RewardRecord[]; pointLedger?: PointLedgerRecord[]; pointEvents?: PointEventRecord[]; pointPolicyRules?: PointPolicyRules; rewardRedemptions?: RewardRedemptionRecord[]; organizationPolicies?: OrganizationPolicyRecord[]; policyAcknowledgements?: PolicyAcknowledgementRecord[]; employeeProfiles?: EmployeeProfileRecord[]; applicationDocuments?: ApplicationDocumentRecord[]; employmentContracts?: EmploymentContractRecord[]; accessDenied?: boolean; identity?: { email: string; name: string } | null; error?: string };
+        const body = await response.json() as { currentUser?: CurrentUser; employeePreview?: EmployeePreview | null; permissions?: AppPermissions; teamOverview?: EmployeeTeamOverview; launchReadiness?: LaunchReadiness; userAccounts?: UserAccountRecord[]; notificationReads?: NotificationReadRecord[]; employees?: EmployeeRecord[]; evaluations?: EvaluationRecord[]; hrProfiles?: HrProfileRecord[]; attendanceRecords?: AttendanceRecord[]; skillAchievements?: SkillAchievementRecord[]; talentActions?: TalentActionRecord[]; projects?: ProjectRecord[]; workItems?: WorkItemRecord[]; workSubmissions?: WorkSubmissionRecord[]; rewards?: RewardRecord[]; pointLedger?: PointLedgerRecord[]; pointEvents?: PointEventRecord[]; pointPolicyRules?: PointPolicyRules; rewardRedemptions?: RewardRedemptionRecord[]; organizationPolicies?: OrganizationPolicyRecord[]; policyAcknowledgements?: PolicyAcknowledgementRecord[]; employeeProfiles?: EmployeeProfileRecord[]; applicationDocuments?: ApplicationDocumentRecord[]; employmentContracts?: EmploymentContractRecord[]; organizationDocuments?: OrganizationDocumentRecord[]; employeeWarnings?: EmployeeWarningRecord[]; employeeRecognitions?: EmployeeRecognitionRecord[]; accessDenied?: boolean; identity?: { email: string; name: string } | null; error?: string };
         if (response.status === 403 && body.accessDenied) {
           setAccessDenied(body.identity ? { ...body.identity, anonymous: false } : { email: "", name: "", anonymous: true });
           setCurrentUser(null);
@@ -836,7 +934,7 @@ export default function Home() {
         if (!response.ok) throw new Error(body.error ?? "โหลดข้อมูลไม่สำเร็จ");
         setCurrentUser(body.currentUser ?? null);
         setEmployeePreview(body.employeePreview ?? null);
-        setPermissions(body.permissions ?? { canManageAccounts: false, canManagePeople: false, canManageWork: false, canAssignTeamWork: false, canReviewWork: false, canViewTeam: false, canViewTeamOverview: false, canViewOwnGrowth: false, canViewOwnRewards: false });
+        setPermissions(body.permissions ?? { canManageAccounts: false, canManagePeople: false, canManageWork: false, canAssignTeamWork: false, canReviewWork: false, canViewTeam: false, canViewTeamOverview: false, canViewOwnGrowth: false, canViewOwnRewards: false, canManageOrganizationDocuments: false, canManageEmployeeWarnings: false, canManageEmployeeRecognitions: false });
         setTeamOverview(body.teamOverview ?? { employees: [], evaluations: [], workItems: [] });
         setLaunchReadiness(body.launchReadiness ?? null);
         setUserAccounts(body.userAccounts ?? []);
@@ -868,6 +966,9 @@ export default function Home() {
         setEmployeeProfiles(body.employeeProfiles ?? []);
         setApplicationDocuments(body.applicationDocuments ?? []);
         setEmploymentContracts(body.employmentContracts ?? []);
+        setOrganizationDocuments(body.organizationDocuments ?? []);
+        setEmployeeWarnings(body.employeeWarnings ?? []);
+        setEmployeeRecognitions(body.employeeRecognitions ?? []);
         setDataWarning("");
         const powerEmployees = body.currentUser?.role === "employee" && body.teamOverview?.employees.length ? body.teamOverview.employees : body.employees ?? [];
         const firstEmployeeId = body.employees?.[0]?.id ?? "";
@@ -921,7 +1022,14 @@ export default function Home() {
   }, [currentUser?.role, view, workSection]);
 
   useEffect(() => {
-    if (!selectedEmployee && !skillProfileEmployee && !hrEmployee && !showAddEmployee && !showWorkForm && !showProjectForm && !submissionWorkItem && !rewardToRedeem && !showProfileEditor && !showContractForm && !contractToSign && !showNotifications && !showUserMenu) return;
+    if (view !== "organizationDocs" || !currentUser) return;
+    if (currentUser.role === "admin" && permissions.canManageOrganizationDocuments && !isEmployeePreview) return;
+    const timer = window.setTimeout(() => setView("work"), 0);
+    return () => window.clearTimeout(timer);
+  }, [currentUser, isEmployeePreview, permissions.canManageOrganizationDocuments, view]);
+
+  useEffect(() => {
+    if (!selectedEmployee && !skillProfileEmployee && !hrEmployee && !showAddEmployee && !showWorkForm && !showProjectForm && !submissionWorkItem && !rewardToRedeem && !showProfileEditor && !showContractForm && !contractToSign && !showOrganizationDocumentForm && !showEmployeeWarningForm && !showEmployeeRecognitionForm && !showNotifications && !showUserMenu) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setSelectedEmployee(null);
@@ -936,13 +1044,16 @@ export default function Home() {
         setShowProfileEditor(false);
         setShowContractForm(false);
         setContractToSign(null);
+        setShowOrganizationDocumentForm(false);
+        setShowEmployeeWarningForm(false);
+        setShowEmployeeRecognitionForm(false);
         setShowNotifications(false);
         setShowUserMenu(false);
       }
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [selectedEmployee, skillProfileEmployee, hrEmployee, showAddEmployee, showWorkForm, showProjectForm, submissionWorkItem, rewardToRedeem, showProfileEditor, showContractForm, contractToSign, showNotifications, showUserMenu]);
+  }, [selectedEmployee, skillProfileEmployee, hrEmployee, showAddEmployee, showWorkForm, showProjectForm, submissionWorkItem, rewardToRedeem, showProfileEditor, showContractForm, contractToSign, showOrganizationDocumentForm, showEmployeeWarningForm, showEmployeeRecognitionForm, showNotifications, showUserMenu]);
 
   const evaluationsByEmployee = useMemo(
     () => new Map(evaluations.filter((evaluation) => evaluation.period === period).map((evaluation) => [evaluation.employeeId, evaluation])),
@@ -1023,11 +1134,32 @@ export default function Home() {
   const profileDocuments = profileEmployee ? applicationDocuments.filter((document) => document.employeeId === profileEmployee.id) : [];
   const profileContractDocuments = profileDocuments.filter((document) => document.documentType === "contract").sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt));
   const profileContracts = profileEmployee ? employmentContracts.filter((contract) => contract.employeeId === profileEmployee.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt)) : [];
+  const profileWarnings = profileEmployee ? employeeWarnings.filter((warning) => warning.employeeId === profileEmployee.id).slice().sort((a, b) => b.issuedDate.localeCompare(a.issuedDate) || b.updatedAt.localeCompare(a.updatedAt)) : [];
+  const profileRecognitions = profileEmployee ? employeeRecognitions.filter((recognition) => recognition.employeeId === profileEmployee.id).slice().sort((a, b) => b.issuedDate.localeCompare(a.issuedDate) || b.updatedAt.localeCompare(a.updatedAt)) : [];
+  const activeProfileWarningCount = profileWarnings.filter((warning) => warning.status === "issued" || warning.status === "acknowledged").length;
+  const activeProfileRecognitionCount = profileRecognitions.filter((recognition) => recognition.status === "active").length;
   const employeeContracts = currentUser?.employeeId ? employmentContracts.filter((contract) => contract.employeeId === currentUser.employeeId).sort((a, b) => b.createdAt.localeCompare(a.createdAt)) : [];
   const contractSigningEmployee = contractToSign ? employeesById.get(contractToSign.employeeId) ?? null : null;
   const verifiedRequiredDocuments = requiredDocumentTypes.filter((type) => profileDocuments.some((document) => document.documentType === type && document.status === "verified")).length;
   const profileFilledFields = profileRecord ? [profileRecord.personalEmail, profileRecord.phone, profileRecord.birthDate, profileRecord.nationalIdLast4, profileRecord.address, profileRecord.emergencyName, profileRecord.emergencyPhone, profileRecord.startDate, profileRecord.education, profileRecord.applicationSource].filter(Boolean).length : 0;
   const dossierCompleteness = Math.round((profileFilledFields / 10 * .45 + verifiedRequiredDocuments / requiredDocumentTypes.length * .4 + (profileContracts.some((contract) => contract.status === "signed") ? .15 : 0)) * 100);
+  const organizationDocumentToday = bangkokIsoDate();
+  const organizationDocumentExpiryWindow = addIsoDays(organizationDocumentToday, 30);
+  const organizationDocumentQuery = organizationDocumentSearch.trim().toLocaleLowerCase("th");
+  const visibleOrganizationDocuments = organizationDocuments
+    .filter((document) => organizationDocumentCategoryFilter === "all" || document.category === organizationDocumentCategoryFilter)
+    .filter((document) => organizationDocumentStatusFilter === "all" || document.status === organizationDocumentStatusFilter)
+    .filter((document) => !organizationDocumentQuery || `${document.title} ${document.description} ${document.documentNumber} ${document.version} ${document.owner} ${document.note} ${organizationDocumentCategoryMeta[document.category].label}`.toLocaleLowerCase("th").includes(organizationDocumentQuery))
+    .slice()
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  const visibleOrganizationDocumentTemplates = organizationDocumentTemplates.filter((template) => {
+    const categoryMatches = organizationDocumentCategoryFilter === "all" || template.category === organizationDocumentCategoryFilter;
+    const queryMatches = !organizationDocumentQuery || `${template.title} ${template.description} ${organizationDocumentCategoryMeta[template.category].label}`.toLocaleLowerCase("th").includes(organizationDocumentQuery);
+    return categoryMatches && queryMatches;
+  });
+  const activeOrganizationDocumentCount = organizationDocuments.filter((document) => document.status === "active").length;
+  const draftOrganizationDocumentCount = organizationDocuments.filter((document) => document.status === "draft").length;
+  const expiringOrganizationDocumentCount = organizationDocuments.filter((document) => document.status === "active" && Boolean(document.expiryDate) && document.expiryDate! >= organizationDocumentToday && document.expiryDate! <= organizationDocumentExpiryWindow).length;
   const hrEmployeeInsight = hrEmployee ? workforceInsights.find(({ employee }) => employee.id === hrEmployee.id) ?? null : null;
   const projectsById = useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects]);
   const accessiblePointLedger = useMemo(() => currentUser?.role === "employee" ? pointLedger.filter((entry) => entry.employeeId === currentUser.employeeId) : pointLedger, [currentUser, pointLedger]);
@@ -2153,6 +2285,152 @@ export default function Home() {
     }
   };
 
+  const openOrganizationDocumentCreator = () => {
+    if (!permissions.canManageOrganizationDocuments || isEmployeePreview) return;
+    setOrganizationDocumentForm({ title: "", category: "other", description: "", documentNumber: "", version: "1.0", owner: currentUser?.displayName || "ฝ่ายทรัพยากรบุคคล", effectiveDate: bangkokIsoDate(), expiryDate: "", note: "", status: "draft" });
+    setOrganizationDocumentFile(null);
+    setShowOrganizationDocumentForm(true);
+  };
+
+  const saveOrganizationDocument = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!organizationDocumentFile || !permissions.canManageOrganizationDocuments || isEmployeePreview) return;
+    setIsSaving(true);
+    try {
+      const formData = new FormData();
+      Object.entries(organizationDocumentForm).forEach(([key, value]) => formData.set(key, value));
+      formData.set("file", organizationDocumentFile);
+      const response = await fetch("/api/organization-documents", { method: "POST", body: formData });
+      const body = await response.json() as { organizationDocument?: OrganizationDocumentRecord; error?: string };
+      if (!response.ok || !body.organizationDocument) throw new Error(body.error ?? "เพิ่มเอกสารองค์กรไม่สำเร็จ");
+      setOrganizationDocuments((items) => [body.organizationDocument as OrganizationDocumentRecord, ...items.filter((item) => item.id !== body.organizationDocument?.id)]);
+      setShowOrganizationDocumentForm(false);
+      setOrganizationDocumentFile(null);
+      showToast(`เพิ่ม “${body.organizationDocument.title}” ในคลังเอกสารแล้ว`);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "เพิ่มเอกสารองค์กรไม่สำเร็จ");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const updateOrganizationDocumentStatus = async (document: OrganizationDocumentRecord, status: OrganizationDocumentStatus) => {
+    if (!permissions.canManageOrganizationDocuments || isEmployeePreview) return;
+    setIsSaving(true);
+    try {
+      const response = await fetch("/api/organization-documents", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: document.id, expectedRevision: document.revision, status }) });
+      const body = await response.json() as { organizationDocument?: OrganizationDocumentRecord; error?: string };
+      if (!response.ok || !body.organizationDocument) throw new Error(body.error ?? "อัปเดตสถานะเอกสารไม่สำเร็จ");
+      setOrganizationDocuments((items) => items.map((item) => item.id === body.organizationDocument?.id ? body.organizationDocument as OrganizationDocumentRecord : item));
+      showToast(`อัปเดตเป็น “${organizationDocumentStatusLabels[status]}” แล้ว`);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "อัปเดตสถานะเอกสารไม่สำเร็จ");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const openEmployeeWarningCreator = () => {
+    if (!profileEmployee || !permissions.canManageEmployeeWarnings || isEmployeePreview) return;
+    setEmployeeWarningForm({ warningNumber: "", level: "first", subject: "", incidentDate: bangkokIsoDate(), issuedDate: bangkokIsoDate(), facts: "", correctiveAction: "", reviewDate: "", employeeStatement: "", status: "draft" });
+    setEmployeeWarningFile(null);
+    setShowEmployeeWarningForm(true);
+  };
+
+  const saveEmployeeWarning = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!profileEmployee || !permissions.canManageEmployeeWarnings || isEmployeePreview) return;
+    setIsSaving(true);
+    try {
+      const formData = new FormData();
+      formData.set("employeeId", profileEmployee.id);
+      Object.entries(employeeWarningForm).forEach(([key, value]) => formData.set(key, value));
+      if (employeeWarningFile) formData.set("file", employeeWarningFile);
+      const response = await fetch("/api/employee-warnings", { method: "POST", body: formData });
+      const body = await response.json() as { employeeWarning?: EmployeeWarningRecord; error?: string };
+      if (!response.ok || !body.employeeWarning) throw new Error(body.error ?? "บันทึกใบเตือนไม่สำเร็จ");
+      setEmployeeWarnings((items) => [body.employeeWarning as EmployeeWarningRecord, ...items.filter((item) => item.id !== body.employeeWarning?.id)]);
+      setShowEmployeeWarningForm(false);
+      setEmployeeWarningFile(null);
+      showToast(employeeWarningForm.status === "issued" ? "ออกหนังสือเตือนและบันทึกในแฟ้มแล้ว" : "บันทึกหนังสือเตือนเป็นฉบับร่างแล้ว");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "บันทึกใบเตือนไม่สำเร็จ");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const updateEmployeeWarningStatus = async (warning: EmployeeWarningRecord, status: "issued" | "acknowledged" | "resolved" | "withdrawn") => {
+    if (!permissions.canManageEmployeeWarnings || isEmployeePreview) return;
+    setIsSaving(true);
+    try {
+      const response = await fetch("/api/employee-warnings", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          id: warning.id,
+          expectedRevision: warning.revision,
+          status,
+          ...(status === "acknowledged" ? { employeeStatement: warning.employeeStatement } : {}),
+        }),
+      });
+      const body = await response.json() as { employeeWarning?: EmployeeWarningRecord; error?: string };
+      if (!response.ok || !body.employeeWarning) throw new Error(body.error ?? "อัปเดตสถานะใบเตือนไม่สำเร็จ");
+      setEmployeeWarnings((items) => items.map((item) => item.id === body.employeeWarning?.id ? body.employeeWarning as EmployeeWarningRecord : item));
+      showToast(`อัปเดตใบเตือนเป็น “${employeeWarningStatusLabels[status]}” แล้ว`);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "อัปเดตสถานะใบเตือนไม่สำเร็จ");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const openEmployeeRecognitionCreator = () => {
+    if (!profileEmployee || !permissions.canManageEmployeeRecognitions || isEmployeePreview) return;
+    setEmployeeRecognitionForm({ recognitionType: "certificate", title: "", issuer: "", issuedDate: bangkokIsoDate(), expiryDate: "", credentialId: "", verificationUrl: "", description: "", status: "active" });
+    setEmployeeRecognitionFile(null);
+    setShowEmployeeRecognitionForm(true);
+  };
+
+  const saveEmployeeRecognition = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!profileEmployee || !permissions.canManageEmployeeRecognitions || isEmployeePreview) return;
+    setIsSaving(true);
+    try {
+      const formData = new FormData();
+      formData.set("employeeId", profileEmployee.id);
+      Object.entries(employeeRecognitionForm).forEach(([key, value]) => formData.set(key, value));
+      if (employeeRecognitionFile) formData.set("file", employeeRecognitionFile);
+      const response = await fetch("/api/employee-recognitions", { method: "POST", body: formData });
+      const body = await response.json() as { employeeRecognition?: EmployeeRecognitionRecord; error?: string };
+      if (!response.ok || !body.employeeRecognition) throw new Error(body.error ?? "เพิ่มเกียรติบัตรหรือรางวัลไม่สำเร็จ");
+      setEmployeeRecognitions((items) => [body.employeeRecognition as EmployeeRecognitionRecord, ...items.filter((item) => item.id !== body.employeeRecognition?.id)]);
+      setShowEmployeeRecognitionForm(false);
+      setEmployeeRecognitionFile(null);
+      showToast(`เพิ่ม “${body.employeeRecognition.title}” ในแฟ้มแล้ว`);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "เพิ่มเกียรติบัตรหรือรางวัลไม่สำเร็จ");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const updateEmployeeRecognitionStatus = async (recognition: EmployeeRecognitionRecord, status: EmployeeRecognitionStatus) => {
+    if (!permissions.canManageEmployeeRecognitions || isEmployeePreview) return;
+    setIsSaving(true);
+    try {
+      const response = await fetch("/api/employee-recognitions", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: recognition.id, expectedRevision: recognition.revision, status }) });
+      const body = await response.json() as { employeeRecognition?: EmployeeRecognitionRecord; error?: string };
+      if (!response.ok || !body.employeeRecognition) throw new Error(body.error ?? "อัปเดตสถานะเกียรติบัตรหรือรางวัลไม่สำเร็จ");
+      setEmployeeRecognitions((items) => items.map((item) => item.id === body.employeeRecognition?.id ? body.employeeRecognition as EmployeeRecognitionRecord : item));
+      showToast(`อัปเดตเป็น “${employeeRecognitionStatusLabels[status]}” แล้ว`);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "อัปเดตสถานะเกียรติบัตรหรือรางวัลไม่สำเร็จ");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const saveEvaluation = async () => {
     if (!selectedEmployee) return;
     if (!skillAssessmentComplete) {
@@ -2557,6 +2835,7 @@ export default function Home() {
             <span className="nav-section-label">HR และระบบ</span>
             <button className={view === "peopleOps" ? "active" : ""} onClick={() => setView("peopleOps")}><span aria-hidden="true">◷</span><b>เวลา &amp; เติบโต</b><em>{pendingLeaveRecords.length}</em></button>
             <button className={view === "profiles" ? "active" : ""} onClick={() => setView("profiles")}><span aria-hidden="true">▣</span><b>แฟ้มพนักงาน</b></button>
+            {permissions.canManageOrganizationDocuments && <button className={view === "organizationDocs" ? "active" : ""} onClick={() => setView("organizationDocs")}><span aria-hidden="true">▤</span><b>เอกสารองค์กร</b><em>{organizationDocuments.length}</em></button>}
             <button className={view === "hr" ? "active" : ""} onClick={() => setView("hr")}><span aria-hidden="true">⬡</span><b>บริหารบุคลากร</b></button>
             <button className={view === "work" && workSection === "points" && pointPanel === "policies" ? "active" : ""} onClick={() => { setPointPanel("policies"); setWorkSection("points"); setView("work"); }}><span aria-hidden="true">§</span><b>กฎองค์กร</b></button>
             <button className={view === "access" ? "active" : ""} onClick={() => setView("access")}><span aria-hidden="true">◎</span><b>ผู้ใช้งานและสิทธิ์</b><em>{userAccounts.filter((account) => account.status === "active").length}</em></button>
@@ -2678,7 +2957,7 @@ export default function Home() {
             <h1>{activeViewTitle}</h1>
             <p>{activeViewDescription}</p>
           </div>
-          {!isEmployeeUser && view !== "access" && view !== "work" && <div className="heading-actions">
+          {!isEmployeeUser && view !== "access" && view !== "work" && view !== "organizationDocs" && <div className="heading-actions">
             <button className="secondary-button" onClick={() => view === "office" ? setView("work") : view === "peopleOps" ? buildGrowthTeam() : view === "profiles" ? showToast(`${requiredDocumentTypes.length - verifiedRequiredDocuments} เอกสารจำเป็นยังตรวจไม่ครบ`) : view === "power" ? showToast("ค่าพลังรวมมาจากค่าสกิล 70% และ KPI 30%") : view === "portfolio" ? exportPortfolioReport() : exportReport()}><span aria-hidden="true">{view === "office" ? "✓" : view === "peopleOps" ? "♙" : view === "profiles" ? "▣" : view === "power" ? "i" : "↓"}</span> {view === "office" ? "เปิดทูดูลิส" : view === "peopleOps" ? "สร้างทีมจากสกิล" : view === "profiles" ? "เช็กเอกสารที่ขาด" : view === "power" ? "วิธีคำนวณ" : view === "portfolio" ? "ส่งออกแฟ้ม CSV" : "ส่งออกรายงาน"}</button>
             <button className="primary-button" onClick={() => {
               if (view === "office") {
@@ -2715,7 +2994,7 @@ export default function Home() {
           </div>}
         </div>
 
-        {!isEmployeeUser && view !== "access" && view !== "work" && <div className="filter-row" aria-label="กรองตามแผนก">
+        {!isEmployeeUser && view !== "access" && view !== "work" && view !== "organizationDocs" && <div className="filter-row" aria-label="กรองตามแผนก">
           {departmentFilters.map((filter) => (
             <button key={filter.id} className={activeDepartment === filter.id ? "active" : ""} onClick={() => setActiveDepartment(filter.id)}>{filter.label}</button>
           ))}
@@ -2886,6 +3165,8 @@ export default function Home() {
                   <article><span>▣</span><div><small>เอกสารจำเป็น</small><strong>{verifiedRequiredDocuments}/{requiredDocumentTypes.length}</strong><em>{verifiedRequiredDocuments === requiredDocumentTypes.length ? "ตรวจครบแล้ว" : `ขาด ${requiredDocumentTypes.length - verifiedRequiredDocuments} รายการ`}</em></div></article>
                   <article><span>✎</span><div><small>สถานะสัญญา</small><strong>{profileContracts[0] ? contractStatusLabel(profileContracts[0].status) : "ยังไม่มีสัญญา"}</strong><em>{profileContracts[0]?.signedAt ? `ลงนาม ${formatUpdatedAt(profileContracts[0].signedAt)}` : "ติดตามในแฟ้มนี้"}</em></div></article>
                   <article><span>◷</span><div><small>วันเริ่มงาน</small><strong>{profileRecord?.startDate ? new Date(`${profileRecord.startDate}T00:00:00`).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" }) : "ยังไม่ระบุ"}</strong><em>{profileRecord ? employmentTypeLabel(profileRecord.employmentType) : "กรอกข้อมูลการจ้าง"}</em></div></article>
+                  <article className={activeProfileWarningCount ? "metric-warning" : ""}><span>!</span><div><small>ใบเตือนที่ยังไม่ปิดเรื่อง</small><strong>{activeProfileWarningCount}</strong><em>{profileWarnings.length ? `ทั้งหมด ${profileWarnings.length} รายการ` : "ยังไม่มีประวัติ"}</em></div></article>
+                  <article className="metric-recognition"><span>★</span><div><small>เกียรติบัตร / รางวัล</small><strong>{activeProfileRecognitionCount}</strong><em>{profileRecognitions.length ? `ทั้งหมด ${profileRecognitions.length} รายการ` : "ยังไม่มีรายการ"}</em></div></article>
                 </div>
 
                 <div className="dossier-content-grid">
@@ -2926,6 +3207,43 @@ export default function Home() {
                     <p className="document-help">รองรับ PDF, Word, JPG และ PNG ขนาดไม่เกิน 10 MB ต่อไฟล์</p>
                   </section>
 
+                  {permissions.canManageEmployeeWarnings && <section className="employee-warning-card">
+                    <div className="dossier-section-heading"><div><p className="eyebrow">DISCIPLINARY RECORD</p><h3>ประวัติใบเตือน</h3></div><button type="button" className="warning-create-button" onClick={openEmployeeWarningCreator}>＋ เพิ่มใบเตือน</button></div>
+                    <div className="employee-warning-list">
+                      {profileWarnings.map((warning) => <article key={warning.id} className={`status-${warning.status}`}>
+                        <span className="employee-file-record-mark" aria-hidden="true">!</span>
+                        <div className="employee-file-record-copy"><span><b>{employeeWarningLevelLabels[warning.level]}</b><em className={warning.status}>{employeeWarningStatusLabels[warning.status]}</em></span><strong>{warning.subject}</strong><p>{warning.warningNumber} · ออกวันที่ {formatDueDate(warning.issuedDate)} · เหตุเกิด {formatDueDate(warning.incidentDate)}</p>{warning.correctiveAction && <small>แนวทางปรับปรุง: {warning.correctiveAction}</small>}</div>
+                        <div className="employee-file-record-actions">
+                          {warning.hasFile && <a href={`/api/employee-warnings?id=${encodeURIComponent(warning.id)}`}>ดาวน์โหลด</a>}
+                          {warning.status === "draft" && <button type="button" disabled={isSaving} onClick={() => void updateEmployeeWarningStatus(warning, "issued")}>ออกใบเตือน</button>}
+                          {warning.status === "issued" && <button type="button" disabled={isSaving} onClick={() => void updateEmployeeWarningStatus(warning, "acknowledged")}>บันทึกรับทราบ</button>}
+                          {(warning.status === "issued" || warning.status === "acknowledged") && <button type="button" disabled={isSaving} onClick={() => void updateEmployeeWarningStatus(warning, "resolved")}>ปิดเรื่อง</button>}
+                          {warning.status !== "withdrawn" && warning.status !== "resolved" && <button type="button" className="withdraw" disabled={isSaving} onClick={() => void updateEmployeeWarningStatus(warning, "withdrawn")}>เพิกถอน</button>}
+                        </div>
+                      </article>)}
+                      {!profileWarnings.length && <div className="employee-file-record-empty"><span>✓</span><strong>ยังไม่มีประวัติใบเตือน</strong><p>เมื่อ HR บันทึกฉบับร่างหรือออกเอกสาร รายการจะอยู่ในแฟ้มนี้</p></div>}
+                    </div>
+                    <div className="warning-fairness-note" role="note"><span>i</span><p><strong>การรับทราบไม่เท่ากับการยอมรับผิด</strong> ใบเตือนในแฟ้มนี้ไม่หัก Points อัตโนมัติ การบันทึกรายการวินัยต้องตรวจข้อเท็จจริงและดำเนินการแยกต่างหาก</p></div>
+                  </section>}
+
+                  {permissions.canManageEmployeeRecognitions && <section className="employee-recognition-card">
+                    <div className="dossier-section-heading"><div><p className="eyebrow">RECOGNITION &amp; CREDENTIALS</p><h3>เกียรติบัตรและรางวัลจากผลงาน</h3></div><button type="button" className="recognition-create-button" onClick={openEmployeeRecognitionCreator}>＋ เพิ่มรายการ</button></div>
+                    <div className="employee-recognition-list">
+                      {profileRecognitions.map((recognition) => <article key={recognition.id} className={`status-${recognition.status}`}>
+                        <span className="employee-file-record-mark" aria-hidden="true">★</span>
+                        <div className="employee-file-record-copy"><span><b>{employeeRecognitionTypeLabels[recognition.recognitionType]}</b><em className={recognition.status}>{employeeRecognitionStatusLabels[recognition.status]}</em></span><strong>{recognition.title}</strong><p>{recognition.issuer || "ไม่ระบุผู้ออก"} · {formatDueDate(recognition.issuedDate)}</p>{recognition.credentialId && <small>Credential ID: {recognition.credentialId}</small>}</div>
+                        <div className="employee-file-record-actions">
+                          {recognition.hasFile && <a href={`/api/employee-recognitions?id=${encodeURIComponent(recognition.id)}`}>ดาวน์โหลด</a>}
+                          {recognition.verificationUrl && <a href={recognition.verificationUrl} target="_blank" rel="noreferrer">ตรวจสอบลิงก์</a>}
+                          {recognition.status === "active" && recognition.expiryDate && recognition.expiryDate < organizationDocumentToday && <button type="button" disabled={isSaving} onClick={() => void updateEmployeeRecognitionStatus(recognition, "expired")}>ทำเครื่องหมายหมดอายุ</button>}
+                          {recognition.status === "expired" && <button type="button" disabled={isSaving} onClick={() => void updateEmployeeRecognitionStatus(recognition, "active")}>เปิดใช้งานอีกครั้ง</button>}
+                          {recognition.status !== "revoked" && <button type="button" className="withdraw" disabled={isSaving} onClick={() => void updateEmployeeRecognitionStatus(recognition, "revoked")}>เพิกถอน</button>}
+                        </div>
+                      </article>)}
+                      {!profileRecognitions.length && <div className="employee-file-record-empty recognition"><span>★</span><strong>ยังไม่มีเกียรติบัตรหรือรางวัล</strong><p>เพิ่มหลักฐานความสำเร็จ ใบรับรองการอบรม หรือใบอนุญาตวิชาชีพได้ที่นี่</p></div>}
+                    </div>
+                  </section>}
+
                   <section className="contracts-card">
                     <div className="dossier-section-heading"><div><p className="eyebrow">EMPLOYMENT CONTRACTS</p><h3>สัญญาจ้างและการลงนาม</h3></div><button className="contract-create-button" onClick={openContractCreator}>＋ สร้างสัญญา</button></div>
                     <div className="contract-file-strip">
@@ -2949,6 +3267,73 @@ export default function Home() {
                 </div>
               </section>
             ) : <div className="empty-state">ยังไม่มีพนักงานในระบบ</div>}
+          </section>
+        )}
+
+        {view === "organizationDocs" && isAdmin && permissions.canManageOrganizationDocuments && !isEmployeePreview && (
+          <section className="organization-documents-page" aria-labelledby="organization-documents-title">
+            <header className="organization-documents-hero">
+              <div className="organization-documents-hero-copy">
+                <span className="organization-documents-kicker"><i /> คลังเอกสารสำหรับ HR และผู้ดูแลระบบ</span>
+                <h2 id="organization-documents-title">หาเอกสารสำคัญได้เร็ว<br />เริ่มใช้แม่แบบได้อย่างรอบคอบ</h2>
+                <p>รวมสัญญา เอกสาร HR และไฟล์ใช้งานภายใน พร้อมเลขที่เอกสาร เวอร์ชัน เจ้าของ และวันหมดอายุที่ตรวจสอบได้</p>
+                <div><span>✓ ไฟล์จริงเก็บแยกตามสิทธิ์</span><span>✓ ไม่มีการลบถาวรจากหน้านี้</span></div>
+              </div>
+              <button type="button" onClick={openOrganizationDocumentCreator}><span aria-hidden="true">＋</span><strong>เพิ่มเอกสาร</strong><small>อัปโหลดไฟล์เข้าคลัง</small></button>
+            </header>
+
+            <div className="organization-document-metrics" aria-label="สรุปเอกสารองค์กร">
+              <article><span>▤</span><p><small>เอกสารทั้งหมด</small><strong>{organizationDocuments.length}</strong><em>รายการในคลัง</em></p></article>
+              <article className="active"><span>✓</span><p><small>ใช้งานอยู่</small><strong>{activeOrganizationDocumentCount}</strong><em>ฉบับปัจจุบัน</em></p></article>
+              <article className="draft"><span>✎</span><p><small>ฉบับร่าง</small><strong>{draftOrganizationDocumentCount}</strong><em>รอตรวจทาน</em></p></article>
+              <article className="expiring"><span>◷</span><p><small>หมดอายุใน 30 วัน</small><strong>{expiringOrganizationDocumentCount}</strong><em>ควรตรวจต่ออายุ</em></p></article>
+            </div>
+
+            <section className="organization-document-library">
+              <nav className="organization-document-tabs" aria-label="เลือกส่วนเอกสารองค์กร">
+                <button type="button" className={organizationDocumentTab === "library" ? "active" : ""} onClick={() => setOrganizationDocumentTab("library")}><span>▤</span><p><strong>คลังเอกสาร</strong><small>ไฟล์ที่องค์กรอัปโหลด</small></p><b>{organizationDocuments.length}</b></button>
+                <button type="button" className={organizationDocumentTab === "templates" ? "active" : ""} onClick={() => setOrganizationDocumentTab("templates")}><span>↓</span><p><strong>แม่แบบพร้อมใช้</strong><small>ไฟล์ DOCX สำหรับเริ่มร่าง</small></p><b>{organizationDocumentTemplates.length}</b></button>
+              </nav>
+
+              <div className="organization-document-toolbar">
+                <label className="organization-document-search"><span aria-hidden="true">⌕</span><input value={organizationDocumentSearch} onChange={(event) => setOrganizationDocumentSearch(event.target.value)} placeholder={organizationDocumentTab === "library" ? "ค้นหาชื่อ เลขที่เอกสาร เจ้าของ..." : "ค้นหาแม่แบบ..."} /><span className="sr-only">ค้นหาเอกสารองค์กร</span></label>
+                <label><span>หมวดเอกสาร</span><select value={organizationDocumentCategoryFilter} onChange={(event) => setOrganizationDocumentCategoryFilter(event.target.value as "all" | OrganizationDocumentCategory)}><option value="all">ทุกหมวด</option>{(Object.entries(organizationDocumentCategoryMeta) as [OrganizationDocumentCategory, (typeof organizationDocumentCategoryMeta)[OrganizationDocumentCategory]][]).map(([category, meta]) => <option key={category} value={category}>{meta.label}</option>)}</select></label>
+                {organizationDocumentTab === "library" && <label><span>สถานะ</span><select value={organizationDocumentStatusFilter} onChange={(event) => setOrganizationDocumentStatusFilter(event.target.value as "all" | OrganizationDocumentStatus)}><option value="all">ทุกสถานะ</option>{(Object.entries(organizationDocumentStatusLabels) as [OrganizationDocumentStatus, string][]).map(([status, label]) => <option key={status} value={status}>{label}</option>)}</select></label>}
+                <button type="button" className="organization-document-reset" onClick={() => { setOrganizationDocumentSearch(""); setOrganizationDocumentCategoryFilter("all"); setOrganizationDocumentStatusFilter("all"); }}>ล้างตัวกรอง</button>
+              </div>
+
+              {organizationDocumentTab === "library" ? <div className="organization-document-list" aria-live="polite">
+                {visibleOrganizationDocuments.map((document) => {
+                  const categoryMeta = organizationDocumentCategoryMeta[document.category];
+                  const availableStatuses = [document.status, ...organizationDocumentAllowedStatuses[document.status]];
+                  return <article key={document.id} className={`organization-document-card status-${document.status}`}>
+                    <span className="organization-document-icon" aria-hidden="true">{categoryMeta.icon}</span>
+                    <div className="organization-document-copy">
+                      <span><b>{categoryMeta.label}</b><em className={document.status}>{organizationDocumentStatusLabels[document.status]}</em></span>
+                      <h3>{document.title}</h3>
+                      <p>{[document.description, document.note].filter(Boolean).join(" · ") || "ไม่มีคำอธิบายเพิ่มเติม"}</p>
+                      <div><span><small>เลขที่เอกสาร</small><strong>{document.documentNumber || "—"}</strong></span><span><small>เวอร์ชัน</small><strong>{document.version || "—"}</strong></span><span><small>เจ้าของ</small><strong>{document.owner || "—"}</strong></span><span><small>วันที่มีผล</small><strong>{document.effectiveDate ? formatDueDate(document.effectiveDate) : "—"}</strong></span></div>
+                    </div>
+                    <aside className="organization-document-file">
+                      <p><small>ไฟล์เอกสาร</small><strong>{document.fileName || "ไม่มีไฟล์"}</strong><span>{document.hasFile ? formatFileSize(document.sizeBytes) : "ไม่พบไฟล์ต้นฉบับ"}</span></p>
+                      <div>{document.hasFile && <a href={`/api/organization-documents?id=${encodeURIComponent(document.id)}`}>ดาวน์โหลด</a>}<label><span className="sr-only">เปลี่ยนสถานะ {document.title}</span><select aria-label={`เปลี่ยนสถานะ ${document.title}`} disabled={isSaving || organizationDocumentAllowedStatuses[document.status].length === 0} value={document.status} onChange={(event) => void updateOrganizationDocumentStatus(document, event.target.value as OrganizationDocumentStatus)}>{availableStatuses.map((status) => <option key={status} value={status}>{organizationDocumentStatusLabels[status]}</option>)}</select></label></div>
+                      <small>อัปเดต {formatUpdatedAt(document.updatedAt)} · revision {document.revision}</small>
+                    </aside>
+                  </article>;
+                })}
+                {!visibleOrganizationDocuments.length && <div className="organization-document-empty"><span>▤</span><strong>{organizationDocuments.length ? "ไม่พบเอกสารตามตัวกรอง" : "ยังไม่มีเอกสารในคลัง"}</strong><p>{organizationDocuments.length ? "ลองล้างตัวกรองหรือใช้คำค้นอื่น" : "กด “เพิ่มเอกสาร” เพื่ออัปโหลดไฟล์แรกขององค์กร"}</p>{!organizationDocuments.length && <button type="button" onClick={openOrganizationDocumentCreator}>เพิ่มเอกสารแรก</button>}</div>}
+              </div> : <div className="organization-template-grid" aria-live="polite">
+                {visibleOrganizationDocumentTemplates.map((template) => <article key={template.id}>
+                  <span className="organization-template-icon" aria-hidden="true">{organizationDocumentCategoryMeta[template.category].icon}</span>
+                  <div><span><b>{organizationDocumentCategoryMeta[template.category].label}</b><em>DOCX</em></span><h3>{template.title}</h3><p>{template.description}</p></div>
+                  <div className="organization-template-warning"><span>!</span><p><strong>ฉบับร่าง</strong><small>แม่แบบนี้เป็นฉบับร่าง ไม่ใช่คำปรึกษากฎหมาย ต้องให้ HR หรือที่ปรึกษากฎหมายตรวจทานก่อนใช้จริง</small></p></div>
+                  <a href={template.href} download>ดาวน์โหลดแม่แบบ <span aria-hidden="true">↓</span></a>
+                </article>)}
+                {!visibleOrganizationDocumentTemplates.length && <div className="organization-document-empty"><span>⌕</span><strong>ไม่พบแม่แบบที่ค้นหา</strong><p>ลองเลือกทุกหมวดหรือล้างคำค้น</p></div>}
+              </div>}
+            </section>
+
+            <div className="organization-document-legal-note" role="note"><span>i</span><p><strong>เอกสารแม่แบบเป็นเพียงจุดเริ่มต้น</strong> ต้องกรอกข้อมูล ตรวจข้อเท็จจริง และให้ HR หรือฝ่ายกฎหมายขององค์กรตรวจทานก่อนลงนามหรือประกาศใช้ทุกครั้ง</p></div>
           </section>
         )}
 
@@ -3870,6 +4255,78 @@ export default function Home() {
       </section>
 
       <footer><span>PEOPLE PULSE</span><p>งาน · KPI · สกิล · เวลาเข้างาน · แฟ้มผลงาน · Points และรางวัล</p></footer>
+
+      {showOrganizationDocumentForm && permissions.canManageOrganizationDocuments && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setShowOrganizationDocumentForm(false)}>
+          <form className="organization-document-modal" onSubmit={saveOrganizationDocument} role="dialog" aria-modal="true" aria-labelledby="organization-document-form-title" aria-describedby="organization-document-form-description">
+            <header className="organization-record-modal-hero"><span aria-hidden="true">▤</span><div><p className="eyebrow">NEW ORGANIZATION DOCUMENT</p><h2 id="organization-document-form-title">เพิ่มเอกสารเข้าคลังองค์กร</h2><p id="organization-document-form-description">บันทึกข้อมูลกำกับและอัปโหลดไฟล์จริง เพื่อให้ค้นหาเวอร์ชันและผู้รับผิดชอบได้ง่าย</p></div><button type="button" className="modal-close dark" onClick={() => setShowOrganizationDocumentForm(false)} aria-label="ปิดหน้าต่างเพิ่มเอกสาร">×</button></header>
+            <div className="organization-record-modal-body">
+              <div className="organization-record-form-grid">
+                <label className="wide"><span>ชื่อเอกสาร</span><input autoFocus required value={organizationDocumentForm.title} onChange={(event) => setOrganizationDocumentForm((form) => ({ ...form, title: event.target.value }))} placeholder="เช่น สัญญาเช่าสำนักงานใหญ่" /></label>
+                <label className="wide"><span>คำอธิบาย <em>ไม่บังคับ</em></span><textarea value={organizationDocumentForm.description} onChange={(event) => setOrganizationDocumentForm((form) => ({ ...form, description: event.target.value }))} placeholder="สรุปว่าเอกสารนี้ใช้กับใคร เรื่องใด และเมื่อใด" /></label>
+                <label><span>หมวดเอกสาร</span><select value={organizationDocumentForm.category} onChange={(event) => setOrganizationDocumentForm((form) => ({ ...form, category: event.target.value as OrganizationDocumentCategory }))}>{(Object.entries(organizationDocumentCategoryMeta) as [OrganizationDocumentCategory, (typeof organizationDocumentCategoryMeta)[OrganizationDocumentCategory]][]).map(([category, meta]) => <option key={category} value={category}>{meta.label}</option>)}</select></label>
+                <label><span>สถานะเริ่มต้น</span><select value={organizationDocumentForm.status} onChange={(event) => setOrganizationDocumentForm((form) => ({ ...form, status: event.target.value as "draft" | "active" }))}><option value="draft">{organizationDocumentStatusLabels.draft}</option><option value="active">{organizationDocumentStatusLabels.active}</option></select></label>
+                <label><span>เลขที่เอกสาร</span><input required value={organizationDocumentForm.documentNumber} onChange={(event) => setOrganizationDocumentForm((form) => ({ ...form, documentNumber: event.target.value }))} placeholder="เช่น LEG-LEASE-001" /></label>
+                <label><span>เวอร์ชัน</span><input required value={organizationDocumentForm.version} onChange={(event) => setOrganizationDocumentForm((form) => ({ ...form, version: event.target.value }))} placeholder="1.0" /></label>
+                <label className="wide"><span>เจ้าของเอกสาร / ผู้รับผิดชอบ</span><input required value={organizationDocumentForm.owner} onChange={(event) => setOrganizationDocumentForm((form) => ({ ...form, owner: event.target.value }))} /></label>
+                <label><span>วันที่มีผล</span><input required type="date" value={organizationDocumentForm.effectiveDate} onChange={(event) => setOrganizationDocumentForm((form) => ({ ...form, effectiveDate: event.target.value }))} /></label>
+                <label><span>วันหมดอายุ <em>ไม่บังคับ</em></span><input type="date" min={organizationDocumentForm.effectiveDate} value={organizationDocumentForm.expiryDate} onChange={(event) => setOrganizationDocumentForm((form) => ({ ...form, expiryDate: event.target.value }))} /></label>
+                <label className="wide"><span>หมายเหตุ</span><textarea value={organizationDocumentForm.note} onChange={(event) => setOrganizationDocumentForm((form) => ({ ...form, note: event.target.value }))} placeholder="ขอบเขตการใช้ คู่สัญญา หรือสิ่งที่ต้องตรวจในรอบถัดไป" /></label>
+                <label className="wide organization-record-file"><span>ไฟล์เอกสาร</span><input required type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" onChange={(event) => setOrganizationDocumentFile(event.target.files?.[0] ?? null)} /><small>{organizationDocumentFile ? `${organizationDocumentFile.name} · ${formatFileSize(organizationDocumentFile.size)}` : "รองรับ PDF, Word, JPG และ PNG ขนาดไม่เกิน 10 MB"}</small></label>
+              </div>
+              <div className="organization-record-review-note"><span>!</span><p><strong>ตรวจไฟล์และเวอร์ชันก่อนเปิดใช้งาน</strong><small>ระบบไม่มีปุ่มลบถาวร หากยังตรวจไม่ครบให้บันทึกเป็น “ฉบับร่าง” แล้วเปลี่ยนสถานะภายหลัง</small></p></div>
+            </div>
+            <div className="modal-actions organization-record-modal-actions"><button type="button" className="secondary-button" onClick={() => setShowOrganizationDocumentForm(false)}>ยกเลิก</button><button className="primary-button" disabled={isSaving || !organizationDocumentFile}>{isSaving ? "กำลังอัปโหลด..." : "เพิ่มเอกสาร"}</button></div>
+          </form>
+        </div>
+      )}
+
+      {showEmployeeWarningForm && profileEmployee && permissions.canManageEmployeeWarnings && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setShowEmployeeWarningForm(false)}>
+          <form className="employee-warning-modal" onSubmit={saveEmployeeWarning} role="dialog" aria-modal="true" aria-labelledby="employee-warning-form-title" aria-describedby="employee-warning-form-description">
+            <header className="organization-record-modal-hero warning"><span aria-hidden="true">!</span><div><p className="eyebrow">EMPLOYEE WARNING RECORD</p><h2 id="employee-warning-form-title">บันทึกใบเตือนของ {profileEmployee.name}</h2><p id="employee-warning-form-description">บันทึกข้อเท็จจริง แนวทางปรับปรุง และเอกสารประกอบอย่างตรวจสอบได้</p></div><button type="button" className="modal-close dark" onClick={() => setShowEmployeeWarningForm(false)} aria-label="ปิดหน้าต่างเพิ่มใบเตือน">×</button></header>
+            <div className="organization-record-modal-body">
+              <div className="organization-record-form-grid">
+                <label><span>ระดับใบเตือน</span><select value={employeeWarningForm.level} onChange={(event) => setEmployeeWarningForm((form) => ({ ...form, level: event.target.value as EmployeeWarningLevel }))}>{(Object.entries(employeeWarningLevelLabels) as [EmployeeWarningLevel, string][]).map(([level, label]) => <option key={level} value={level}>{label}</option>)}</select></label>
+                <label><span>สถานะเริ่มต้น</span><select value={employeeWarningForm.status} onChange={(event) => setEmployeeWarningForm((form) => ({ ...form, status: event.target.value as "draft" | "issued" }))}><option value="draft">เก็บเป็นฉบับร่าง</option><option value="issued">ออกเอกสารแล้ว</option></select></label>
+                <label className="wide"><span>เลขที่ใบเตือน <em>ไม่บังคับ</em></span><input maxLength={80} value={employeeWarningForm.warningNumber} onChange={(event) => setEmployeeWarningForm((form) => ({ ...form, warningNumber: event.target.value }))} placeholder="เว้นว่างเพื่อให้ระบบสร้างเลขที่อัตโนมัติ" /></label>
+                <label className="wide"><span>หัวข้อ</span><input autoFocus required value={employeeWarningForm.subject} onChange={(event) => setEmployeeWarningForm((form) => ({ ...form, subject: event.target.value }))} placeholder="ระบุเรื่องให้สั้นและตรงกับข้อเท็จจริง" /></label>
+                <label><span>วันที่เกิดเหตุ</span><input required type="date" value={employeeWarningForm.incidentDate} onChange={(event) => setEmployeeWarningForm((form) => ({ ...form, incidentDate: event.target.value }))} /></label>
+                <label><span>วันที่ออกเอกสาร</span><input required type="date" value={employeeWarningForm.issuedDate} onChange={(event) => setEmployeeWarningForm((form) => ({ ...form, issuedDate: event.target.value }))} /></label>
+                <label className="wide"><span>รายละเอียดข้อเท็จจริง</span><textarea required value={employeeWarningForm.facts} onChange={(event) => setEmployeeWarningForm((form) => ({ ...form, facts: event.target.value }))} placeholder="บันทึกเหตุการณ์ วันเวลา และข้อมูลอ้างอิงโดยใช้ภาษาที่เป็นกลาง" /></label>
+                <label className="wide"><span>สิ่งที่ต้องปรับปรุง / แนวทางแก้ไข</span><textarea required value={employeeWarningForm.correctiveAction} onChange={(event) => setEmployeeWarningForm((form) => ({ ...form, correctiveAction: event.target.value }))} placeholder="ระบุพฤติกรรมหรือผลลัพธ์ที่คาดหวังให้ชัดเจน" /></label>
+                <label><span>วันติดตามผล <em>ไม่บังคับ</em></span><input type="date" min={employeeWarningForm.issuedDate} value={employeeWarningForm.reviewDate} onChange={(event) => setEmployeeWarningForm((form) => ({ ...form, reviewDate: event.target.value }))} /></label>
+                <label><span>ไฟล์หนังสือ <em>ไม่บังคับ</em></span><input type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" onChange={(event) => setEmployeeWarningFile(event.target.files?.[0] ?? null)} /></label>
+                <label className="wide"><span>คำชี้แจงของพนักงาน <em>ไม่บังคับ</em></span><textarea value={employeeWarningForm.employeeStatement} onChange={(event) => setEmployeeWarningForm((form) => ({ ...form, employeeStatement: event.target.value }))} placeholder="บันทึกตามคำชี้แจง โดยไม่ตีความแทนพนักงาน" /></label>
+              </div>
+              <div className="warning-consent-note"><span>i</span><p><strong>การรับทราบไม่เท่ากับการยอมรับผิด</strong><small>การสร้างใบเตือนไม่หัก Points อัตโนมัติ และควรเปิดโอกาสให้พนักงานชี้แจงก่อนดำเนินการตามระเบียบ</small></p></div>
+            </div>
+            <div className="modal-actions organization-record-modal-actions"><button type="button" className="secondary-button" onClick={() => setShowEmployeeWarningForm(false)}>ยกเลิก</button><button className="primary-button" disabled={isSaving}>{isSaving ? "กำลังบันทึก..." : employeeWarningForm.status === "issued" ? "บันทึกและออกเอกสาร" : "บันทึกฉบับร่าง"}</button></div>
+          </form>
+        </div>
+      )}
+
+      {showEmployeeRecognitionForm && profileEmployee && permissions.canManageEmployeeRecognitions && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setShowEmployeeRecognitionForm(false)}>
+          <form className="employee-recognition-modal" onSubmit={saveEmployeeRecognition} role="dialog" aria-modal="true" aria-labelledby="employee-recognition-form-title" aria-describedby="employee-recognition-form-description">
+            <header className="organization-record-modal-hero recognition"><span aria-hidden="true">★</span><div><p className="eyebrow">RECOGNITION &amp; CREDENTIAL</p><h2 id="employee-recognition-form-title">เพิ่มผลงานเด่นของ {profileEmployee.name}</h2><p id="employee-recognition-form-description">เก็บเกียรติบัตร รางวัล ใบรับรอง และข้อมูลตรวจสอบไว้ในแฟ้มเดียว</p></div><button type="button" className="modal-close dark" onClick={() => setShowEmployeeRecognitionForm(false)} aria-label="ปิดหน้าต่างเพิ่มเกียรติบัตรหรือรางวัล">×</button></header>
+            <div className="organization-record-modal-body">
+              <div className="organization-record-form-grid">
+                <label><span>ประเภท</span><select value={employeeRecognitionForm.recognitionType} onChange={(event) => setEmployeeRecognitionForm((form) => ({ ...form, recognitionType: event.target.value as EmployeeRecognitionType }))}>{(Object.entries(employeeRecognitionTypeLabels) as [EmployeeRecognitionType, string][]).map(([type, label]) => <option key={type} value={type}>{label}</option>)}</select></label>
+                <label><span>วันที่ได้รับ</span><input required type="date" value={employeeRecognitionForm.issuedDate} onChange={(event) => setEmployeeRecognitionForm((form) => ({ ...form, issuedDate: event.target.value }))} /></label>
+                <label className="wide"><span>ชื่อเกียรติบัตร / รางวัล</span><input autoFocus required value={employeeRecognitionForm.title} onChange={(event) => setEmployeeRecognitionForm((form) => ({ ...form, title: event.target.value }))} /></label>
+                <label className="wide"><span>องค์กรหรือผู้ออก</span><input required value={employeeRecognitionForm.issuer} onChange={(event) => setEmployeeRecognitionForm((form) => ({ ...form, issuer: event.target.value }))} /></label>
+                <label><span>วันหมดอายุ <em>ไม่บังคับ</em></span><input type="date" min={employeeRecognitionForm.issuedDate} value={employeeRecognitionForm.expiryDate} onChange={(event) => setEmployeeRecognitionForm((form) => ({ ...form, expiryDate: event.target.value }))} /></label>
+                <label><span>Credential ID <em>ไม่บังคับ</em></span><input value={employeeRecognitionForm.credentialId} onChange={(event) => setEmployeeRecognitionForm((form) => ({ ...form, credentialId: event.target.value }))} /></label>
+                <label className="wide"><span>ลิงก์ตรวจสอบ <em>ไม่บังคับ</em></span><input type="url" value={employeeRecognitionForm.verificationUrl} onChange={(event) => setEmployeeRecognitionForm((form) => ({ ...form, verificationUrl: event.target.value }))} placeholder="https://..." /></label>
+                <label className="wide"><span>รายละเอียด</span><textarea value={employeeRecognitionForm.description} onChange={(event) => setEmployeeRecognitionForm((form) => ({ ...form, description: event.target.value }))} placeholder="ผลงานหรือเกณฑ์ที่ได้รับการยอมรับ" /></label>
+                <label className="wide"><span>ไฟล์หลักฐาน <em>ไม่บังคับ</em></span><input type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={(event) => setEmployeeRecognitionFile(event.target.files?.[0] ?? null)} /><small>{employeeRecognitionFile ? `${employeeRecognitionFile.name} · ${formatFileSize(employeeRecognitionFile.size)}` : "รองรับ PDF, JPG และ PNG"}</small></label>
+              </div>
+            </div>
+            <div className="modal-actions organization-record-modal-actions"><button type="button" className="secondary-button" onClick={() => setShowEmployeeRecognitionForm(false)}>ยกเลิก</button><button className="primary-button" disabled={isSaving}>{isSaving ? "กำลังบันทึก..." : "เพิ่มในแฟ้มพนักงาน"}</button></div>
+          </form>
+        </div>
+      )}
 
       {showProfileEditor && profileEmployee && (
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setShowProfileEditor(false)}>

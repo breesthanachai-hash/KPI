@@ -381,6 +381,108 @@ export function ensureDatabase() {
     )`),
     d1.prepare("CREATE INDEX IF NOT EXISTS employment_contracts_employee_created_idx ON employment_contracts (employee_id, created_at)"),
     d1.prepare("CREATE INDEX IF NOT EXISTS employment_contracts_status_idx ON employment_contracts (status)"),
+    d1.prepare(`CREATE TABLE IF NOT EXISTS organization_documents (
+      id TEXT PRIMARY KEY NOT NULL,
+      title TEXT NOT NULL,
+      category TEXT NOT NULL DEFAULT 'other',
+      description TEXT NOT NULL DEFAULT '',
+      document_number TEXT NOT NULL,
+      version TEXT NOT NULL DEFAULT '1.0',
+      status TEXT NOT NULL DEFAULT 'draft',
+      owner TEXT NOT NULL,
+      effective_date TEXT NOT NULL DEFAULT '',
+      expiry_date TEXT,
+      note TEXT NOT NULL DEFAULT '',
+      file_name TEXT NOT NULL DEFAULT '',
+      storage_key TEXT NOT NULL DEFAULT '',
+      content_type TEXT NOT NULL DEFAULT 'application/octet-stream',
+      size_bytes INTEGER NOT NULL DEFAULT 0,
+      revision INTEGER NOT NULL DEFAULT 0,
+      created_by_user_id TEXT NOT NULL DEFAULT '',
+      created_by TEXT NOT NULL DEFAULT 'ฝ่ายทรัพยากรบุคคล',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_by_user_id TEXT NOT NULL DEFAULT '',
+      updated_by TEXT NOT NULL DEFAULT 'ฝ่ายทรัพยากรบุคคล',
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`),
+    d1.prepare("CREATE UNIQUE INDEX IF NOT EXISTS organization_documents_number_version_unique ON organization_documents (document_number, version)"),
+    d1.prepare("CREATE UNIQUE INDEX IF NOT EXISTS organization_documents_storage_key_unique ON organization_documents (storage_key) WHERE storage_key != ''"),
+    d1.prepare("CREATE INDEX IF NOT EXISTS organization_documents_category_status_idx ON organization_documents (category, status)"),
+    d1.prepare("CREATE INDEX IF NOT EXISTS organization_documents_status_effective_idx ON organization_documents (status, effective_date)"),
+    d1.prepare(`CREATE TABLE IF NOT EXISTS employee_warnings (
+      id TEXT PRIMARY KEY NOT NULL,
+      employee_id TEXT NOT NULL REFERENCES employees(id) ON DELETE RESTRICT,
+      warning_number TEXT NOT NULL,
+      level TEXT NOT NULL DEFAULT 'first',
+      subject TEXT NOT NULL,
+      incident_date TEXT NOT NULL,
+      issued_date TEXT NOT NULL,
+      facts TEXT NOT NULL,
+      corrective_action TEXT NOT NULL DEFAULT '',
+      review_date TEXT,
+      employee_statement TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'draft',
+      file_name TEXT NOT NULL DEFAULT '',
+      storage_key TEXT NOT NULL DEFAULT '',
+      content_type TEXT NOT NULL DEFAULT 'application/octet-stream',
+      size_bytes INTEGER NOT NULL DEFAULT 0,
+      revision INTEGER NOT NULL DEFAULT 0,
+      issued_by TEXT,
+      issued_at TEXT,
+      acknowledged_by TEXT,
+      acknowledged_at TEXT,
+      resolved_by TEXT,
+      resolved_at TEXT,
+      withdrawn_by TEXT,
+      withdrawn_at TEXT,
+      created_by_user_id TEXT NOT NULL DEFAULT '',
+      created_by TEXT NOT NULL DEFAULT 'ฝ่ายทรัพยากรบุคคล',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_by_user_id TEXT NOT NULL DEFAULT '',
+      updated_by TEXT NOT NULL DEFAULT 'ฝ่ายทรัพยากรบุคคล',
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`),
+    d1.prepare("CREATE UNIQUE INDEX IF NOT EXISTS employee_warnings_warning_number_unique ON employee_warnings (warning_number)"),
+    d1.prepare("CREATE UNIQUE INDEX IF NOT EXISTS employee_warnings_storage_key_unique ON employee_warnings (storage_key) WHERE storage_key != ''"),
+    d1.prepare("CREATE INDEX IF NOT EXISTS employee_warnings_employee_issued_idx ON employee_warnings (employee_id, issued_date)"),
+    d1.prepare("CREATE INDEX IF NOT EXISTS employee_warnings_status_issued_idx ON employee_warnings (status, issued_date)"),
+    d1.prepare(`CREATE TABLE IF NOT EXISTS employee_warning_events (
+      id TEXT PRIMARY KEY NOT NULL,
+      warning_id TEXT NOT NULL REFERENCES employee_warnings(id) ON DELETE RESTRICT,
+      event_type TEXT NOT NULL,
+      actor_user_id TEXT NOT NULL DEFAULT '',
+      actor_name TEXT NOT NULL,
+      note TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`),
+    d1.prepare("CREATE INDEX IF NOT EXISTS employee_warning_events_warning_created_idx ON employee_warning_events (warning_id, created_at)"),
+    d1.prepare(`CREATE TABLE IF NOT EXISTS employee_recognitions (
+      id TEXT PRIMARY KEY NOT NULL,
+      employee_id TEXT NOT NULL REFERENCES employees(id) ON DELETE RESTRICT,
+      recognition_type TEXT NOT NULL DEFAULT 'certificate',
+      title TEXT NOT NULL,
+      issuer TEXT NOT NULL,
+      issued_date TEXT NOT NULL,
+      expiry_date TEXT,
+      credential_id TEXT NOT NULL DEFAULT '',
+      verification_url TEXT NOT NULL DEFAULT '',
+      description TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'active',
+      file_name TEXT NOT NULL DEFAULT '',
+      storage_key TEXT NOT NULL DEFAULT '',
+      content_type TEXT NOT NULL DEFAULT 'application/octet-stream',
+      size_bytes INTEGER NOT NULL DEFAULT 0,
+      revision INTEGER NOT NULL DEFAULT 0,
+      created_by_user_id TEXT NOT NULL DEFAULT '',
+      created_by TEXT NOT NULL DEFAULT 'ฝ่ายทรัพยากรบุคคล',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_by_user_id TEXT NOT NULL DEFAULT '',
+      updated_by TEXT NOT NULL DEFAULT 'ฝ่ายทรัพยากรบุคคล',
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`),
+    d1.prepare("CREATE UNIQUE INDEX IF NOT EXISTS employee_recognitions_storage_key_unique ON employee_recognitions (storage_key) WHERE storage_key != ''"),
+    d1.prepare("CREATE INDEX IF NOT EXISTS employee_recognitions_employee_issued_idx ON employee_recognitions (employee_id, issued_date)"),
+    d1.prepare("CREATE INDEX IF NOT EXISTS employee_recognitions_status_expiry_idx ON employee_recognitions (status, expiry_date)"),
     ]);
 
     const compatibilityColumns = [
@@ -503,6 +605,93 @@ export function ensureDatabase() {
             WHERE employee_id = NEW.employee_id AND id <> NEW.redemption_id AND status IN ('requested', 'approved', 'fulfilled')
               AND julianday(NEW.created_at) - julianday(created_at) < NEW.cooldown_days
           ) THEN RAISE(ABORT, 'REDEMPTION_COOLDOWN') END;
+        END`),
+      d1.prepare(`CREATE TRIGGER IF NOT EXISTS organization_document_revision_guard
+        BEFORE UPDATE ON organization_documents
+        WHEN NEW.revision <> OLD.revision + 1
+        BEGIN
+          SELECT RAISE(ABORT, 'ORGANIZATION_DOCUMENT_STALE_REVISION');
+        END`),
+      d1.prepare(`CREATE TRIGGER IF NOT EXISTS employee_warning_revision_guard
+        BEFORE UPDATE ON employee_warnings
+        WHEN NEW.revision <> OLD.revision + 1
+        BEGIN
+          SELECT RAISE(ABORT, 'EMPLOYEE_WARNING_STALE_REVISION');
+        END`),
+      d1.prepare(`CREATE TRIGGER IF NOT EXISTS employee_warning_status_transition_guard
+        BEFORE UPDATE OF status ON employee_warnings
+        WHEN NOT (
+          (OLD.status = 'draft' AND NEW.status IN ('draft', 'issued', 'withdrawn'))
+          OR (OLD.status = 'issued' AND NEW.status IN ('issued', 'acknowledged', 'resolved', 'withdrawn'))
+          OR (OLD.status = 'acknowledged' AND NEW.status IN ('acknowledged', 'resolved', 'withdrawn'))
+          OR (OLD.status = 'resolved' AND NEW.status = 'resolved')
+          OR (OLD.status = 'withdrawn' AND NEW.status = 'withdrawn')
+        )
+        BEGIN
+          SELECT RAISE(ABORT, 'EMPLOYEE_WARNING_INVALID_TRANSITION');
+        END`),
+      d1.prepare(`CREATE TRIGGER IF NOT EXISTS employee_warning_substantive_fields_lock
+        BEFORE UPDATE OF employee_id, warning_number, level, subject, incident_date, issued_date, facts, corrective_action, review_date, file_name, storage_key, content_type, size_bytes ON employee_warnings
+        WHEN OLD.status <> 'draft' AND (
+          NEW.employee_id IS NOT OLD.employee_id
+          OR NEW.warning_number IS NOT OLD.warning_number
+          OR NEW.level IS NOT OLD.level
+          OR NEW.subject IS NOT OLD.subject
+          OR NEW.incident_date IS NOT OLD.incident_date
+          OR NEW.issued_date IS NOT OLD.issued_date
+          OR NEW.facts IS NOT OLD.facts
+          OR NEW.corrective_action IS NOT OLD.corrective_action
+          OR NEW.review_date IS NOT OLD.review_date
+          OR NEW.file_name IS NOT OLD.file_name
+          OR NEW.storage_key IS NOT OLD.storage_key
+          OR NEW.content_type IS NOT OLD.content_type
+          OR NEW.size_bytes IS NOT OLD.size_bytes
+        )
+        BEGIN
+          SELECT RAISE(ABORT, 'EMPLOYEE_WARNING_FIELDS_LOCKED');
+        END`),
+      d1.prepare(`CREATE TRIGGER IF NOT EXISTS employee_warning_created_audit
+        AFTER INSERT ON employee_warnings
+        BEGIN
+          INSERT INTO employee_warning_events (id, warning_id, event_type, actor_user_id, actor_name, note, created_at)
+          VALUES ('warning-event-' || lower(hex(randomblob(16))), NEW.id, 'created', NEW.created_by_user_id, NEW.created_by, 'สร้างร่างใบเตือน', NEW.created_at);
+          INSERT INTO employee_warning_events (id, warning_id, event_type, actor_user_id, actor_name, note, created_at)
+          SELECT 'warning-event-' || lower(hex(randomblob(16))), NEW.id, 'issued', NEW.created_by_user_id, NEW.created_by, 'ออกใบเตือนพร้อมการสร้างรายการ', NEW.created_at
+          WHERE NEW.status = 'issued';
+        END`),
+      d1.prepare(`CREATE TRIGGER IF NOT EXISTS employee_warning_updated_audit
+        AFTER UPDATE ON employee_warnings
+        BEGIN
+          INSERT INTO employee_warning_events (id, warning_id, event_type, actor_user_id, actor_name, note, created_at)
+          VALUES (
+            'warning-event-' || lower(hex(randomblob(16))),
+            NEW.id,
+            CASE WHEN NEW.status <> OLD.status THEN NEW.status ELSE 'updated' END,
+            NEW.updated_by_user_id,
+            NEW.updated_by,
+            CASE
+              WHEN NEW.status = 'acknowledged' AND NEW.status <> OLD.status THEN 'บันทึกการรับทราบเอกสารเท่านั้น ไม่ได้หมายถึงการยอมรับผิด'
+              WHEN NEW.status <> OLD.status THEN 'เปลี่ยนสถานะจาก ' || OLD.status || ' เป็น ' || NEW.status
+              ELSE 'แก้ไขร่างใบเตือน'
+            END,
+            NEW.updated_at
+          );
+        END`),
+      d1.prepare(`CREATE TRIGGER IF NOT EXISTS employee_warning_event_update_guard
+        BEFORE UPDATE ON employee_warning_events
+        BEGIN
+          SELECT RAISE(ABORT, 'EMPLOYEE_WARNING_EVENT_IMMUTABLE');
+        END`),
+      d1.prepare(`CREATE TRIGGER IF NOT EXISTS employee_warning_event_delete_guard
+        BEFORE DELETE ON employee_warning_events
+        BEGIN
+          SELECT RAISE(ABORT, 'EMPLOYEE_WARNING_EVENT_IMMUTABLE');
+        END`),
+      d1.prepare(`CREATE TRIGGER IF NOT EXISTS employee_recognition_revision_guard
+        BEFORE UPDATE ON employee_recognitions
+        WHEN NEW.revision <> OLD.revision + 1
+        BEGIN
+          SELECT RAISE(ABORT, 'EMPLOYEE_RECOGNITION_STALE_REVISION');
         END`),
       d1.prepare("PRAGMA optimize"),
     ]);

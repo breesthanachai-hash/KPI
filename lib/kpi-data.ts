@@ -527,6 +527,106 @@ export type EmploymentContractRecord = {
   updatedAt: string;
 };
 
+export type OrganizationDocumentRecord = {
+  id: string;
+  title: string;
+  category: "lease" | "employment" | "hr" | "legal" | "finance" | "operations" | "other";
+  description: string;
+  documentNumber: string;
+  version: string;
+  status: "draft" | "active" | "expired" | "archived";
+  owner: string;
+  effectiveDate: string;
+  expiryDate: string | null;
+  note: string;
+  fileName: string;
+  storageKey: string;
+  contentType: string;
+  sizeBytes: number;
+  revision: number;
+  createdByUserId: string;
+  createdBy: string;
+  createdAt: string;
+  updatedByUserId: string;
+  updatedBy: string;
+  updatedAt: string;
+};
+
+export type OrganizationDocumentDto = Omit<OrganizationDocumentRecord, "storageKey"> & { hasFile: boolean };
+
+export type EmployeeWarningRecord = {
+  id: string;
+  employeeId: string;
+  warningNumber: string;
+  level: "first" | "second" | "final";
+  subject: string;
+  incidentDate: string;
+  issuedDate: string;
+  facts: string;
+  correctiveAction: string;
+  reviewDate: string | null;
+  employeeStatement: string;
+  status: "draft" | "issued" | "acknowledged" | "resolved" | "withdrawn";
+  fileName: string;
+  storageKey: string;
+  contentType: string;
+  sizeBytes: number;
+  revision: number;
+  issuedBy: string | null;
+  issuedAt: string | null;
+  acknowledgedBy: string | null;
+  acknowledgedAt: string | null;
+  resolvedBy: string | null;
+  resolvedAt: string | null;
+  withdrawnBy: string | null;
+  withdrawnAt: string | null;
+  createdByUserId: string;
+  createdBy: string;
+  createdAt: string;
+  updatedByUserId: string;
+  updatedBy: string;
+  updatedAt: string;
+};
+
+export type EmployeeWarningDto = Omit<EmployeeWarningRecord, "storageKey"> & { hasFile: boolean };
+
+export type EmployeeWarningEventRecord = {
+  id: string;
+  warningId: string;
+  eventType: "created" | "updated" | "issued" | "acknowledged" | "resolved" | "withdrawn";
+  actorUserId: string;
+  actorName: string;
+  note: string;
+  createdAt: string;
+};
+
+export type EmployeeRecognitionRecord = {
+  id: string;
+  employeeId: string;
+  recognitionType: "certificate" | "award" | "honor" | "training" | "license" | "other";
+  title: string;
+  issuer: string;
+  issuedDate: string;
+  expiryDate: string | null;
+  credentialId: string;
+  verificationUrl: string;
+  description: string;
+  status: "active" | "expired" | "revoked";
+  fileName: string;
+  storageKey: string;
+  contentType: string;
+  sizeBytes: number;
+  revision: number;
+  createdByUserId: string;
+  createdBy: string;
+  createdAt: string;
+  updatedByUserId: string;
+  updatedBy: string;
+  updatedAt: string;
+};
+
+export type EmployeeRecognitionDto = Omit<EmployeeRecognitionRecord, "storageKey"> & { hasFile: boolean };
+
 export type EvaluationRecord = {
   id: string;
   employeeId: string;

@@ -1,7 +1,7 @@
 import { and, eq, notExists, sql } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { ensureDatabase } from "../../../db/initialize";
-import { applicationDocuments, attendanceRecords, employeeProfiles, employees, employmentContracts, evaluations, hrProfiles, notificationReads, organizationPolicies, organizationPolicyPublishClaims, pointCapClaims, pointEvents, pointLedger, pointMutationClaims, policyAcknowledgements, projects, rewardRedemptionClaims, rewardRedemptions, rewards, skillAchievements, talentActions, userAccounts, workItems, workSubmissions } from "../../../db/schema";
+import { applicationDocuments, attendanceRecords, employeeProfiles, employeeRecognitions, employees, employeeWarningEvents, employeeWarnings, employmentContracts, evaluations, hrProfiles, notificationReads, organizationDocuments, organizationPolicies, organizationPolicyPublishClaims, pointCapClaims, pointEvents, pointLedger, pointMutationClaims, policyAcknowledgements, projects, rewardRedemptionClaims, rewardRedemptions, rewards, skillAchievements, talentActions, userAccounts, workItems, workSubmissions } from "../../../db/schema";
 import { authenticateRequest, authenticatedIdentity, canAccessEmployee, ensureBootstrapAccounts } from "../../../lib/access-control";
 import {
   clampScore,
@@ -97,6 +97,11 @@ function pointPolicyMetadata(policy: OrganizationPolicyRow | null) {
 function publicPolicyAcknowledgement(acknowledgement: typeof policyAcknowledgements.$inferSelect) {
   const { id, policyId, employeeId, policyVersion, contentHash, acknowledgedAt } = acknowledgement;
   return { id, policyId, employeeId, policyVersion, contentHash, acknowledgedAt };
+}
+
+function privateFileDto<T extends { storageKey: string }>(record: T): Omit<T, "storageKey"> & { hasFile: boolean } {
+  const { storageKey, ...safe } = record;
+  return { ...safe, hasFile: Boolean(storageKey) };
 }
 
 const LEGACY_POINTS_TERM = "\u0e41\u0e15\u0e49\u0e21";
@@ -425,7 +430,7 @@ export async function GET(request: Request) {
     const requestedPreviewEmployeeId = url.searchParams.get("previewEmployeeId")?.trim() ?? "";
     const isEmployeePreviewRequest = authenticatedUser.role === "admin" && Boolean(requestedPreviewEmployeeId);
     const db = getDb();
-    const [employeeRows, evaluationRows, hrProfileRows, attendanceRows, skillAchievementRows, talentActionRows, projectRows, workItemRows, workSubmissionRows, rewardRows, pointRows, pointEventRows, redemptionRows, employeeProfileRows, applicationDocumentRows, employmentContractRows, organizationPolicyRows, policyAcknowledgementRows, userAccountRows, notificationReadRows] = await Promise.all([
+    const [employeeRows, evaluationRows, hrProfileRows, attendanceRows, skillAchievementRows, talentActionRows, projectRows, workItemRows, workSubmissionRows, rewardRows, pointRows, pointEventRows, redemptionRows, employeeProfileRows, applicationDocumentRows, employmentContractRows, organizationPolicyRows, policyAcknowledgementRows, organizationDocumentRows, employeeWarningRows, employeeWarningEventRows, employeeRecognitionRows, userAccountRows, notificationReadRows] = await Promise.all([
       db.select().from(employees),
       db.select().from(evaluations).where(eq(evaluations.period, period)),
       db.select().from(hrProfiles),
@@ -444,6 +449,10 @@ export async function GET(request: Request) {
       db.select().from(employmentContracts),
       db.select().from(organizationPolicies),
       db.select().from(policyAcknowledgements),
+      authenticatedUser.role === "admin" && !isEmployeePreviewRequest ? db.select().from(organizationDocuments) : Promise.resolve([]),
+      authenticatedUser.role === "admin" && !isEmployeePreviewRequest ? db.select().from(employeeWarnings) : Promise.resolve([]),
+      authenticatedUser.role === "admin" && !isEmployeePreviewRequest ? db.select().from(employeeWarningEvents) : Promise.resolve([]),
+      authenticatedUser.role === "admin" && !isEmployeePreviewRequest ? db.select().from(employeeRecognitions) : Promise.resolve([]),
       authenticatedUser.role === "admin" && !isEmployeePreviewRequest ? db.select().from(userAccounts) : Promise.resolve([]),
       isEmployeePreviewRequest ? Promise.resolve([]) : db.select().from(notificationReads).where(eq(notificationReads.userKey, authenticatedUser.id)),
     ]);
@@ -561,6 +570,9 @@ export async function GET(request: Request) {
       canViewOwnGrowth: currentUser.role !== "employee" || Boolean(currentUser.employeeId),
       canViewOwnRewards: currentUser.role !== "employee" || Boolean(currentUser.employeeId),
       canManagePolicies: currentUser.role === "admin",
+      canManageOrganizationDocuments: currentUser.role === "admin",
+      canManageEmployeeWarnings: currentUser.role === "admin",
+      canManageEmployeeRecognitions: currentUser.role === "admin",
       canAcknowledgePolicies: Boolean(currentUser.employeeId) && !employeePreview,
     };
     const visibleProfileImages = employeeProfileRows
@@ -614,6 +626,10 @@ export async function GET(request: Request) {
       employeeProfiles: currentUser.role === "admin" ? employeeProfileRows.filter((row) => visibleEmployeeIds.has(row.employeeId)) : visibleProfileImages,
       applicationDocuments: visibleApplicationDocuments,
       employmentContracts: visibleEmploymentContracts,
+      organizationDocuments: currentUser.role === "admin" ? organizationDocumentRows.map(privateFileDto) : [],
+      employeeWarnings: currentUser.role === "admin" ? employeeWarningRows.map(privateFileDto) : [],
+      employeeWarningEvents: currentUser.role === "admin" ? employeeWarningEventRows : [],
+      employeeRecognitions: currentUser.role === "admin" ? employeeRecognitionRows.map(privateFileDto) : [],
       userAccounts: currentUser.role === "admin" ? userAccountRows : [],
       notificationReads: employeePreview ? [] : notificationReadRows,
       organizationPolicies: visibleOrganizationPoliciesForDisplay,
