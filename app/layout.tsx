@@ -9,7 +9,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const protocol = requestHeaders.get("x-forwarded-proto") ?? (host.includes("localhost") ? "http" : "https");
   const origin = `${protocol}://${host}`;
   const title = "People Pulse — ระบบจัดการคนและงานที่ใช้ง่าย";
-  const description = "ระบบ HR ที่รวมงาน KPI สกิล แฟ้มผลงาน เวลาเข้างาน แต้ม รางวัล และสำนักงานจำลอง 3D ไว้ในที่เดียว";
+  const description = "ระบบ HR ที่รวมงาน KPI สกิล แฟ้มผลงาน เวลาเข้างาน ระบบ Points และรางวัล รวมถึงสำนักงานจำลอง 3D ไว้ในที่เดียว";
 
   return {
     metadataBase: new URL(origin),

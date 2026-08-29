@@ -603,7 +603,7 @@ function workSubmissionStatusLabel(status: WorkSubmissionRecord["status"]) {
 }
 
 function rewardRedemptionStatusLabel(status: RewardRedemptionRecord["status"]) {
-  return { requested: "รออนุมัติ", approved: "อนุมัติแล้ว", fulfilled: "ส่งมอบรางวัลแล้ว", cancelled: "ยกเลิกและคืนแต้มแล้ว" }[status];
+  return { requested: "รออนุมัติ", approved: "อนุมัติแล้ว", fulfilled: "ส่งมอบรางวัลแล้ว", cancelled: "ยกเลิกและคืน Points แล้ว" }[status];
 }
 
 function portfolioStatusLabel(status: Exclude<PortfolioStatusFilter, "all">) {
@@ -1060,8 +1060,8 @@ export default function Home() {
     .sort((a, b) => b.effectiveDate.localeCompare(a.effectiveDate) || b.version - a.version)[0] ?? null;
   const activePointPolicyLabel = activePointPolicyRecord
     ? `${activePointPolicyRecord.title} · v${activePointPolicyRecord.version} · มีผล ${formatDueDate(activePointPolicyRecord.effectiveDate)}`
-    : "ยังไม่มีกติกาแต้มที่มีผลใช้";
-  const monthlyPointFormulaLabel = `ต้องผ่าน ${pointEconomyPolicy.monthlyEvaluationMinimumScore} คะแนน · คำนวณ (คะแนน − ${pointEconomyPolicy.monthlyEvaluationBaseScore}) × ${pointEconomyPolicy.monthlyEvaluationMultiplier} · สูงสุด ${pointEconomyPolicy.monthlyEvaluationCap} แต้ม`;
+    : "ยังไม่มีกติกา Points ที่มีผลใช้";
+  const monthlyPointFormulaLabel = `ต้องผ่าน ${pointEconomyPolicy.monthlyEvaluationMinimumScore} คะแนน · คำนวณ (คะแนน − ${pointEconomyPolicy.monthlyEvaluationBaseScore}) × ${pointEconomyPolicy.monthlyEvaluationMultiplier} · สูงสุด ${pointEconomyPolicy.monthlyEvaluationCap} Points`;
   const monthlyPointExampleScore = Math.min(100, Math.max(pointEconomyPolicy.monthlyEvaluationMinimumScore, pointEconomyPolicy.monthlyEvaluationBaseScore + 25));
   const visibleOrganizationPolicies = currentUser?.role === "admin" ? organizationPolicies.slice().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)) : publishedOrganizationPolicies;
   const selectedOrganizationPolicy = visibleOrganizationPolicies.find((policy) => policy.id === selectedPolicyId) ?? visibleOrganizationPolicies[0] ?? null;
@@ -1147,7 +1147,7 @@ export default function Home() {
           id: `quest:${item.id}`,
           kind: "quest",
           title: `มีเควส: ${item.title}`,
-          message: `${employeeName} · ${projectName} · รับ ${formatMoney(item.points)} แต้มเมื่อสำเร็จ`,
+          message: `${employeeName} · ${projectName} · รับ ${formatMoney(item.points)} Points เมื่อสำเร็จ`,
           createdAt: item.createdAt,
           workItemId: item.id,
           dueFilter: "all",
@@ -1202,7 +1202,7 @@ export default function Home() {
           id: `reward:${redemption.id}`,
           kind: "reward",
           title: currentUser?.role === "admin" ? `มีคำขอแลกรางวัลจาก ${employeeName}` : "คำขอแลกรางวัลกำลังรออนุมัติ",
-          message: `${reward?.title ?? "รางวัล"} · ใช้ ${formatMoney(redemption.pointsSpent)} แต้ม`,
+          message: `${reward?.title ?? "รางวัล"} · ใช้ ${formatMoney(redemption.pointsSpent)} Points`,
           createdAt: redemption.createdAt,
           actionLabel: "ดูรางวัล",
         });
@@ -1711,9 +1711,9 @@ export default function Home() {
         const recipient = safeWorkRosterById.get(body.workItem.assigneeEmployeeId);
         setEmployeeTaskScope("created");
         setWorkDueFilter("all");
-        showToast(`ส่งงานประสานให้ ${recipient?.name ?? "ผู้รับงาน"} แล้ว · งานนี้ไม่มีแต้ม`);
+        showToast(`ส่งงานประสานให้ ${recipient?.name ?? "ผู้รับงาน"} แล้ว · งานนี้ไม่มี Points`);
       } else {
-        showToast(body.pointEntry ? `ทำภารกิจสำเร็จ รับ ${body.pointEntry.points} แต้ม` : "บันทึกงานและความคืบหน้าแล้ว");
+        showToast(body.pointEntry ? `ทำภารกิจสำเร็จ รับ ${body.pointEntry.points} Points` : "บันทึกงานและความคืบหน้าแล้ว");
       }
     } catch (error) {
       showToast(error instanceof Error ? error.message : "บันทึกงานไม่สำเร็จ");
@@ -1806,7 +1806,7 @@ export default function Home() {
       if (body.deadlinePointEvent) setPointEvents((items) => [...items.filter((item) => item.id !== body.deadlinePointEvent?.id), body.deadlinePointEvent as PointEventRecord]);
       setSubmissionWorkItem(body.workItem);
       setReviewerNote("");
-      showToast(body.pointCapMessage ?? (status === "approved" ? `อนุมัติหลักฐานและมอบ ${body.workItem.points + (body.deadlinePointEntry?.points ?? 0)} แต้มแล้ว` : "ส่งงานกลับให้แก้ไขแล้ว"));
+      showToast(body.pointCapMessage ?? (status === "approved" ? `อนุมัติหลักฐานและมอบ ${body.workItem.points + (body.deadlinePointEntry?.points ?? 0)} Points แล้ว` : "ส่งงานกลับให้แก้ไขแล้ว"));
     } catch (error) {
       showToast(error instanceof Error ? error.message : "ตรวจหลักฐานไม่สำเร็จ");
     } finally {
@@ -1839,15 +1839,15 @@ export default function Home() {
     try {
       const response = await fetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "recordPointEvent", ...pointEventForm, eventType: selectedPointEventType }) });
       const body = await response.json() as { pointEvent?: PointEventRecord; pointEntry?: PointLedgerRecord; error?: string };
-      if (!response.ok || !body.pointEvent || !body.pointEntry) throw new Error(body.error ?? "บันทึกรายการแต้มไม่สำเร็จ");
+      if (!response.ok || !body.pointEvent || !body.pointEntry) throw new Error(body.error ?? "บันทึกรายการ Points ไม่สำเร็จ");
       setPointEvents((items) => [body.pointEvent as PointEventRecord, ...items]);
       setPointLedger((items) => [body.pointEntry as PointLedgerRecord, ...items]);
       setPointEventForm((form) => ({ ...form, note: "", evidenceUrl: "" }));
       setPointHistoryEmployeeId(body.pointEvent.employeeId);
       setPointPanel("history");
-      showToast(`${body.pointEvent.points >= 0 ? "เพิ่ม" : "หัก"} ${Math.abs(body.pointEvent.points)} แต้มเรียบร้อยแล้ว`);
+      showToast(`${body.pointEvent.points >= 0 ? "เพิ่ม" : "หัก"} ${Math.abs(body.pointEvent.points)} Points เรียบร้อยแล้ว`);
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "บันทึกรายการแต้มไม่สำเร็จ");
+      showToast(error instanceof Error ? error.message : "บันทึกรายการ Points ไม่สำเร็จ");
     } finally {
       setIsSaving(false);
     }
@@ -1858,15 +1858,15 @@ export default function Home() {
     try {
       const response = await fetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "runMonthlyPointCycle", month: monthlyPointMonth, period }) });
       const body = await response.json() as { pointEvents?: PointEventRecord[]; pointEntries?: PointLedgerRecord[]; count?: number; error?: string };
-      if (!response.ok || !body.pointEvents || !body.pointEntries) throw new Error(body.error ?? "ประมวลผลแต้มรายเดือนไม่สำเร็จ");
+      if (!response.ok || !body.pointEvents || !body.pointEntries) throw new Error(body.error ?? "ประมวลผล Points รายเดือนไม่สำเร็จ");
       const eventIds = new Set(body.pointEvents.map((item) => item.id));
       const entryIds = new Set(body.pointEntries.map((item) => item.id));
       setPointEvents((items) => [...body.pointEvents as PointEventRecord[], ...items.filter((item) => !eventIds.has(item.id))]);
       setPointLedger((items) => [...body.pointEntries as PointLedgerRecord[], ...items.filter((item) => !entryIds.has(item.id))]);
       setPointPanel("history");
-      showToast(`ประมวลผลแต้มรายเดือนให้ ${body.count ?? body.pointEntries.length} คนแล้ว`);
+      showToast(`ประมวลผล Points รายเดือนให้ ${body.count ?? body.pointEntries.length} คนแล้ว`);
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "ประมวลผลแต้มรายเดือนไม่สำเร็จ");
+      showToast(error instanceof Error ? error.message : "ประมวลผล Points รายเดือนไม่สำเร็จ");
     } finally {
       setIsSaving(false);
     }
@@ -2183,8 +2183,8 @@ export default function Home() {
       }
       setSelectedEmployee(null);
       showToast(body.pointEntry
-        ? `บันทึกผลประเมิน ${selectedEmployee.name} และมอบ ${body.pointEntry.points} แต้มประจำเดือนแล้ว`
-        : `บันทึกผลประเมิน ${selectedEmployee.name} แล้ว · รอประมวลผลแต้มตามกติกาที่มีผลใช้`);
+        ? `บันทึกผลประเมิน ${selectedEmployee.name} และมอบ ${body.pointEntry.points} Points ประจำเดือนแล้ว`
+        : `บันทึกผลประเมิน ${selectedEmployee.name} แล้ว · รอประมวลผล Points ตามกติกาที่มีผลใช้`);
     } catch (error) {
       showToast(error instanceof Error ? error.message : "บันทึกผลประเมินไม่สำเร็จ");
     } finally {
@@ -2320,7 +2320,7 @@ export default function Home() {
       ]);
     });
     const content = [
-      ["พนักงาน", "แผนก", "ตำแหน่ง", "โปรเจกต์", "ผลงาน", "ประเภทงาน", "สถานะแฟ้ม", "ประเภทหลักฐาน", "ชื่อหลักฐาน", "ชื่อไฟล์", "ลิงก์", "ผู้ตรวจ", "วันที่ตรวจ", "หมายเหตุผู้ตรวจ", "คะแนน KPI", "คะแนนสกิล", "คะแนนรวม", "แต้มผลงาน", "อัปเดตล่าสุด"],
+      ["พนักงาน", "แผนก", "ตำแหน่ง", "โปรเจกต์", "ผลงาน", "ประเภทงาน", "สถานะแฟ้ม", "ประเภทหลักฐาน", "ชื่อหลักฐาน", "ชื่อไฟล์", "ลิงก์", "ผู้ตรวจ", "วันที่ตรวจ", "หมายเหตุผู้ตรวจ", "คะแนน KPI", "คะแนนสกิล", "คะแนนรวม", "Points จากผลงาน", "อัปเดตล่าสุด"],
       ...rows,
     ].map((row) => row.map(csvCell).join(",")).join("\n");
     const blob = new Blob([`\uFEFF${content}`], { type: "text/csv;charset=utf-8" });
@@ -2343,13 +2343,13 @@ export default function Home() {
   const selectedUserKind = userAccountForm.role === "employee" ? "worker" : "assigner";
   const selectedUserKindLabel = selectedUserKind === "assigner" ? "คนสั่งงาน" : "คนทำงาน";
   const selectedUserRoleGuide = userAccountForm.role === "admin"
-    ? "ดูแลทั้งองค์กร จัดการคน กฎ งาน การประเมิน แต้ม เงินเดือน และบัญชีผู้ใช้"
+    ? "ดูแลทั้งองค์กร จัดการคน กฎ งาน การประเมิน ระบบ Points เงินเดือน และบัญชีผู้ใช้"
     : userAccountForm.role === "manager"
       ? "มอบหมายงาน ติดตามทีม ตรวจผลงาน และประเมินลูกทีม โดยไม่เห็นเงินเดือนหรือเอกสารส่วนตัว"
-      : "รับงาน อัปเดตความคืบหน้า ส่งหลักฐาน และสร้างงานประสาน 0 แต้มให้ตนเองหรือเพื่อนร่วมทีม โดยไม่มีสิทธิ์ตรวจอนุมัติ";
+      : "รับงาน อัปเดตความคืบหน้า ส่งหลักฐาน และสร้างงานประสาน 0 Points ให้ตนเองหรือเพื่อนร่วมทีม โดยไม่มีสิทธิ์ตรวจอนุมัติ";
   const accessAccountGroups = [
     { id: "assigner", title: "คนสั่งงาน", description: "HR / Admin และหัวหน้าทีม — วางแผน มอบหมาย ติดตาม และตรวจผลงาน", accounts: assigningUserAccounts, activeCount: activeAssigningUserCount },
-    { id: "worker", title: "คนทำงาน", description: "พนักงาน — รับงาน ส่งหลักฐาน และสร้างงานประสาน 0 แต้ม โดยหัวหน้าหรือ HR เป็นผู้ตรวจ", accounts: workingUserAccounts, activeCount: activeWorkingUserCount },
+    { id: "worker", title: "คนทำงาน", description: "พนักงาน — รับงาน ส่งหลักฐาน และสร้างงานประสาน 0 Points โดยหัวหน้าหรือ HR เป็นผู้ตรวจ", accounts: workingUserAccounts, activeCount: activeWorkingUserCount },
   ] as const;
   const launchReadinessSteps = launchReadiness ? [
     {
@@ -2418,16 +2418,16 @@ export default function Home() {
   const hasCurrentPointPolicyAcknowledgement = !pointRedemptionPolicy.acknowledgementRequired || Boolean(activePointPolicyRecord && policyAcknowledgements.some((acknowledgement) => acknowledgement.policyId === activePointPolicyRecord.id && acknowledgement.policyVersion === activePointPolicyRecord.version && acknowledgement.employeeId === activeRewardEmployeeId));
   const rewardMinimumRequiredBalance = (rewardToRedeem?.costPoints ?? 0) + pointRedemptionPolicy.minimumBalanceAfterRedemption;
   const rewardPreflightChecks = rewardToRedeem ? [
-    { id: "policy", passed: Boolean(activePointPolicyRecord), title: "กติกาแต้มมีผลใช้", detail: activePointPolicyLabel },
+    { id: "policy", passed: Boolean(activePointPolicyRecord), title: "กติกา Points มีผลใช้", detail: activePointPolicyLabel },
     { id: "acknowledgement", passed: hasCurrentPointPolicyAcknowledgement, title: "รับทราบกติกาฉบับปัจจุบัน", detail: pointRedemptionPolicy.acknowledgementRequired ? (hasCurrentPointPolicyAcknowledgement ? "บันทึกการรับทราบแล้ว" : "ต้องอ่านและกดรับทราบก่อนแลก") : "กติกาฉบับนี้ไม่บังคับกดรับทราบ" },
-    { id: "balance", passed: activeRewardBalance >= rewardMinimumRequiredBalance, title: "แต้มพอและคงเหลือตามเกณฑ์", detail: `ต้องมีอย่างน้อย ${formatMoney(rewardMinimumRequiredBalance)} แต้ม เพื่อให้เหลือ ${formatMoney(pointRedemptionPolicy.minimumBalanceAfterRedemption)} แต้มหลังแลก` },
+    { id: "balance", passed: activeRewardBalance >= rewardMinimumRequiredBalance, title: "Points เพียงพอและคงเหลือตามเกณฑ์", detail: `ต้องมีอย่างน้อย ${formatMoney(rewardMinimumRequiredBalance)} Points เพื่อให้เหลือ ${formatMoney(pointRedemptionPolicy.minimumBalanceAfterRedemption)} Points หลังแลก` },
     { id: "monthly-limit", passed: activeRewardMonthlyCount < pointRedemptionPolicy.maxRedemptionsPerMonth, title: "โควตาแลกรางวัลรายเดือน", detail: `ใช้แล้ว ${activeRewardMonthlyCount}/${pointRedemptionPolicy.maxRedemptionsPerMonth} ครั้งในเดือนนี้` },
     { id: "cooldown", passed: rewardCooldownPassed, title: `เว้นระยะ ${pointRedemptionPolicy.cooldownDays} วัน`, detail: rewardCooldownPassed ? "พ้นระยะรอแล้ว" : `แลกได้อีกครั้งวันที่ ${formatDueDate(nextRewardRedemptionAt!.toISOString().slice(0, 10))}` },
     { id: "stock", passed: rewardToRedeem.stock > 0, title: "รางวัลยังมีสิทธิ์คงเหลือ", detail: `เหลือ ${rewardToRedeem.stock} สิทธิ์` },
   ] : [];
   const canSubmitRewardRedemption = Boolean(activeRewardEmployeeId) && !isEmployeePreview && rewardPreflightChecks.every((check) => check.passed);
   const activeViewTitle = view === "work" && workSection === "points" && pointPanel === "policies" ? "กฎองค์กรและการรับทราบ"
-    : isEmployeeUser && view === "work" && workSection === "points" ? "แต้มสะสมของฉัน"
+    : isEmployeeUser && view === "work" && workSection === "points" ? "Points สะสมของฉัน"
     : isEmployeeUser && view === "work" && workSection === "rewards" ? "แลกรางวัล"
       : isEmployeeUser && view === "work" ? "งานของฉัน"
         : isEmployeeUser && view === "portfolio" ? "แฟ้มผลงานของฉัน"
@@ -2435,9 +2435,9 @@ export default function Home() {
             : isEmployeeUser && view === "power" ? "ค่าพลังของฉันและทีม"
               : isEmployeeUser && view === "peopleOps" ? "การเติบโตและเงินเดือนของฉัน"
                 : viewMeta[view].title;
-  const activeViewDescription = view === "work" && workSection === "points" && pointPanel === "policies" ? (isAdmin ? "ร่าง ตรวจความครบถ้วน และประกาศกฎองค์กรให้พนักงานรับทราบอย่างตรวจสอบได้" : "อ่านกฎที่ประกาศใช้ เข้าใจกติกาแต้ม และบันทึกการรับทราบของคุณ")
-    : isEmployeeUser && view === "work" && workSection === "points" ? "ตรวจสอบยอดแต้ม รายการได้–เสียแต้ม และที่มาทุกรายการของคุณ"
-    : isEmployeeUser && view === "work" && workSection === "rewards" ? "ใช้แต้มของคุณแลกรางวัล และติดตามสถานะคำขอได้ในที่เดียว"
+  const activeViewDescription = view === "work" && workSection === "points" && pointPanel === "policies" ? (isAdmin ? "ร่าง ตรวจความครบถ้วน และประกาศกฎองค์กรให้พนักงานรับทราบอย่างตรวจสอบได้" : "อ่านกฎที่ประกาศใช้ เข้าใจกติกา Points และบันทึกการรับทราบของคุณ")
+    : isEmployeeUser && view === "work" && workSection === "points" ? "ตรวจสอบยอด Points รายการได้–เสีย Points และที่มาทุกรายการของคุณ"
+    : isEmployeeUser && view === "work" && workSection === "rewards" ? "ใช้ Points ของคุณแลกรางวัล และติดตามสถานะคำขอได้ในที่เดียว"
       : isEmployeeUser && view === "work" ? "ดูสิ่งที่ต้องทำ เริ่มงาน อัปเดตความคืบหน้า และส่งหลักฐานได้ในไม่กี่ขั้นตอน"
         : isEmployeeUser && view === "portfolio" ? "ค้นงานและหลักฐานของคุณ พร้อมติดตามสถานะการตรวจผลงาน"
           : isEmployeeUser && view === "office" ? "ดูสถานะภาระงานรวมของทีมโดยไม่เปิดเผยรายละเอียดงานส่วนบุคคล"
@@ -2540,7 +2540,7 @@ export default function Home() {
             <button className={view === "power" ? "active" : ""} onClick={() => setView("power")}><span aria-hidden="true">◆</span><b>ค่าพลังทีม</b></button>
             <span className="nav-section-label">การเติบโต</span>
             <button className={view === "peopleOps" ? "active" : ""} onClick={() => setView("peopleOps")}><span aria-hidden="true">↗</span><b>เติบโต &amp; เงินเดือน</b></button>
-            <button className={view === "work" && (workSection === "rewards" || (workSection === "points" && pointPanel !== "policies")) ? "active" : ""} onClick={() => { setPointPanel("overview"); setWorkSection("points"); setView("work"); }}><span aria-hidden="true">★</span><b>แต้ม &amp; รางวัล</b><em>{formatMoney(currentUser?.employeeId ? pointBalances.get(currentUser.employeeId) ?? 0 : 0)}</em></button>
+            <button className={view === "work" && (workSection === "rewards" || (workSection === "points" && pointPanel !== "policies")) ? "active" : ""} onClick={() => { setPointPanel("overview"); setWorkSection("points"); setView("work"); }}><span aria-hidden="true">★</span><b>Points &amp; รางวัล</b><em>{formatMoney(currentUser?.employeeId ? pointBalances.get(currentUser.employeeId) ?? 0 : 0)}</em></button>
             <button className={view === "work" && workSection === "points" && pointPanel === "policies" ? "active" : ""} onClick={() => { setPointPanel("policies"); setWorkSection("points"); setView("work"); }}><span aria-hidden="true">§</span><b>กฎองค์กร</b>{pendingPolicyAcknowledgementCount > 0 && <em>{pendingPolicyAcknowledgementCount}</em>}</button>
           </> : <>
             <span className="nav-section-label">พื้นที่ทำงาน</span>
@@ -2593,13 +2593,13 @@ export default function Home() {
         </button>
         {showUserMenu && <aside className="top-profile-menu" aria-label="จัดการโปรไฟล์">
           <div className="top-profile-menu-head"><span>{currentUser?.displayName ? makeInitials(currentUser.displayName) : "PP"}</span><p><strong>{currentUser?.displayName ?? "ผู้ใช้งาน"}</strong><small>{currentUser?.email}</small><b>{currentUserRoleLabel}</b></p></div>
-          {currentUserEmployee && <div className="top-profile-work-summary"><span><small>ตำแหน่ง</small><strong>{getRole(currentUserEmployee.roleId).name}</strong></span><span><small>แต้มคงเหลือ</small><strong>{formatMoney(pointBalances.get(currentUserEmployee.id) ?? 0)}</strong></span></div>}
+          {currentUserEmployee && <div className="top-profile-work-summary"><span><small>ตำแหน่ง</small><strong>{getRole(currentUserEmployee.roleId).name}</strong></span><span><small>Points คงเหลือ</small><strong>{formatMoney(pointBalances.get(currentUserEmployee.id) ?? 0)}</strong></span></div>}
           <nav>
             <button type="button" onClick={() => { setShowUserMenu(false); if (isAdmin) { if (currentUser?.employeeId) setProfileEmployeeId(currentUser.employeeId); setView("profiles"); } else { setPortfolioEmployeeId(currentUser?.employeeId ?? "all"); setView("portfolio"); } }}><span>▣</span><p><strong>{isAdmin ? "จัดการโปรไฟล์" : "แฟ้มผลงานของฉัน"}</strong><small>{isAdmin ? "ข้อมูล เอกสาร และสัญญา" : "ดูผลงานและหลักฐานที่ส่งไว้"}</small></p></button>
             <button type="button" onClick={() => { setShowUserMenu(false); setView("work"); setWorkSection("tasks"); setWorkAssigneeFilter(currentUser?.employeeId ?? "all"); }}><span>✓</span><p><strong>งานของฉัน</strong><small>เปิดรายการสิ่งที่ต้องทำ</small></p></button>
             <button type="button" onClick={() => { setShowUserMenu(false); setView("work"); setWorkSection("points"); setPointPanel("policies"); }}><span>§</span><p><strong>กฎองค์กร</strong><small>{isAdmin ? "ร่าง ประกาศ และติดตามการรับทราบ" : "อ่านกฎที่ประกาศใช้และยืนยันรับทราบ"}</small></p></button>
             {isEmployeeUser && <button type="button" onClick={() => { setShowUserMenu(false); setView("peopleOps"); }}><span>↗</span><p><strong>การเติบโตและเงินเดือน</strong><small>ดูเป้าหมาย สกิล และค่าตอบแทนของฉัน</small></p></button>}
-            {isEmployeeUser && <button type="button" onClick={() => { setShowUserMenu(false); setView("work"); setWorkSection("points"); setPointPanel("overview"); }}><span>★</span><p><strong>แต้มและรางวัล</strong><small>ดูยอดแต้มและเลือกรางวัล</small></p></button>}
+            {isEmployeeUser && <button type="button" onClick={() => { setShowUserMenu(false); setView("work"); setWorkSection("points"); setPointPanel("overview"); }}><span>★</span><p><strong>Points และรางวัล</strong><small>ดูยอด Points และเลือกรางวัล</small></p></button>}
             {isEmployeePreview ? <button type="button" onClick={() => window.location.assign("/")}><span>←</span><p><strong>กลับมุมมองผู้ดูแล</strong><small>ออกจากโหมดทดลองพนักงาน</small></p></button> : <a href="/signout-with-chatgpt?return_to=/"><span>↗</span><p><strong>ออกจากระบบ</strong><small>เปลี่ยนบัญชีผู้ใช้งาน</small></p></a>}
           </nav>
         </aside>}
@@ -2648,7 +2648,7 @@ export default function Home() {
             <span className="employee-preview-badge">TEST VIEW</span>
             <div>
               <strong>กำลังทดลองมุมมองของ {currentUserEmployee?.name ?? "พนักงาน"}</strong>
-              <p>โหมดนี้อ่านอย่างเดียว · ดูงาน หลักฐาน แต้ม และการเติบโตได้ โดยไม่เปลี่ยนข้อมูลจริง</p>
+              <p>โหมดนี้อ่านอย่างเดียว · ดูงาน หลักฐาน Points และการเติบโตได้ โดยไม่เปลี่ยนข้อมูลจริง</p>
             </div>
             <button type="button" onClick={() => window.location.assign("/")}>กลับมุมมองผู้ดูแล <span aria-hidden="true">→</span></button>
           </section>
@@ -2663,7 +2663,7 @@ export default function Home() {
               <button onClick={() => { setEmployeeTaskScope("assigned"); setWorkDueFilter("today"); setWorkSection("tasks"); }}><span>✓</span><p><small>งานวันนี้</small><strong>{employeeAssignedTodayCount}</strong></p></button>
               <button onClick={() => { setEmployeeTaskScope("assigned"); setWorkDueFilter("review"); setWorkSection("tasks"); }}><span>⌕</span><p><small>รอตรวจ</small><strong>{employeeAssignedReviewCount}</strong></p></button>
               <button onClick={() => setView("peopleOps")}><span>↗</span><p><small>พร้อมเติบโต</small><strong>{promotionReadiness}%</strong></p></button>
-              <button onClick={() => { setPointPanel("overview"); setWorkSection("points"); }}><span>★</span><p><small>แต้มคงเหลือ</small><strong>{formatMoney(pointBalances.get(currentUserEmployee.id) ?? 0)}</strong></p></button>
+              <button onClick={() => { setPointPanel("overview"); setWorkSection("points"); }}><span>★</span><p><small>Points คงเหลือ</small><strong>{formatMoney(pointBalances.get(currentUserEmployee.id) ?? 0)}</strong></p></button>
             </div>
             <div className="employee-welcome-shortcuts">
               <button onClick={() => { setPortfolioEmployeeId(currentUserEmployee.id); setView("portfolio"); }}>แฟ้มผลงานของฉัน <span>→</span></button>
@@ -3112,7 +3112,7 @@ export default function Home() {
                       <b>{powerLeft.overall ?? "—"}<small>OVR</small></b>
                     </div>
                     <div className="matchup-verdict">
-                      <span>{powerDifference === null ? "รอข้อมูล" : powerDifference === 0 ? "สูสี" : `ต่าง ${Math.abs(powerDifference)} แต้ม`}</span>
+                      <span>{powerDifference === null ? "รอข้อมูล" : powerDifference === 0 ? "สูสี" : `ต่าง ${Math.abs(powerDifference)} Points`}</span>
                       <strong>{powerDifference === null ? "ประเมินทั้งสองคนก่อนเริ่มเปรียบเทียบ" : powerDifference === 0 ? "ค่าพลังรวมใกล้เคียงกัน" : powerDifference > 0 ? `${powerLeft.employee.name} มี OVR สูงกว่า` : `${powerRight.employee.name} มี OVR สูงกว่า`}</strong>
                     </div>
                     <div className={`matchup-person right ${powerDifference !== null && powerDifference < 0 ? "winner" : ""}`}>
@@ -3453,11 +3453,11 @@ export default function Home() {
               </header>
               <ol className="access-workflow-list">
                 <li><span>1</span><div><strong>วางแผนและมอบหมาย</strong><small>HR / Admin หรือหัวหน้าทีมสร้างงานหลัก</small></div><b>admin · manager</b></li>
-                <li><span>2</span><div><strong>รับงานและประสานทีม</strong><small>พนักงานรับงาน หรือสร้างรีเควสต์ 0 แต้มให้ทีม</small></div><b>employee</b></li>
+                <li><span>2</span><div><strong>รับงานและประสานทีม</strong><small>พนักงานรับงาน หรือสร้างรีเควสต์ 0 Points ให้ทีม</small></div><b>employee</b></li>
                 <li><span>3</span><div><strong>ลงมือทำและส่งหลักฐาน</strong><small>ผู้รับงานอัปเดตความคืบหน้าและส่งผลงาน</small></div><b>employee</b></li>
                 <li><span>4</span><div><strong>ตรวจและอนุมัติ</strong><small>แยกผู้ทำงานออกจากผู้ตรวจเพื่อความเป็นธรรม</small></div><b>admin · manager</b></li>
               </ol>
-              <p className="access-review-boundary" role="note"><span aria-hidden="true">i</span><strong>พนักงานสร้างงานประสานได้ แต่ตรวจอนุมัติเองไม่ได้</strong> งานที่พนักงานสร้างถูกกำหนดเป็นรีเควสต์ 0 แต้ม ผู้รับงานเป็นผู้อัปเดต และเฉพาะหัวหน้าทีมหรือ HR เท่านั้นที่ตรวจผลงาน</p>
+              <p className="access-review-boundary" role="note"><span aria-hidden="true">i</span><strong>พนักงานสร้างงานประสานได้ แต่ตรวจอนุมัติเองไม่ได้</strong> งานที่พนักงานสร้างถูกกำหนดเป็นรีเควสต์ 0 Points ผู้รับงานเป็นผู้อัปเดต และเฉพาะหัวหน้าทีมหรือ HR เท่านั้นที่ตรวจผลงาน</p>
             </section>
 
             <div className="access-main-grid">
@@ -3488,7 +3488,7 @@ export default function Home() {
                     <tbody>
                       <tr><th scope="row"><strong>HR / Admin</strong><code>admin</code></th><td><span className="assigner">คนสั่งงาน</span></td><td>จัดการทั้งองค์กร ข้อมูล HR บัญชี งาน และตรวจอนุมัติ</td></tr>
                       <tr><th scope="row"><strong>หัวหน้าทีม</strong><code>manager</code></th><td><span className="assigner">คนสั่งงาน</span></td><td>มอบหมายและตรวจงานเฉพาะทีม โดยไม่เห็นเงินเดือนหรือเอกสารส่วนตัว</td></tr>
-                      <tr><th scope="row"><strong>พนักงาน</strong><code>employee</code></th><td><span className="worker">คนทำงาน</span></td><td>ดูข้อมูลตนเอง รับ–ส่งงาน และสร้างงานประสาน 0 แต้ม โดยไม่มีสิทธิ์ตรวจ</td></tr>
+                      <tr><th scope="row"><strong>พนักงาน</strong><code>employee</code></th><td><span className="worker">คนทำงาน</span></td><td>ดูข้อมูลตนเอง รับ–ส่งงาน และสร้างงานประสาน 0 Points โดยไม่มีสิทธิ์ตรวจ</td></tr>
                     </tbody>
                   </table>
                 </div>
@@ -3589,7 +3589,7 @@ export default function Home() {
                       <span className="portfolio-person">{entry.employee ? <EmployeeAvatar employee={entry.employee} profile={employeeProfilesById.get(entry.employee.id)} className="avatar-portfolio-row" /> : <i className="avatar-media avatar-portfolio-row">PP</i>}<span><strong>{entry.employee?.name ?? "ไม่ระบุพนักงาน"}</strong><small>{role?.name ?? "ไม่ระบุตำแหน่ง"}</small></span></span>
                       <span className="portfolio-work"><b>{workKindLabel(entry.item.kind)} · {entry.project?.name ?? "ไม่ระบุโปรเจกต์"}</b><strong>{entry.item.title}</strong><small>{entry.item.description}</small></span>
                       <span className="portfolio-assets">{linkEvidence && <a href={linkEvidence.linkUrl} target="_blank" rel="noreferrer"><b>↗</b><span>เปิดลิงก์<small>{submissionTypeLabels[linkEvidence.submissionType]}</small></span></a>}{fileEvidence && <a href={`/api/work-submissions?id=${encodeURIComponent(fileEvidence.id)}`}><b>↓</b><span>{fileEvidence.fileName}<small>{formatFileSize(fileEvidence.sizeBytes)}</small></span></a>}{additionalEvidenceCount > 0 && <button type="button" className="portfolio-more-assets" onClick={() => openSubmissionCenter(entry.item)}><b>＋</b><span>อีก {additionalEvidenceCount} รายการ<small>เปิดดูหลักฐานทั้งหมด</small></span></button>}{!linkEvidence && !fileEvidence && <button type="button" onClick={() => openSubmissionCenter(entry.item)}><b>{isEmployeeUser && !isEmployeePreview ? "＋" : "⌕"}</b><span>{isEmployeeUser && !isEmployeePreview ? "เพิ่มหลักฐาน" : "ดูรายละเอียด"}<small>{isEmployeeUser && !isEmployeePreview ? "ไฟล์หรือลิงก์ผลงาน" : "ยังไม่มีหลักฐาน"}</small></span></button>}</span>
-                      <span className="portfolio-evaluation"><b>{entry.evaluation?.totalScore.toFixed(0) ?? "—"}<small>คะแนนรวม</small></b><span><small>KPI {entry.evaluation?.kpiScore.toFixed(0) ?? "—"}</small><small>สกิล {entry.evaluation?.skillScore.toFixed(0) ?? "—"}</small><small>★ {entry.item.points} แต้ม</small></span></span>
+                      <span className="portfolio-evaluation"><b>{entry.evaluation?.totalScore.toFixed(0) ?? "—"}<small>คะแนนรวม</small></b><span><small>KPI {entry.evaluation?.kpiScore.toFixed(0) ?? "—"}</small><small>สกิล {entry.evaluation?.skillScore.toFixed(0) ?? "—"}</small><small>★ {entry.item.points} Points</small></span></span>
                       <span className="portfolio-state"><b className={entry.status}>{portfolioStatusLabel(entry.status)}</b><small>{entry.approvedSubmission?.reviewedBy ? `ตรวจโดย ${entry.approvedSubmission.reviewedBy}` : entry.latestSubmission ? `ส่ง ${formatUpdatedAt(entry.latestSubmission.submittedAt)}` : `เสร็จ ${formatUpdatedAt(entry.item.updatedAt)}`}</small><button type="button" onClick={() => openSubmissionCenter(entry.item)}>{entry.submissions.length ? `ดูหลักฐาน ${entry.submissions.length} รายการ` : isEmployeeUser && !isEmployeePreview ? "จัดเก็บผลงาน" : "ดูรายละเอียด"}</button></span>
                     </article>
                   );
@@ -3607,8 +3607,8 @@ export default function Home() {
               {([
                 { id: "tasks", icon: "✓", label: "รายการงาน", copy: "งานที่ต้องทำ", value: (isEmployeeUser ? employeeAssignedWorkItems : workItems).filter((item) => item.status !== "done").length },
                 { id: "projects", icon: "◇", label: "โปรเจกต์", copy: "ติดตามภาพรวม", value: projects.length },
-                { id: "points", icon: "★", label: isEmployeeUser ? "แต้มของฉัน" : "จัดการแต้ม", copy: isEmployeeUser ? "ยอด กฎ ประวัติ" : "รอบ กฎ ประวัติ", value: totalPoints },
-                { id: "rewards", icon: "♢", label: isEmployeeUser ? "ร้านรางวัล" : "รางวัล", copy: "ใช้แต้มแลกของ", value: rewards.filter((reward) => reward.isActive).length },
+                { id: "points", icon: "★", label: isEmployeeUser ? "Points ของฉัน" : "จัดการ Points", copy: isEmployeeUser ? "ยอด กฎ ประวัติ" : "รอบ กฎ ประวัติ", value: totalPoints },
+                { id: "rewards", icon: "♢", label: isEmployeeUser ? "ร้านรางวัล" : "รางวัล", copy: "ใช้ Points แลกของ", value: rewards.filter((reward) => reward.isActive).length },
               ] as const).filter((section) => !isEmployeeUser || section.id !== "projects").map((section) => (
                 <button key={section.id} className={workSection === section.id ? "active" : ""} onClick={() => { if (section.id === "points") setPointPanel("overview"); setWorkSection(section.id); }} aria-current={workSection === section.id ? "page" : undefined}>
                   <span aria-hidden="true">{section.icon}</span>
@@ -3627,7 +3627,7 @@ export default function Home() {
               {isEmployeeUser && <div className="employee-task-scope" aria-label="เลือกขอบเขตรายการงาน">
                 <button type="button" aria-pressed={employeeTaskScope === "assigned"} className={employeeTaskScope === "assigned" ? "active" : ""} onClick={() => { setEmployeeTaskScope("assigned"); setWorkDueFilter("all"); }}><span aria-hidden="true">✓</span><p><strong>งานที่ต้องทำ</strong><small>งานที่ฉันเป็นผู้รับผิดชอบ</small></p><b>{employeeAssignedWorkItems.filter((item) => item.status !== "done").length}</b></button>
                 <button type="button" aria-pressed={employeeTaskScope === "created"} className={employeeTaskScope === "created" ? "active" : ""} onClick={() => { setEmployeeTaskScope("created"); setWorkDueFilter("all"); }}><span aria-hidden="true">→</span><p><strong>งานที่ฉันส่งต่อ</strong><small>งานประสานที่ฉันสร้างให้ตนเองหรือเพื่อนร่วมทีม</small></p><b>{employeeCreatedWorkItems.filter((item) => item.status !== "done").length}</b></button>
-                <p className="employee-task-scope-note"><span aria-hidden="true">i</span> งานประสานจากพนักงานมี 0 แต้ม ไม่นับเป็น KPI หรือภาระงานทางการ ผู้รับงานเป็นผู้อัปเดต และเฉพาะหัวหน้าหรือ HR เท่านั้นที่ตรวจอนุมัติได้</p>
+                <p className="employee-task-scope-note"><span aria-hidden="true">i</span> งานประสานจากพนักงานมี 0 Points ไม่นับเป็น KPI หรือภาระงานทางการ ผู้รับงานเป็นผู้อัปเดต และเฉพาะหัวหน้าหรือ HR เท่านั้นที่ตรวจอนุมัติได้</p>
               </div>}
 
               <div className="simple-todo-overview" aria-label="เลือกดูงานแบบรวดเร็ว">
@@ -3674,7 +3674,7 @@ export default function Home() {
                         <p>{item.description || "ยังไม่มีรายละเอียดเพิ่มเติม"}</p>
                         <div className="simple-task-meta">
                           <span className={`simple-task-due ${dueState}`}><b>{dueState === "overdue" ? "เกินกำหนด" : dueState === "today" ? "ส่งวันนี้" : dueState === "done" ? "ปิดงานแล้ว" : `ส่ง ${formatDueDate(item.dueDate)}`}</b></span>
-                          <span>★ {formatMoney(item.points)} แต้ม</span>
+                          <span>★ {formatMoney(item.points)} Points</span>
                           <span>{submissions.length} หลักฐาน</span>
                         </div>
                       </div>
@@ -3712,23 +3712,23 @@ export default function Home() {
               </section>
 
               <aside className="points-leaderboard-card">
-                <div className="section-heading compact"><div><p className="eyebrow">POINTS {isEmployeeUser ? "BALANCE" : "LEADERBOARD"}</p><h2>{isEmployeeUser ? "แต้มสะสมของฉัน" : "อันดับสะสมแต้ม"}</h2></div><span className="points-crown">★</span></div>
+                <div className="section-heading compact"><div><p className="eyebrow">POINTS {isEmployeeUser ? "BALANCE" : "LEADERBOARD"}</p><h2>{isEmployeeUser ? "Points สะสมของฉัน" : "อันดับ Points สะสม"}</h2></div><span className="points-crown">★</span></div>
                 <div className="points-leaderboard-list">
-                  {leaderboard.slice(0, 6).map(({ employee, points }, index) => <article key={employee.id} className={index === 0 ? "champion" : ""}><span className="leader-rank">{index + 1}</span><EmployeeAvatar employee={employee} profile={employeeProfilesById.get(employee.id)} className="avatar-leader" /><p><strong>{employee.name}</strong><small>{getRole(employee.roleId).name}</small></p><b>{formatMoney(points)}<small> แต้ม</small></b></article>)}
+                  {leaderboard.slice(0, 6).map(({ employee, points }, index) => <article key={employee.id} className={index === 0 ? "champion" : ""}><span className="leader-rank">{index + 1}</span><EmployeeAvatar employee={employee} profile={employeeProfilesById.get(employee.id)} className="avatar-leader" /><p><strong>{employee.name}</strong><small>{getRole(employee.roleId).name}</small></p><b>{formatMoney(points)}<small> Points</small></b></article>)}
                 </div>
-                <p className="points-note">ยอดคงเหลือรวมแต้มประเมิน งาน เควสต์ เวลาเข้างาน โบนัส รายการหัก และแต้มที่ใช้แลกรางวัล</p>
+                <p className="points-note">ยอดคงเหลือรวม Points จากการประเมิน งาน เควสต์ เวลาเข้างาน โบนัส รายการหัก และการแลกรางวัล</p>
               </aside>
             </div>}
 
             {workSection === "points" && <section className="points-operations-card">
               <div className="points-operations-heading">
-                <div><p className="eyebrow">{isEmployeeUser ? "MY POINTS" : "POINTS OPERATIONS"}</p><h2>{isEmployeeUser ? "แต้มและประวัติของฉัน" : "ศูนย์จัดการแต้มพนักงาน"}</h2><p>{isEmployeeUser ? "ดูแต้มที่ได้รับ แต้มที่ใช้ และเหตุผลของแต่ละรายการได้อย่างโปร่งใส" : "ประมวลผลแต้มจากการประเมิน งาน การเข้า–ออกงาน และเหตุการณ์ด้านวินัย พร้อมประวัติผู้บันทึก"}</p></div>
-                <div className="points-flow-summary">{isEmployeeUser && <span className="balance"><small>แต้มคงเหลือของฉัน</small><strong>{formatMoney(totalPoints)}</strong></span>}<span><small>แต้มที่ได้รับ</small><strong>+{formatMoney(pointsEarned)}</strong></span><span className="negative"><small>แต้มที่หัก/ใช้</small><strong>-{formatMoney(pointsDeducted)}</strong></span></div>
+                <div><p className="eyebrow">{isEmployeeUser ? "MY POINTS" : "POINTS OPERATIONS"}</p><h2>{isEmployeeUser ? "Points และประวัติของฉัน" : "ศูนย์จัดการ Points ของพนักงาน"}</h2><p>{isEmployeeUser ? "ดู Points ที่ได้รับและใช้ พร้อมเหตุผลของแต่ละรายการได้อย่างโปร่งใส" : "ประมวลผล Points จากการประเมิน งาน การเข้า–ออกงาน และเหตุการณ์ด้านวินัย พร้อมประวัติผู้บันทึก"}</p></div>
+                <div className="points-flow-summary">{isEmployeeUser && <span className="balance"><small>Points คงเหลือของฉัน</small><strong>{formatMoney(totalPoints)}</strong></span>}<span><small>Points ที่ได้รับ</small><strong>+{formatMoney(pointsEarned)}</strong></span><span className="negative"><small>Points ที่หัก/ใช้</small><strong>-{formatMoney(pointsDeducted)}</strong></span></div>
               </div>
 
-              <nav className="point-panel-tabs" role="tablist" aria-label="เลือกหน้าจัดการแต้มและกฎองค์กร">
+              <nav className="point-panel-tabs" role="tablist" aria-label="เลือกหน้าจัดการ Points และกฎองค์กร">
                 {([
-                  { id: "overview", icon: "◎", label: isEmployeeUser ? "ยอดแต้ม" : "ภาพรวม", copy: isEmployeeUser ? "สรุปของฉัน" : "รอบประเมิน" },
+                  { id: "overview", icon: "◎", label: isEmployeeUser ? "ยอด Points" : "ภาพรวม", copy: isEmployeeUser ? "สรุปของฉัน" : "รอบประเมิน" },
                   { id: "policies", icon: "§", label: "กฎองค์กร", copy: isEmployeeUser ? "อ่านและรับทราบ" : "ร่างและประกาศ" },
                   { id: "adjust", icon: "±", label: "เพิ่ม / หัก", copy: "บันทึกเหตุการณ์" },
                   { id: "history", icon: "⌕", label: isEmployeeUser ? "ประวัติของฉัน" : "ประวัติ", copy: "ตรวจสอบย้อนหลัง" },
@@ -3736,15 +3736,15 @@ export default function Home() {
               </nav>
 
               {pointPanel === "overview" && <div className="point-overview-grid">
-                <article><span>★</span><p><small>{isEmployeeUser ? "ยอดใช้ได้ตอนนี้" : "แต้มคงเหลือทั้งระบบ"}</small><strong>{formatMoney(totalPoints)} แต้ม</strong><button type="button" onClick={() => setWorkSection("rewards")}>ไปร้านรางวัล →</button></p></article>
+                <article><span>★</span><p><small>{isEmployeeUser ? "ยอดใช้ได้ตอนนี้" : "Points คงเหลือทั้งระบบ"}</small><strong>{formatMoney(totalPoints)} Points</strong><button type="button" onClick={() => setWorkSection("rewards")}>ไปร้านรางวัล →</button></p></article>
                 <article><span>§</span><p><small>กฎที่ประกาศใช้</small><strong>{publishedOrganizationPolicies.length} ฉบับ</strong><button type="button" onClick={() => setPointPanel("policies")}>{isEmployeeUser && publishedOrganizationPolicies.some((policy) => policy.acknowledgementRequired && !policyAcknowledgements.some((item) => item.policyId === policy.id && item.policyVersion === policy.version && item.employeeId === currentUser?.employeeId)) ? "มีรายการรอรับทราบ" : "เปิดดูกฎองค์กร"} →</button></p></article>
-                <article><span>⌕</span><p><small>รายการแต้ม</small><strong>{visiblePointLedger.length} รายการ</strong><button type="button" onClick={() => setPointPanel("history")}>ตรวจสอบประวัติ →</button></p></article>
+                <article><span>⌕</span><p><small>รายการ Points</small><strong>{visiblePointLedger.length} รายการ</strong><button type="button" onClick={() => setPointPanel("history")}>ตรวจสอบประวัติ →</button></p></article>
               </div>}
 
               {pointPanel === "overview" && isAdmin && <div className="monthly-points-panel">
-                <div><span>◎</span><p><strong>แต้มประเมินประจำเดือน</strong><small>{monthlyPointFormulaLabel} · บันทึกซ้ำไม่ได้</small><em>{activePointPolicyLabel}</em></p></div>
+                <div><span>◎</span><p><strong>Points จากการประเมินประจำเดือน</strong><small>{monthlyPointFormulaLabel} · บันทึกซ้ำไม่ได้</small><em>{activePointPolicyLabel}</em></p></div>
                 <label><span>เดือนที่ประมวลผล</span><input type="month" value={monthlyPointMonth} onChange={(event) => setMonthlyPointMonth(event.target.value)} /></label>
-                <span className="monthly-run-status"><strong>{monthlyPointRecipients}</strong><small>คนได้รับแต้มแล้ว</small></span>
+                <span className="monthly-run-status"><strong>{monthlyPointRecipients}</strong><small>คนได้รับ Points แล้ว</small></span>
                 <button disabled={isSaving} onClick={() => void runMonthlyPointCycle()}>{isSaving ? "กำลังประมวลผล..." : "ประมวลผลจากผลประเมิน"}</button>
               </div>}
 
@@ -3766,9 +3766,9 @@ export default function Home() {
                     <label className="wide"><span>ชื่อกฎ / ประกาศ</span><input required value={policyDraft.title} onChange={(event) => setPolicyDraft((draft) => ({ ...draft, title: event.target.value }))} /></label>
                     <label className="wide"><span>สรุปสั้นให้พนักงานเข้าใจ</span><input required value={policyDraft.summary} onChange={(event) => setPolicyDraft((draft) => ({ ...draft, summary: event.target.value }))} /></label>
                     <label className="wide"><span>เนื้อหารายละเอียด</span><textarea required value={policyDraft.content} onChange={(event) => setPolicyDraft((draft) => ({ ...draft, content: event.target.value }))} placeholder="ใช้หัวข้อสั้น ภาษาตรงไปตรงมา และระบุช่องทางถามหรือร้องทุกข์" /></label>
-                    <label><span>หมวดกฎองค์กร</span><select value={policyDraft.category} disabled={Boolean(editingOrganizationPolicy)} onChange={(event) => { const category = event.target.value as OrganizationPolicyCategory; setPolicyDraft((draft) => ({ ...draft, category, acknowledgementRequired: category === "points_rewards" ? true : draft.acknowledgementRequired })); }}><option value="work_rules">ข้อบังคับการทำงาน</option><option value="points_rewards">แต้มและรางวัล</option><option value="ai_data">AI และการใช้ข้อมูล</option><option value="other">ประกาศทั่วไป</option></select><small>{editingOrganizationPolicy ? "หมวดถูกล็อกตามสายฉบับ หากต้องการหมวดอื่นให้สร้างร่างใหม่" : "เลือกหมวดก่อนบันทึกครั้งแรก"}</small></label>
+                    <label><span>หมวดกฎองค์กร</span><select value={policyDraft.category} disabled={Boolean(editingOrganizationPolicy)} onChange={(event) => { const category = event.target.value as OrganizationPolicyCategory; setPolicyDraft((draft) => ({ ...draft, category, acknowledgementRequired: category === "points_rewards" ? true : draft.acknowledgementRequired })); }}><option value="work_rules">ข้อบังคับการทำงาน</option><option value="points_rewards">Points และรางวัล</option><option value="ai_data">AI และการใช้ข้อมูล</option><option value="other">ประกาศทั่วไป</option></select><small>{editingOrganizationPolicy ? "หมวดถูกล็อกตามสายฉบับ หากต้องการหมวดอื่นให้สร้างร่างใหม่" : "เลือกหมวดก่อนบันทึกครั้งแรก"}</small></label>
                     <label><span>วันที่มีผล</span><input required type="date" value={policyDraft.effectiveDate} onChange={(event) => setPolicyDraft((draft) => ({ ...draft, effectiveDate: event.target.value }))} /></label>
-                    <label className={`policy-ack-option ${policyDraft.category === "points_rewards" ? "required" : ""}`}><input type="checkbox" disabled={policyDraft.category === "points_rewards"} checked={policyDraft.category === "points_rewards" || policyDraft.acknowledgementRequired} onChange={(event) => setPolicyDraft((draft) => ({ ...draft, acknowledgementRequired: event.target.checked }))} /><span><strong>ให้พนักงานกดยืนยันรับทราบ</strong><small>{policyDraft.category === "points_rewards" ? "บังคับสำหรับกติกาแต้ม: พนักงานต้องรับทราบฉบับที่มีผลก่อนแลกรางวัล" : "บันทึกบุคคล เวอร์ชัน และเวลาที่รับทราบ"}</small></span></label>
+                    <label className={`policy-ack-option ${policyDraft.category === "points_rewards" ? "required" : ""}`}><input type="checkbox" disabled={policyDraft.category === "points_rewards"} checked={policyDraft.category === "points_rewards" || policyDraft.acknowledgementRequired} onChange={(event) => setPolicyDraft((draft) => ({ ...draft, acknowledgementRequired: event.target.checked }))} /><span><strong>ให้พนักงานกดยืนยันรับทราบ</strong><small>{policyDraft.category === "points_rewards" ? "บังคับสำหรับกติกา Points: พนักงานต้องรับทราบฉบับที่มีผลก่อนแลกรางวัล" : "บันทึกบุคคล เวอร์ชัน และเวลาที่รับทราบ"}</small></span></label>
                     <p className="policy-scope-note"><strong>ขอบเขตในหน้านี้:</strong> ร่างใหม่เผยแพร่สำหรับพนักงานทั้งองค์กร ยังไม่เปิดการจำกัดแผนกหรือตำแหน่งในหน้าจอนี้</p>
                   </div>
                   <section className="compliance-review-card">
@@ -3785,26 +3785,26 @@ export default function Home() {
               </section>
 
               <section className="point-balance-charter">
-                <div className="point-balance-heading"><div><p className="eyebrow">FAIR POINT ECONOMY</p><h3>แต้มมีคุณค่า เพราะต้องพิสูจน์และตรวจสอบได้</h3><p>ระบบกำหนดเพดาน ป้องกันการให้ซ้ำ และมอบแต้มงานหลังหัวหน้าอนุมัติหลักฐานเท่านั้น</p><small className="active-point-policy-label">ฉบับที่มีผล: {activePointPolicyLabel}</small></div><span><strong>{pointEconomyPolicy.monthlyEvaluationMinimumScore}+</strong><small>เกณฑ์รับแต้มประเมิน</small></span></div>
+                <div className="point-balance-heading"><div><p className="eyebrow">FAIR POINT ECONOMY</p><h3>Points มีคุณค่า เพราะต้องพิสูจน์และตรวจสอบได้</h3><p>ระบบกำหนดเพดาน ป้องกันการให้ซ้ำ และมอบ Points จากงานหลังหัวหน้าอนุมัติหลักฐานเท่านั้น</p><small className="active-point-policy-label">ฉบับที่มีผล: {activePointPolicyLabel}</small></div><span><strong>{pointEconomyPolicy.monthlyEvaluationMinimumScore}+</strong><small>เกณฑ์รับ Points จากการประเมิน</small></span></div>
                 <div className="point-policy-grid">
-                  <article><span>01</span><p><strong>มีหลักฐานก่อนรับแต้ม</strong><small>งาน เควสต์ และโบนัสต้องมีลิงก์หรือไฟล์ แล้วผ่านการตรวจ</small></p></article>
-                  <article><span>02</span><p><strong>ไม่มีการรับแต้มซ้ำ</strong><small>งานหนึ่งรายการรับได้ครั้งเดียว เวลาเข้างานบันทึกได้วันละครั้ง</small></p></article>
-                  <article><span>03</span><p><strong>มีเพดานที่สมดุล</strong><small>ประเมินสูงสุด {pointEconomyPolicy.monthlyEvaluationCap} แต้ม โบนัสและเควสต์อย่างละ {pointEconomyPolicy.positiveManualEventsPerMonth} ครั้ง/เดือน</small></p></article>
-                  <article><span>04</span><p><strong>หักแต้มอย่างเป็นธรรม</strong><small>ต้องระบุเหตุผล ผู้บันทึก และเปิดให้ตรวจสอบย้อนหลังได้</small></p></article>
+                  <article><span>01</span><p><strong>มีหลักฐานก่อนรับ Points</strong><small>งาน เควสต์ และโบนัสต้องมีลิงก์หรือไฟล์ แล้วผ่านการตรวจ</small></p></article>
+                  <article><span>02</span><p><strong>ไม่มีการรับ Points ซ้ำ</strong><small>งานหนึ่งรายการรับได้ครั้งเดียว เวลาเข้างานบันทึกได้วันละครั้ง</small></p></article>
+                  <article><span>03</span><p><strong>มีเพดานที่สมดุล</strong><small>ประเมินสูงสุด {pointEconomyPolicy.monthlyEvaluationCap} Points โบนัสและเควสต์อย่างละ {pointEconomyPolicy.positiveManualEventsPerMonth} ครั้ง/เดือน</small></p></article>
+                  <article><span>04</span><p><strong>หัก Points อย่างเป็นธรรม</strong><small>ต้องระบุเหตุผล ผู้บันทึก และเปิดให้ตรวจสอบย้อนหลังได้</small></p></article>
                 </div>
                 <div className="work-point-matrix">
-                  <div><strong>แต้มงานมาตรฐาน</strong><small>ระบบคำนวณอัตโนมัติตามประเภทและความสำคัญ</small></div>
-                  <div className="work-point-table-scroll"><div className="work-point-table" role="table" aria-label="อัตราแต้มงานมาตรฐาน">
+                  <div><strong>Points มาตรฐานของงาน</strong><small>ระบบคำนวณอัตโนมัติตามประเภทและความสำคัญ</small></div>
+                  <div className="work-point-table-scroll"><div className="work-point-table" role="table" aria-label="อัตรา Points มาตรฐานของงาน">
                     <span className="table-head">ประเภท</span><span className="table-head">ทั่วไป</span><span className="table-head">ปานกลาง</span><span className="table-head">สำคัญ</span><span className="table-head">เร่งด่วน</span>
                     {(["task", "request", "mission"] as WorkItemRecord["kind"][]).map((kind) => <div className="work-point-row" role="row" key={kind}><strong>{workKindLabel(kind)}</strong>{(["low", "medium", "high", "urgent"] as WorkItemRecord["priority"][]).map((priority) => <span key={priority}>+{workPointAwards[kind][priority]}</span>)}</div>)}
                   </div></div>
                 </div>
-                <p className="point-example-line">ตัวอย่างผลประเมิน {monthlyPointExampleScore} คะแนน ได้ {monthlyEvaluationPoints(monthlyPointExampleScore, activePointPolicyRules)} แต้ม · ส่งภารกิจสำคัญพร้อมหลักฐาน ได้ {workPointValue("mission", "high", activePointPolicyRules)} แต้ม · ส่งก่อนกำหนดเพิ่ม {pointEventRules.early_finish.points} แต้ม</p>
+                <p className="point-example-line">ตัวอย่างผลประเมิน {monthlyPointExampleScore} คะแนน ได้ {monthlyEvaluationPoints(monthlyPointExampleScore, activePointPolicyRules)} Points · ส่งภารกิจสำคัญพร้อมหลักฐาน ได้ {workPointValue("mission", "high", activePointPolicyRules)} Points · ส่งก่อนกำหนดเพิ่ม {pointEventRules.early_finish.points} Points</p>
               </section>
 
               <div className="point-rules-section">
-                <div className="point-rules-heading"><div><p className="eyebrow">POINT RULES</p><h3>กติกาการได้และเสียแต้ม</h3></div><small>{activePointPolicyLabel}</small></div>
-                <details className="point-rule-group" open><summary><span>+รับแต้มและรายการไม่หัก</span><small>เปิดดูรายละเอียด</small></summary><div className="point-rule-grid">
+                <div className="point-rules-heading"><div><p className="eyebrow">POINT RULES</p><h3>กติกาการได้และเสีย Points</h3></div><small>{activePointPolicyLabel}</small></div>
+                <details className="point-rule-group" open><summary><span>+รับ Points และรายการไม่หัก</span><small>เปิดดูรายละเอียด</small></summary><div className="point-rule-grid">
                   {(Object.entries(pointEventRules) as [PointEventType, (typeof pointEventRules)[PointEventType]][]).filter(([, rule]) => rule.points === null || rule.points >= 0).map(([eventType, rule]) => (
                     <article key={eventType} className={rule.points === null || rule.points >= 0 ? "positive" : "negative"}>
                       <span>{rule.points === null ? `${pointEconomyPolicy.monthlyEvaluationMinimumScore}+` : `${rule.points > 0 ? "+" : ""}${formatMoney(rule.points)}`}</span>
@@ -3812,16 +3812,16 @@ export default function Home() {
                     </article>
                   ))}
                 </div></details>
-                <details className="point-rule-group"><summary><span>−รายการหักแต้ม</span><small>ต้องมีเหตุผลและตรวจสอบได้</small></summary><div className="point-rule-grid">
+                <details className="point-rule-group"><summary><span>−รายการหัก Points</span><small>ต้องมีเหตุผลและตรวจสอบได้</small></summary><div className="point-rule-grid">
                   {(Object.entries(pointEventRules) as [PointEventType, (typeof pointEventRules)[PointEventType]][]).filter(([, rule]) => rule.points !== null && rule.points < 0).map(([eventType, rule]) => <article key={eventType} className="negative"><span>{formatMoney(rule.points ?? 0)}</span><div><strong>{rule.label}</strong><p>{rule.description}</p></div></article>)}
                 </div></details>
               </div>
-              <div className="points-policy-note"><span>!</span><p><strong>บทลงโทษต้องเป็นธรรมและตรวจสอบได้</strong> การลาที่อนุมัติแล้วไม่หักแต้ม ส่วนการมาสาย ขาดงาน งานผิดพลาด ใบเตือน และการผิดระเบียบควรบันทึกหลังตรวจสอบข้อเท็จจริง เปิดโอกาสให้พนักงานชี้แจง และใช้ตามนโยบายบริษัท</p></div>
+              <div className="points-policy-note"><span>!</span><p><strong>บทลงโทษต้องเป็นธรรมและตรวจสอบได้</strong> การลาที่อนุมัติแล้วไม่หัก Points ส่วนการมาสาย ขาดงาน งานผิดพลาด ใบเตือน และการผิดระเบียบควรบันทึกหลังตรวจสอบข้อเท็จจริง เปิดโอกาสให้พนักงานชี้แจง และใช้ตามนโยบายบริษัท</p></div>
               </>}
 
               {pointPanel === "adjust" && permissions.canReviewWork && <div className="point-admin-grid single-panel">
                 <form className="point-event-form" onSubmit={recordPointEvent}>
-                  <div><p className="eyebrow">NEW POINT EVENT</p><h3>บันทึกแต้ม หรือบทลงโทษ</h3><small>รายการหักแต้มต้องมีเหตุผลเพื่อให้ตรวจสอบย้อนหลังได้</small></div>
+                  <div><p className="eyebrow">NEW POINT EVENT</p><h3>บันทึก Points หรือบทลงโทษ</h3><small>รายการหัก Points ต้องมีเหตุผลเพื่อให้ตรวจสอบย้อนหลังได้</small></div>
                   <div className={`point-event-preview ${selectedPointEventRule.points !== null && selectedPointEventRule.points < 0 ? "negative" : "positive"}`}><span>{selectedPointEventRule.points === null ? "—" : `${selectedPointEventRule.points >= 0 ? "+" : ""}${selectedPointEventRule.points}`}</span><p><strong>{selectedPointEventRule.label}</strong><small>{selectedPointEventRule.description}</small></p></div>
                   <div className="point-event-form-grid">
                     <label><span>พนักงาน</span><select required value={pointEventForm.employeeId} onChange={(event) => setPointEventForm((form) => ({ ...form, employeeId: event.target.value }))}>{employees.filter((employee) => employee.status === "active").map((employee) => <option key={employee.id} value={employee.id}>{employee.name} · {getRole(employee.roleId).shortName}</option>)}</select></label>
@@ -3830,38 +3830,38 @@ export default function Home() {
                     <label><span>ลิงก์หลักฐาน {selectedPointEventRule.requiresEvidence ? "(จำเป็น)" : "(ถ้ามี)"}</span><input required={selectedPointEventRule.requiresEvidence} type="url" value={pointEventForm.evidenceUrl} onChange={(event) => setPointEventForm((form) => ({ ...form, evidenceUrl: event.target.value }))} placeholder="https://..." /></label>
                     <label className="wide"><span>เหตุผล / รายละเอียด</span><textarea required value={pointEventForm.note} onChange={(event) => setPointEventForm((form) => ({ ...form, note: event.target.value }))} placeholder="ระบุข้อเท็จจริง ผลกระทบ และเอกสารอ้างอิง โดยหลีกเลี่ยงข้อมูลส่วนบุคคลที่ไม่จำเป็น" /></label>
                   </div>
-                  <button className={selectedPointEventRule.points !== null && selectedPointEventRule.points < 0 ? "penalty" : ""} disabled={isSaving}>{isSaving ? "กำลังบันทึก..." : selectedPointEventRule.points !== null && selectedPointEventRule.points < 0 ? `ยืนยันหัก ${Math.abs(selectedPointEventRule.points)} แต้ม` : `บันทึก ${selectedPointEventRule.points ?? 0} แต้ม`}</button>
+                  <button className={selectedPointEventRule.points !== null && selectedPointEventRule.points < 0 ? "penalty" : ""} disabled={isSaving}>{isSaving ? "กำลังบันทึก..." : selectedPointEventRule.points !== null && selectedPointEventRule.points < 0 ? `ยืนยันหัก ${Math.abs(selectedPointEventRule.points)} Points` : `บันทึก ${selectedPointEventRule.points ?? 0} Points`}</button>
                 </form>
               </div>}
 
               {pointPanel === "history" && <div className="point-admin-grid single-panel">
                 <section className="point-ledger-panel">
-                  <div className="point-ledger-heading"><div><p className="eyebrow">AUDIT LEDGER</p><h3>ประวัติแต้มล่าสุด</h3></div>{!isEmployeeUser && <label><span className="sr-only">กรองประวัติแต้มตามพนักงาน</span><select value={pointHistoryEmployeeId} onChange={(event) => setPointHistoryEmployeeId(event.target.value)}><option value="all">พนักงานทั้งหมด</option>{employees.filter((employee) => employee.status === "active").map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></label>}</div>
+                  <div className="point-ledger-heading"><div><p className="eyebrow">AUDIT LEDGER</p><h3>ประวัติ Points ล่าสุด</h3></div>{!isEmployeeUser && <label><span className="sr-only">กรองประวัติ Points ตามพนักงาน</span><select value={pointHistoryEmployeeId} onChange={(event) => setPointHistoryEmployeeId(event.target.value)}><option value="all">พนักงานทั้งหมด</option>{employees.filter((employee) => employee.status === "active").map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></label>}</div>
                   <div className="point-ledger-list">
                     {visiblePointLedger.slice(0, 12).map((entry) => {
                       const employee = employeesById.get(entry.employeeId);
                       return <article key={entry.id}><span className={entry.points >= 0 ? "positive" : "negative"}>{entry.points >= 0 ? "+" : ""}{formatMoney(entry.points)}</span><p><strong>{entry.note}</strong><small>{employee?.name ?? "พนักงาน"} · {formatUpdatedAt(entry.createdAt)}</small></p><b>{entry.sourceType === "evaluation" ? "ประเมิน" : entry.sourceType === "attendance" ? "เวลาเข้างาน" : entry.sourceType === "deadline" ? "กำหนดส่ง" : entry.sourceType === "quality" ? "คุณภาพงาน" : entry.sourceType === "discipline" ? "วินัย" : entry.sourceType === "redemption" ? "แลกรางวัล" : entry.sourceType === "quest" || entry.sourceType === "mission" ? "เควสต์" : "ผลงาน"}</b></article>;
                     })}
-                    {!visiblePointLedger.length && <div className="point-ledger-empty"><span>★</span><strong>ยังไม่มีประวัติแต้ม</strong><p>บันทึกเหตุการณ์หรือประมวลผลแต้มรายเดือนเพื่อเริ่มต้น</p></div>}
+                    {!visiblePointLedger.length && <div className="point-ledger-empty"><span>★</span><strong>ยังไม่มีประวัติ Points</strong><p>บันทึกเหตุการณ์หรือประมวลผล Points รายเดือนเพื่อเริ่มต้น</p></div>}
                   </div>
                 </section>
               </div>}
             </section>}
 
             {workSection === "rewards" && <section className="reward-center-card">
-              <div className="reward-center-heading"><div><p className="eyebrow">REWARD STORE</p><h2>สะสมแต้ม แลกกิฟต์วอเชอร์และรางวัล</h2><p>ราคา สต็อก โควตารายเดือน ระยะเว้น และยอดคงเหลือจะตรวจตามกติกาฉบับที่มีผลก่อนส่งคำขอ</p></div><span><strong>{formatMoney(totalPoints)}</strong> แต้มในระบบ</span></div>
+              <div className="reward-center-heading"><div><p className="eyebrow">REWARD STORE</p><h2>สะสม Points แลกกิฟต์วอเชอร์และรางวัล</h2><p>ราคา สต็อก โควตารายเดือน ระยะเว้น และยอดคงเหลือจะตรวจตามกติกาฉบับที่มีผลก่อนส่งคำขอ</p></div><span><strong>{formatMoney(totalPoints)}</strong> Points ในระบบ</span></div>
               <div className="reward-center-grid">
                 <div className="reward-catalog">
-                  {rewards.filter((reward) => reward.isActive).map((reward) => <article key={reward.id}><span className={`reward-icon ${reward.category}`}>{reward.icon}</span><div><b>{reward.title}</b><p>{reward.description}</p><small>เหลือ {reward.stock} สิทธิ์</small></div><div className="reward-cost"><strong>{formatMoney(reward.costPoints)}</strong><small>แต้ม</small><button disabled={isEmployeePreview || reward.stock <= 0} onClick={() => { setRewardToRedeem(reward); setRewardEmployeeId(isAdmin ? leaderboard[0]?.employee.id ?? employees[0]?.id ?? "" : currentUser?.employeeId ?? ""); }}>{isEmployeePreview ? "ทดลองดู" : reward.stock > 0 ? "แลกรางวัล" : "หมดแล้ว"}</button></div></article>)}
+                  {rewards.filter((reward) => reward.isActive).map((reward) => <article key={reward.id}><span className={`reward-icon ${reward.category}`}>{reward.icon}</span><div><b>{reward.title}</b><p>{reward.description}</p><small>เหลือ {reward.stock} สิทธิ์</small></div><div className="reward-cost"><strong>{formatMoney(reward.costPoints)}</strong><small>Points</small><button disabled={isEmployeePreview || reward.stock <= 0} onClick={() => { setRewardToRedeem(reward); setRewardEmployeeId(isAdmin ? leaderboard[0]?.employee.id ?? employees[0]?.id ?? "" : currentUser?.employeeId ?? ""); }}>{isEmployeePreview ? "ทดลองดู" : reward.stock > 0 ? "แลกรางวัล" : "หมดแล้ว"}</button></div></article>)}
                 </div>
                 <aside className="redemption-history">
-                  <div><p className="eyebrow">REDEMPTION REQUESTS</p><h3>{isAdmin ? "ตรวจและอัปเดตคำขอ" : "สถานะคำขอของฉัน"}</h3><small>{isAdmin ? "ยกเลิกแล้วระบบจะคืนแต้มและสต็อกตามกติกา" : "ติดตามตั้งแต่รออนุมัติจนส่งมอบรางวัล"}</small></div>
+                  <div><p className="eyebrow">REDEMPTION REQUESTS</p><h3>{isAdmin ? "ตรวจและอัปเดตคำขอ" : "สถานะคำขอของฉัน"}</h3><small>{isAdmin ? "ยกเลิกแล้วระบบจะคืน Points และสต็อกตามกติกา" : "ติดตามตั้งแต่รออนุมัติจนส่งมอบรางวัล"}</small></div>
                   {rewardRedemptions.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 8).map((redemption) => {
                     const employee = employeesById.get(redemption.employeeId);
                     const reward = rewards.find((item) => item.id === redemption.rewardId);
-                    return <article key={redemption.id} className={`redemption-request status-${redemption.status}`}><span>{reward?.icon ?? "★"}</span><p><strong>{reward?.title ?? "รางวัล"}</strong><small>{employee?.name ?? "พนักงาน"} · {formatUpdatedAt(redemption.createdAt)}</small></p><div className="redemption-request-state"><b>{redemption.status === "cancelled" ? `คืน +${formatMoney(redemption.pointsSpent)}` : `-${formatMoney(redemption.pointsSpent)}`}</b><em>{rewardRedemptionStatusLabel(redemption.status)}</em></div>{isAdmin && (redemption.status === "requested" || redemption.status === "approved") && <div className="redemption-request-actions">{redemption.status === "requested" && <button type="button" disabled={isSaving} onClick={() => void updateRewardRedemption(redemption, "approved")}>อนุมัติคำขอ</button>}{redemption.status === "approved" && <button type="button" disabled={isSaving} onClick={() => void updateRewardRedemption(redemption, "fulfilled")}>ยืนยันส่งมอบแล้ว</button>}<button type="button" className="cancel" disabled={isSaving} onClick={() => void updateRewardRedemption(redemption, "cancelled")}>ยกเลิก / คืนแต้ม</button></div>}</article>;
+                    return <article key={redemption.id} className={`redemption-request status-${redemption.status}`}><span>{reward?.icon ?? "★"}</span><p><strong>{reward?.title ?? "รางวัล"}</strong><small>{employee?.name ?? "พนักงาน"} · {formatUpdatedAt(redemption.createdAt)}</small></p><div className="redemption-request-state"><b>{redemption.status === "cancelled" ? `คืน +${formatMoney(redemption.pointsSpent)}` : `-${formatMoney(redemption.pointsSpent)}`}</b><em>{rewardRedemptionStatusLabel(redemption.status)}</em></div>{isAdmin && (redemption.status === "requested" || redemption.status === "approved") && <div className="redemption-request-actions">{redemption.status === "requested" && <button type="button" disabled={isSaving} onClick={() => void updateRewardRedemption(redemption, "approved")}>อนุมัติคำขอ</button>}{redemption.status === "approved" && <button type="button" disabled={isSaving} onClick={() => void updateRewardRedemption(redemption, "fulfilled")}>ยืนยันส่งมอบแล้ว</button>}<button type="button" className="cancel" disabled={isSaving} onClick={() => void updateRewardRedemption(redemption, "cancelled")}>ยกเลิก / คืน Points</button></div>}</article>;
                   })}
-                  {!rewardRedemptions.length && <div className="reward-empty"><span>★</span><strong>ยังไม่มีคำขอแลก</strong><p>เลือกรางวัล แล้วระบุพนักงานที่ต้องการใช้แต้ม</p></div>}
+                  {!rewardRedemptions.length && <div className="reward-empty"><span>★</span><strong>ยังไม่มีคำขอแลก</strong><p>เลือกรางวัล แล้วระบุพนักงานที่ต้องการใช้ Points</p></div>}
                 </aside>
               </div>
             </section>}
@@ -3869,7 +3869,7 @@ export default function Home() {
         )}
       </section>
 
-      <footer><span>PEOPLE PULSE</span><p>งาน · KPI · สกิล · เวลาเข้างาน · แฟ้มผลงาน · แต้มและรางวัล</p></footer>
+      <footer><span>PEOPLE PULSE</span><p>งาน · KPI · สกิล · เวลาเข้างาน · แฟ้มผลงาน · Points และรางวัล</p></footer>
 
       {showProfileEditor && profileEmployee && (
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setShowProfileEditor(false)}>
@@ -3951,14 +3951,14 @@ export default function Home() {
                   <label><span>ความสำคัญ</span><select value={workForm.priority} onChange={(event) => setWorkForm((form) => ({ ...form, priority: event.target.value as WorkItemRecord["priority"] }))}><option value="low">ทั่วไป</option><option value="medium">ปานกลาง</option><option value="high">สำคัญ</option><option value="urgent">เร่งด่วน</option></select></label>
                   <label className="wide"><span>โปรเจกต์ <em>ไม่บังคับ</em></span><select value={workForm.projectId} onChange={(event) => setWorkForm((form) => ({ ...form, projectId: event.target.value }))}><option value="">ไม่ผูกโปรเจกต์</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
                 </div>
-                <div className="employee-coordinate-policy" role="note"><span aria-hidden="true">0</span><p><strong>งานประสานนี้ไม่มีแต้ม ไม่นับ KPI หรือภาระงานทางการ</strong><small>ระบบจะสร้างเป็นรีเควสต์สถานะ “ต้องทำ” ผู้รับงานเป็นผู้อัปเดตความคืบหน้า ผู้สร้างอนุมัติเองไม่ได้ และการตรวจเป็นสิทธิ์ของหัวหน้าทีมหรือ HR เท่านั้น</small></p></div>
+                <div className="employee-coordinate-policy" role="note"><span aria-hidden="true">0</span><p><strong>งานประสานนี้ไม่มี Points ไม่นับ KPI หรือภาระงานทางการ</strong><small>ระบบจะสร้างเป็นรีเควสต์สถานะ “ต้องทำ” ผู้รับงานเป็นผู้อัปเดตความคืบหน้า ผู้สร้างอนุมัติเองไม่ได้ และการตรวจเป็นสิทธิ์ของหัวหน้าทีมหรือ HR เท่านั้น</small></p></div>
               </div>
               <div className="modal-actions"><button type="button" className="secondary-button" onClick={() => { setShowWorkForm(false); setEditingWorkItem(null); }}>ยกเลิก</button><button className="primary-button" disabled={isSaving || !workForm.assigneeEmployeeId}>{isSaving ? "กำลังส่งงาน..." : "ส่งงานประสาน"}</button></div>
             </> : <>
               <div className="work-form-hero">
-                <div><p className="eyebrow">MISSION CONTROL</p><h2 id="work-form-title">{editingWorkItem ? "อัปเดตงานและความคืบหน้า" : "เพิ่มงานหรือภารกิจใหม่"}</h2><p>กำหนดผู้รับผิดชอบและเป้าหมาย ระบบจะคำนวณแต้มมาตรฐานให้อัตโนมัติ</p></div>
+                <div><p className="eyebrow">MISSION CONTROL</p><h2 id="work-form-title">{editingWorkItem ? "อัปเดตงานและความคืบหน้า" : "เพิ่มงานหรือภารกิจใหม่"}</h2><p>กำหนดผู้รับผิดชอบและเป้าหมาย ระบบจะคำนวณ Points มาตรฐานให้อัตโนมัติ</p></div>
                 <button type="button" className="modal-close dark" onClick={() => { setShowWorkForm(false); setEditingWorkItem(null); }} aria-label="ปิดหน้าต่าง">×</button>
-                <div className="work-form-preview"><span className={`work-kind ${workForm.kind}`}>{workKindLabel(workForm.kind)}</span><strong>{workForm.title || "ชื่องานหรือภารกิจ"}</strong><small>{projectsById.get(workForm.projectId)?.name ?? "เลือกโปรเจกต์"}</small><b>★ {workForm.points} แต้ม</b></div>
+                <div className="work-form-preview"><span className={`work-kind ${workForm.kind}`}>{workKindLabel(workForm.kind)}</span><strong>{workForm.title || "ชื่องานหรือภารกิจ"}</strong><small>{projectsById.get(workForm.projectId)?.name ?? "เลือกโปรเจกต์"}</small><b>★ {workForm.points} Points</b></div>
               </div>
               <div className="work-form-body">
                 <div className="form-grid work-form-grid">
@@ -3969,11 +3969,11 @@ export default function Home() {
                   <label><span>ผู้รับผิดชอบ</span><select required value={workForm.assigneeEmployeeId} onChange={(event) => setWorkForm((form) => ({ ...form, assigneeEmployeeId: event.target.value }))}>{employees.filter((employee) => employee.status === "active").map((employee) => <option key={employee.id} value={employee.id}>{employee.name} · {getRole(employee.roleId).shortName}</option>)}</select></label>
                   <label><span>สถานะ</span><select value={workForm.status === "review" || workForm.status === "done" ? "in_progress" : workForm.status} onChange={(event) => { const status = event.target.value as "todo" | "in_progress"; setWorkForm((form) => ({ ...form, status, progress: status === "todo" ? Math.min(form.progress, 20) : Math.max(1, Math.min(form.progress, 90)) })); }}><option value="todo">ต้องทำ</option><option value="in_progress">กำลังทำ</option></select><small>รอตรวจจะเกิดเมื่อพนักงานส่งหลักฐาน และเสร็จแล้วเมื่อผู้ตรวจอนุมัติ</small></label>
                   <label><span>กำหนดเสร็จ</span><input required type="date" value={workForm.dueDate} onChange={(event) => setWorkForm((form) => ({ ...form, dueDate: event.target.value }))} /></label>
-                  <label className="auto-point-field"><span>แต้มมาตรฐานอัตโนมัติ</span><input readOnly value={`${workForm.points} แต้ม`} /><small>แก้เองไม่ได้ เพื่อให้ทุกคนได้รับแต้มตามกติกาเดียวกัน</small></label>
+                  <label className="auto-point-field"><span>Points มาตรฐาน (อัตโนมัติ)</span><input readOnly value={`${workForm.points} Points`} /><small>แก้เองไม่ได้ เพื่อให้ทุกคนได้รับ Points ตามกติกาเดียวกัน</small></label>
                   <label className="wide work-progress-field"><span>ความคืบหน้า <b>{Math.min(workForm.progress, 90)}%</b></span><input type="range" min="0" max="90" step="5" value={Math.min(workForm.progress, 90)} onChange={(event) => { const progress = Number(event.target.value); setWorkForm((form) => ({ ...form, progress, status: progress > 0 ? "in_progress" : "todo" })); }} style={{ "--range-value": `${Math.min(workForm.progress, 90)}%` } as React.CSSProperties} /></label>
                   <label className="wide"><span>รายละเอียดและเกณฑ์สำเร็จ</span><textarea value={workForm.description} onChange={(event) => setWorkForm((form) => ({ ...form, description: event.target.value }))} placeholder="อธิบายสิ่งที่ต้องส่งมอบ หรือเงื่อนไขที่ถือว่าภารกิจสำเร็จ" /></label>
                 </div>
-                <div className="mission-point-note"><span>★</span><p><strong>แต้มจะมอบหลังส่งหลักฐานและหัวหน้าอนุมัติ</strong> การเปลี่ยนสถานะเป็น “เสร็จแล้ว” อย่างเดียวจะยังไม่ได้แต้ม และงานเดิมรับแต้มได้เพียงครั้งเดียว</p></div>
+                <div className="mission-point-note"><span>★</span><p><strong>ระบบจะมอบ Points หลังส่งหลักฐานและหัวหน้าอนุมัติ</strong> การเปลี่ยนสถานะเป็น “เสร็จแล้ว” อย่างเดียวจะยังไม่ได้ Points และงานเดิมรับ Points ได้เพียงครั้งเดียว</p></div>
               </div>
               <div className="modal-actions"><button type="button" className="secondary-button" onClick={() => { setShowWorkForm(false); setEditingWorkItem(null); }}>ยกเลิก</button><button className="primary-button" disabled={isSaving}>{isSaving ? "กำลังบันทึก..." : editingWorkItem ? "บันทึกความคืบหน้า" : "สร้างรายการ"}</button></div>
             </>}
@@ -4053,12 +4053,12 @@ export default function Home() {
           <form className="reward-modal" onSubmit={redeemReward} role="dialog" aria-modal="true" aria-labelledby="reward-modal-title">
             <div className="reward-modal-hero"><span className={`reward-icon ${rewardToRedeem.category}`}>{rewardToRedeem.icon}</span><div><p className="eyebrow">REDEEM REWARD</p><h2 id="reward-modal-title">{rewardToRedeem.title}</h2><p>{rewardToRedeem.description}</p></div><button type="button" className="modal-close dark" onClick={() => setRewardToRedeem(null)} aria-label="ปิดหน้าต่าง">×</button></div>
             <div className="reward-modal-body">
-              {!isAdmin ? <div className="reward-owner-lock"><span>★</span><p><small>บัญชีที่ใช้แต้ม</small><strong>{currentUserEmployee?.name ?? "พนักงาน"}</strong></p><b>{formatMoney(activeRewardBalance)} แต้ม</b></div> : <label><span>พนักงานที่ใช้แต้ม</span><select value={rewardEmployeeId} onChange={(event) => setRewardEmployeeId(event.target.value)}>{leaderboard.map(({ employee, points }) => <option key={employee.id} value={employee.id}>{employee.name} · {formatMoney(points)} แต้ม</option>)}</select></label>}
-              <div className="reward-balance"><span><small>แต้มคงเหลือ</small><strong>{formatMoney(activeRewardBalance)}</strong></span><b>−</b><span><small>ใช้แลกรางวัล</small><strong>{formatMoney(rewardToRedeem.costPoints)}</strong></span><b>=</b><span className={activeRewardBalance - rewardToRedeem.costPoints < pointRedemptionPolicy.minimumBalanceAfterRedemption ? "insufficient" : ""}><small>คงเหลือหลังแลก</small><strong>{formatMoney(activeRewardBalance - rewardToRedeem.costPoints)}</strong></span></div>
+              {!isAdmin ? <div className="reward-owner-lock"><span>★</span><p><small>บัญชีที่ใช้ Points</small><strong>{currentUserEmployee?.name ?? "พนักงาน"}</strong></p><b>{formatMoney(activeRewardBalance)} Points</b></div> : <label><span>พนักงานที่ใช้ Points</span><select value={rewardEmployeeId} onChange={(event) => setRewardEmployeeId(event.target.value)}>{leaderboard.map(({ employee, points }) => <option key={employee.id} value={employee.id}>{employee.name} · {formatMoney(points)} Points</option>)}</select></label>}
+              <div className="reward-balance"><span><small>Points คงเหลือ</small><strong>{formatMoney(activeRewardBalance)}</strong></span><b>−</b><span><small>ใช้แลกรางวัล</small><strong>{formatMoney(rewardToRedeem.costPoints)}</strong></span><b>=</b><span className={activeRewardBalance - rewardToRedeem.costPoints < pointRedemptionPolicy.minimumBalanceAfterRedemption ? "insufficient" : ""}><small>คงเหลือหลังแลก</small><strong>{formatMoney(activeRewardBalance - rewardToRedeem.costPoints)}</strong></span></div>
               <section className="reward-preflight" aria-label="ตรวจสิทธิ์ก่อนแลกรางวัล"><header><div><strong>ตรวจสิทธิ์ก่อนแลก</strong><small>{activePointPolicyLabel}</small></div><b className={canSubmitRewardRedemption ? "ready" : "blocked"}>{canSubmitRewardRedemption ? "พร้อมแลก" : "ยังไม่ผ่าน"}</b></header><div>{rewardPreflightChecks.map((check) => <article key={check.id} className={check.passed ? "passed" : "failed"}><span>{check.passed ? "✓" : "!"}</span><p><strong>{check.title}</strong><small>{check.detail}</small></p></article>)}</div>{!hasCurrentPointPolicyAcknowledgement && !isAdmin && <button type="button" onClick={() => { setRewardToRedeem(null); setWorkSection("points"); setPointPanel("policies"); }}>ไปอ่านและรับทราบกติกา →</button>}</section>
-              <p className="reward-approval-note">คำขอจะเข้าสู่สถานะ “รออนุมัติ” และตัดแต้มทันที เพื่อป้องกันการใช้แต้มซ้ำ</p>
+              <p className="reward-approval-note">คำขอจะเข้าสู่สถานะ “รออนุมัติ” และตัด Points ทันที เพื่อป้องกันการใช้ Points ซ้ำ</p>
             </div>
-            <div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setRewardToRedeem(null)}>ยกเลิก</button><button className="primary-button" disabled={isSaving || !canSubmitRewardRedemption}>{isSaving ? "กำลังส่งคำขอ..." : canSubmitRewardRedemption ? `ยืนยันแลก ${formatMoney(rewardToRedeem.costPoints)} แต้ม` : "ยังไม่ผ่านเกณฑ์การแลก"}</button></div>
+            <div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setRewardToRedeem(null)}>ยกเลิก</button><button className="primary-button" disabled={isSaving || !canSubmitRewardRedemption}>{isSaving ? "กำลังส่งคำขอ..." : canSubmitRewardRedemption ? `ยืนยันแลก ${formatMoney(rewardToRedeem.costPoints)} Points` : "ยังไม่ผ่านเกณฑ์การแลก"}</button></div>
           </form>
         </div>
       )}

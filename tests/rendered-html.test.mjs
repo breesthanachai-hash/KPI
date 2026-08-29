@@ -129,14 +129,15 @@ test("builds the People Pulse KPI product bundle", async () => {
   assert.match(pageAsset, /เลือกส่วนจัดการงาน/);
   assert.match(pageAsset, /รายการงาน/);
   assert.match(pageAsset, /ติดตามภาพรวม/);
-  assert.match(pageAsset, /ใช้แต้มแลกของ/);
+  assert.match(pageAsset, /ใช้ Points แลกของ/);
   assert.match(pageAsset, /งานที่ต้องทำ/);
   assert.match(pageAsset, /เกินกำหนด/);
   assert.match(pageAsset, /งานภายใน 7 วัน/);
-  assert.match(pageAsset, /สะสมแต้ม แลกกิฟต์วอเชอร์และรางวัล/);
+  assert.match(pageAsset, /สะสม Points แลกกิฟต์วอเชอร์และรางวัล/);
   assert.match(pageAsset, /POINTS OPERATIONS/);
-  assert.match(pageAsset, /แต้มประเมินประจำเดือน/);
-  assert.match(pageAsset, /กติกาการได้และเสียแต้ม/);
+  assert.match(pageAsset, /Points จากการประเมินประจำเดือน/);
+  assert.match(pageAsset, /กติกาการได้และเสีย Points/);
+  assert.match(kpiData, /สูงสุด 240 Points/);
   assert.match(kpiData, /คูปองเงินสด 100 บาท/);
   assert.match(kpiData, /iPhone 18/);
   assert.match(pageAsset, /WORK PROOF CENTER/);
@@ -177,6 +178,11 @@ test("builds the People Pulse KPI product bundle", async () => {
   assert.match(aiAssistant, /AI-assisted Editing/);
   assert.match(aiAssistant, /วิเคราะห์จากข้อมูลที่คุณมีสิทธิ์เห็นเท่านั้น/);
   assert.match(aiAssistant, /people-pulse-ai-chat/);
+  assert.match(aiAssistant, /\/แต้ม\|points\?\|พอยต์\|พ้อย\|รางวัล\|แลก\/\.test\(text\)/, "AI help must keep accepting the existing Thai Points keyword");
+  assert.match(aiAssistant, /ช่วย\|ปัญหา\|ไม่ได้\|วิธี\|ใช้งาน\|แต้ม\|points\?\|พอยต์\|พ้อย\|รางวัล/, "AI routing must keep accepting Thai and English Points keywords");
+  assert.equal((aiAssistant.match(/แต้ม/g) ?? []).length, 2, "Thai `แต้ม` may remain only as backward-compatible AI input keywords");
+  assert.doesNotMatch(kpiData, /แต้ม/, "seeded user-visible Points copy must use the English term");
+  assert.doesNotMatch(dashboardRoute, /แต้ม/, "API errors and notices shown to users must use Points");
   assert.match(pageAsset, /PEOPLE &amp; WORK OS|PEOPLE & WORK OS/);
   assert.doesNotMatch(pageAsset, /NEURAL CORE|LIVE DATA STREAM|ERA 3000/);
   assert.match(pageAsset, /รายละเอียดสกิล \(ปัจจุบัน\/เป้าหมาย\)/);
@@ -411,7 +417,7 @@ test("ships a private employee portal with safe team overview and self-only acti
   assert.match(pageAsset, /สำนักงานของทีม/);
   assert.match(pageAsset, /ค่าพลังทีม/);
   assert.match(pageAsset, /เติบโต &amp; เงินเดือน|เติบโต & เงินเดือน/);
-  assert.match(pageAsset, /แต้ม &amp; รางวัล|แต้ม & รางวัล/);
+  assert.match(pageAsset, /Points &amp; รางวัล|Points & รางวัล/);
   assert.match(pageAsset, /MY GROWTH PATH/);
   assert.match(pageAsset, /เงินเดือนปัจจุบัน/);
   assert.match(pageAsset, /สกิลที่ควรพัฒนาต่อ/);
@@ -422,7 +428,9 @@ test("ships a private employee portal with safe team overview and self-only acti
   assert.match(page, /!isEmployeeUser && <AiAssistant/);
   assert.match(page, /item\.assigneeEmployeeId === currentUser\.employeeId/);
   assert.match(page, /const activeRewardEmployeeId = isAdmin \? rewardEmployeeId : currentUser\?\.employeeId \?\? ""/);
-  assert.match(page, /บัญชีที่ใช้แต้ม/);
+  assert.match(page, /บัญชีที่ใช้ Points/);
+  assert.match(page, /\{formatMoney\(item\.points\)\} Points/, "dynamic point amounts must render as `N Points`");
+  assert.doesNotMatch(page, /แต้ม/, "all page labels, units and notices must use Points");
   assert.match(page, /employee-growth-portal/);
   assert.match(page, /employee-portal-welcome/);
 
@@ -663,7 +671,7 @@ test("ships balanced point governance and version-specific organization policy a
   assert.match(data, /cooldownDays: 7/);
   assert.match(data, /warning: \{[\s\S]*?entryMode: "manual"[\s\S]*?requiresEvidence: true[\s\S]*?authorizedRoles: \["admin"\]/);
   assert.match(dashboardRoute, /const \{ policy: activePointPolicy, rules: activePointRules \} = pointPolicyFromRows/);
-  assert.match(dashboardRoute, /ผู้ใช้ไม่สามารถให้หรือหักแต้มของตนเองได้/);
+  assert.match(dashboardRoute, /ผู้ใช้ไม่สามารถให้หรือหัก Points ของตนเองได้/);
   assert.match(dashboardRoute, /rule\.entryMode !== "manual"/);
   assert.match(dashboardRoute, /!rule\.authorizedRoles\.includes\(currentUser\.role\)/);
   assert.match(dashboardRoute, /rule\.requiresEvidence && !evidenceUrl/);
@@ -672,8 +680,8 @@ test("ships balanced point governance and version-specific organization policy a
   assert.match(dashboardRoute, /activePointRules\.redemption\.acknowledgementRequired/);
   assert.match(dashboardRoute, /monthlyRedemptions\.length >= activePointRules\.redemption\.maxRedemptionsPerMonth/);
   assert.match(dashboardRoute, /activePointRules\.redemption\.cooldownDays/);
-  assert.match(dashboardRoute, /ผู้ใช้ไม่สามารถประเมินตนเองหรือให้แต้มจากผลประเมินตนเองได้/);
-  assert.match(dashboardRoute, /แต้มจะถูกคำนวณแบบครั้งเดียวเมื่อ HR ประมวลผลรอบแต้มรายเดือน/);
+  assert.match(dashboardRoute, /ผู้ใช้ไม่สามารถประเมินตนเองหรือให้ Points จากผลประเมินตนเองได้/);
+  assert.match(dashboardRoute, /Points จะถูกคำนวณแบบครั้งเดียวเมื่อ HR ประมวลผล Points รายเดือน/);
   assert.ok((dashboardRoute.match(/\.\.\.policyMetadata/g) ?? []).length >= 4, "governed point events and ledger rows must carry policy provenance");
 
   // Migration 0011 and the schema preserve the exact policy used for every
@@ -706,10 +714,10 @@ test("ships balanced point governance and version-specific organization policy a
 
   // Manual point events use the historical policy, bounded backdating and
   // verified attendance records rather than trusting a free-form request.
-  assert.match(dashboardRoute, /if \(eventDate > today\) return Response\.json\(\{ error: "ไม่สามารถบันทึกเหตุการณ์แต้มล่วงหน้าได้"/);
+  assert.match(dashboardRoute, /if \(eventDate > today\) return Response\.json\(\{ error: "ไม่สามารถบันทึกเหตุการณ์ Points ล่วงหน้าได้"/);
   assert.match(dashboardRoute, /const maximumBackdateDays = currentUser\.role === "admin" \? 90 : 7/);
   assert.match(dashboardRoute, /pointPolicyFromRows\(pointPolicyRows, eventDate\)/);
-  assert.match(dashboardRoute, /if \(!eventPointPolicy\) return Response\.json\(\{ error: "ไม่มีกติกาแต้มที่ประกาศใช้สำหรับวันที่เกิดเหตุการณ์/);
+  assert.match(dashboardRoute, /if \(!eventPointPolicy\) return Response\.json\(\{ error: "ไม่มีกติกา Points ที่ประกาศใช้สำหรับวันที่เกิดเหตุการณ์/);
   assert.match(dashboardRoute, /const attendanceTypes: PointEventType\[\] = \["attendance_on_time", "attendance_late", "absence", "approved_leave"\]/);
   assert.match(dashboardRoute, /eq\(attendanceRecords\.employeeId, employeeId\), eq\(attendanceRecords\.workDate, eventDate\)/);
   assert.match(dashboardRoute, /attendanceRecord\.status !== expectedAttendanceStatus \|\| !approvalMatches/);
@@ -817,7 +825,7 @@ test("hardens policy publishing, point caps and work evidence against concurrent
   assert.match(saveEvaluationBlock, /eq\(employees\.status, "active"\)/);
   assert.match(saveEvaluationBlock, /await db\.batch\(\[/);
   assert.doesNotMatch(saveEvaluationBlock, /monthlyEvaluationPoints|db\.insert\(pointEvents\)|db\.insert\(pointLedger\)/);
-  assert.match(saveEvaluationBlock, /\{ evaluation, pointEntry: null, pointEvent: null, pointWarning: "บันทึกผลประเมินแล้ว แต้มจะถูกคำนวณแบบครั้งเดียวเมื่อ HR ประมวลผลรอบแต้มรายเดือน" \}/);
+  assert.match(saveEvaluationBlock, /\{ evaluation, pointEntry: null, pointEvent: null, pointWarning: "บันทึกผลประเมินแล้ว Points จะถูกคำนวณแบบครั้งเดียวเมื่อ HR ประมวลผล Points รายเดือน" \}/);
   assert.match(monthlyCycleBlock, /monthlyPointPolicy\.contentHash !== await policyIntegrityHash\(monthlyPointPolicy\)/);
   assert.match(monthlyCycleBlock, /const monthlySourceId = `monthly-evaluation-\$\{month\}:\$\{evaluation\.employeeId\}`/);
   assert.match(monthlyCycleBlock, /db\.insert\(pointEvents\)\.values\(event\)\.onConflictDoNothing\(\)/);
@@ -1087,7 +1095,7 @@ test("separates work assigners from workers without changing real permissions", 
   assert.match(roleTable, /<span className="assigner">คนสั่งงาน<\/span>/);
   assert.match(roleTable, /<span className="worker">คนทำงาน<\/span>/);
   assert.match(accessPage, /ไม่เห็นเงินเดือนหรือเอกสารส่วนตัว/);
-  assert.match(accessPage, /ดูข้อมูลตนเอง รับ–ส่งงาน และสร้างงานประสาน 0 แต้ม โดยไม่มีสิทธิ์ตรวจ/);
+  assert.match(accessPage, /ดูข้อมูลตนเอง รับ–ส่งงาน และสร้างงานประสาน 0 Points โดยไม่มีสิทธิ์ตรวจ/);
   assert.match(accessPage, /accessAccountGroups\.map/);
   assert.match(accessPage, /className=\{`access-user-kind \$\{group\.id\}`\}/);
   assert.doesNotMatch(accessPage, /\{userAccounts\.map/);
@@ -1232,6 +1240,19 @@ test("allows safe employee team coordination without minting points or exposing 
   assert.match(dashboardResponse, /employeeProfiles: currentUser\.role === "admin" \? employeeProfileRows\.filter\([\s\S]*?\) : visibleProfileImages/);
   assert.match(dashboardResponse, /userAccounts: currentUser\.role === "admin" \? userAccountRows : \[\]/);
 
+  // Legacy system-owned policy and Points history copy is normalized only at
+  // the display boundary. Unrelated employee or task data stays untouched.
+  assert.match(dashboardRoute, /const LEGACY_POINTS_TERM = "\\u0e41\\u0e15\\u0e49\\u0e21"/);
+  assert.match(dashboardRoute, /title: withPointsDisplayTerminology\(policy\.title\)/);
+  assert.match(dashboardRoute, /summary: withPointsDisplayTerminology\(policy\.summary\)/);
+  assert.match(dashboardRoute, /content: withPointsDisplayTerminology\(policy\.content\)/);
+  assert.match(dashboardRoute, /rules: withPointsDisplayTerminology\(policy\.rules\)/);
+  assert.match(dashboardResponse, /organizationPolicies: visibleOrganizationPoliciesForDisplay/);
+  assert.match(dashboardResponse, /pointLedger: pointRows[\s\S]*?note: withPointsDisplayTerminology\(row\.note\)/);
+  assert.match(dashboardResponse, /pointEvents: pointEventRows[\s\S]*?note: withPointsDisplayTerminology\(row\.note\)/);
+  assert.match(dashboardResponse, /pointPolicyRules: withPointsDisplayTerminology\(activePointRules\)/);
+  assert.doesNotMatch(dashboardResponse, /Response\.json\(withPointsDisplayTerminology/, "legacy terminology conversion must not rewrite the entire dashboard payload");
+
   // Approving a zero-point coordination request may close the work, but it
   // must not create standard work points or an early/on-time bonus.
   const reviewBlock = dashboardRoute.match(/if \(payload\.action === "reviewWorkSubmission"\) \{[\s\S]*?(?=\n    if \(payload\.action === "recordPointEvent"\))/)?.[0] ?? "";
@@ -1263,7 +1284,7 @@ test("allows safe employee team coordination without minting points or exposing 
   assert.match(page, /permissions\.canAssignTeamWork && !isEmployeePreview/);
   assert.match(page, /<strong>งานที่ต้องทำ<\/strong><small>งานที่ฉันเป็นผู้รับผิดชอบ<\/small>/);
   assert.match(page, /<strong>งานที่ฉันส่งต่อ<\/strong><small>งานประสานที่ฉันสร้างให้ตนเองหรือเพื่อนร่วมทีม<\/small>/);
-  assert.match(page, /งานประสานจากพนักงานมี 0 แต้ม ไม่นับเป็น KPI หรือภาระงานทางการ/);
+  assert.match(page, /งานประสานจากพนักงานมี 0 Points ไม่นับเป็น KPI หรือภาระงานทางการ/);
   assert.match(page, /kind: "request", title: workForm\.title[\s\S]*?status: "todo", progress: 0, points: 0/);
 
   const workModalStart = page.indexOf("{showWorkForm && (");
@@ -1280,7 +1301,7 @@ test("allows safe employee team coordination without minting points or exposing 
   assert.match(employeeModal, /activeSafeWorkRoster\.map/);
   assert.match(employeeModal, /รายชื่อนี้มาจากภาพรวมทีมที่แชร์ได้เท่านั้น/);
   assert.match(employeeModal, /โปรเจกต์ <em>ไม่บังคับ<\/em>/);
-  assert.match(employeeModal, /งานประสานนี้ไม่มีแต้ม ไม่นับ KPI หรือภาระงานทางการ/);
+  assert.match(employeeModal, /งานประสานนี้ไม่มี Points ไม่นับ KPI หรือภาระงานทางการ/);
   assert.match(employeeModal, /ผู้สร้างอนุมัติเองไม่ได้ และการตรวจเป็นสิทธิ์ของหัวหน้าทีมหรือ HR เท่านั้น/);
   assert.doesNotMatch(employeeModal, /value=\{workForm\.(?:kind|status|progress|points)\}/);
 

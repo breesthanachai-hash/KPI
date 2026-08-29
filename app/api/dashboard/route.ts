@@ -99,6 +99,24 @@ function publicPolicyAcknowledgement(acknowledgement: typeof policyAcknowledgeme
   return { id, policyId, employeeId, policyVersion, contentHash, acknowledgedAt };
 }
 
+const LEGACY_POINTS_TERM = "\u0e41\u0e15\u0e49\u0e21";
+
+function withPointsDisplayTerminology<T>(value: T): T {
+  if (typeof value === "string") {
+    return value
+      .replaceAll(LEGACY_POINTS_TERM, " Points ")
+      .replace(/[ \t]{2,}/g, " ")
+      .replace(/[ \t]+([,.;:!?])/g, "$1")
+      .replace(/[ \t]*\n[ \t]*/g, "\n")
+      .trim() as T;
+  }
+  if (Array.isArray(value)) return value.map(withPointsDisplayTerminology) as T;
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value).map(([key, nestedValue]) => [key, withPointsDisplayTerminology(nestedValue)]),
+  ) as T;
+}
+
 const BANGKOK_OFFSET_MS = 7 * 60 * 60 * 1000;
 const EMPLOYEE_COORDINATION_OPEN_CREATOR_LIMIT = 12;
 const EMPLOYEE_COORDINATION_OPEN_PAIR_LIMIT = 5;
@@ -478,6 +496,13 @@ export async function GET(request: Request) {
     const visibleOrganizationPolicies = organizationPolicyRows
       .filter((policy) => currentUser.role === "admin" || (isPolicyEffective(policy, policyDay) && policyAppliesToEmployee(policy, signedInEmployee, signedInEmployeeProfile)))
       .sort((a, b) => a.category.localeCompare(b.category) || b.version - a.version);
+    const visibleOrganizationPoliciesForDisplay = visibleOrganizationPolicies.map((policy) => ({
+      ...policy,
+      title: withPointsDisplayTerminology(policy.title),
+      summary: withPointsDisplayTerminology(policy.summary),
+      content: withPointsDisplayTerminology(policy.content),
+      rules: withPointsDisplayTerminology(policy.rules),
+    }));
     const visiblePolicyIds = new Set(visibleOrganizationPolicies.map((policy) => policy.id));
     const visiblePolicyAcknowledgementRows = policyAcknowledgementRows.filter((acknowledgement) => {
       if (!visiblePolicyIds.has(acknowledgement.policyId)) return false;
@@ -579,19 +604,23 @@ export async function GET(request: Request) {
       workItems: scopedWorkItems,
       workSubmissions: workSubmissionRows.filter((row) => visibleEmployeeIds.has(row.employeeId)),
       rewards: rewardRows,
-      pointLedger: pointRows.filter((row) => visibleEmployeeIds.has(row.employeeId)),
-      pointEvents: pointEventRows.filter((row) => visibleEmployeeIds.has(row.employeeId)),
+      pointLedger: pointRows
+        .filter((row) => visibleEmployeeIds.has(row.employeeId))
+        .map((row) => ({ ...row, note: withPointsDisplayTerminology(row.note) })),
+      pointEvents: pointEventRows
+        .filter((row) => visibleEmployeeIds.has(row.employeeId))
+        .map((row) => ({ ...row, note: withPointsDisplayTerminology(row.note) })),
       rewardRedemptions: redemptionRows.filter((row) => visibleEmployeeIds.has(row.employeeId)),
       employeeProfiles: currentUser.role === "admin" ? employeeProfileRows.filter((row) => visibleEmployeeIds.has(row.employeeId)) : visibleProfileImages,
       applicationDocuments: visibleApplicationDocuments,
       employmentContracts: visibleEmploymentContracts,
       userAccounts: currentUser.role === "admin" ? userAccountRows : [],
       notificationReads: employeePreview ? [] : notificationReadRows,
-      organizationPolicies: visibleOrganizationPolicies,
+      organizationPolicies: visibleOrganizationPoliciesForDisplay,
       policyAcknowledgements: visiblePolicyAcknowledgements,
       launchReadiness,
       activePointPolicyId: activePointPolicy?.id ?? null,
-      pointPolicyRules: activePointRules,
+      pointPolicyRules: withPointsDisplayTerminology(activePointRules),
       period,
     });
   } catch (error) {
@@ -944,10 +973,10 @@ export async function POST(request: Request) {
         if (missingChecklist.length) return Response.json({ error: `ตรวจข้อบังคับการทำงานยังไม่ครบ ${missingChecklist.length} หัวข้อ กรุณาตรวจรายการก่อนประกาศ` }, { status: 409 });
       }
       if (draft.category === "points_rewards" && (draft.scopeType !== "all" || draft.scopeValues.length > 0)) {
-        return Response.json({ error: "กติกาแต้มและรางวัลต้องใช้กับพนักงานทุกคนเท่านั้น กรุณาบันทึกร่างใหม่เป็นขอบเขตทั้งองค์กร" }, { status: 409 });
+        return Response.json({ error: "กติกา Points และรางวัลต้องใช้กับพนักงานทุกคนเท่านั้น กรุณาบันทึกร่างใหม่เป็นขอบเขตทั้งองค์กร" }, { status: 409 });
       }
       if (draft.category === "points_rewards" && !draft.acknowledgementRequired) {
-        return Response.json({ error: "กติกาแต้มและรางวัลต้องกำหนดให้พนักงานกดรับทราบก่อนประกาศ กรุณาบันทึกร่างใหม่" }, { status: 409 });
+        return Response.json({ error: "กติกา Points และรางวัลต้องกำหนดให้พนักงานกดรับทราบก่อนประกาศ กรุณาบันทึกร่างใหม่" }, { status: 409 });
       }
       const hash = await policyIntegrityHash(draft);
       if (!draft.contentHash || draft.contentHash !== hash) {
@@ -1133,7 +1162,7 @@ export async function POST(request: Request) {
     if (payload.action === "saveEvaluation") {
       const employeeId = payload.employeeId ?? "";
       if (!(await canAccessEmployee(currentUser, employeeId))) return Response.json({ error: "ไม่มีสิทธิ์ประเมินพนักงานคนนี้" }, { status: 403 });
-      if (currentUser.employeeId === employeeId) return Response.json({ error: "ผู้ใช้ไม่สามารถประเมินตนเองหรือให้แต้มจากผลประเมินตนเองได้ กรุณาให้ HR คนอื่นเป็นผู้ประเมิน" }, { status: 403 });
+      if (currentUser.employeeId === employeeId) return Response.json({ error: "ผู้ใช้ไม่สามารถประเมินตนเองหรือให้ Points จากผลประเมินตนเองได้ กรุณาให้ HR คนอื่นเป็นผู้ประเมิน" }, { status: 403 });
       const period = payload.period ?? periods[0];
       const [employee] = await db.select().from(employees).where(and(eq(employees.id, employeeId), eq(employees.status, "active"))).limit(1);
       if (!employee) return Response.json({ error: "ไม่พบพนักงานที่กำลังใช้งานอยู่ จึงไม่สามารถบันทึกผลประเมินได้" }, { status: 404 });
@@ -1194,7 +1223,7 @@ export async function POST(request: Request) {
         await db.batch([evaluationMutation]);
       }
 
-      return Response.json({ evaluation, pointEntry: null, pointEvent: null, pointWarning: "บันทึกผลประเมินแล้ว แต้มจะถูกคำนวณแบบครั้งเดียวเมื่อ HR ประมวลผลรอบแต้มรายเดือน" });
+      return Response.json({ evaluation, pointEntry: null, pointEvent: null, pointWarning: "บันทึกผลประเมินแล้ว Points จะถูกคำนวณแบบครั้งเดียวเมื่อ HR ประมวลผล Points รายเดือน" });
     }
 
     if (payload.action === "saveHrPlan") {
@@ -1630,7 +1659,7 @@ export async function POST(request: Request) {
       if (status !== "approved" && status !== "revision") return Response.json({ error: "สถานะตรวจหลักฐานไม่ถูกต้อง" }, { status: 400 });
       const [submission] = await db.select().from(workSubmissions).where(eq(workSubmissions.id, submissionId)).limit(1);
       if (!submission) return Response.json({ error: "ไม่พบหลักฐานงานที่เลือก" }, { status: 404 });
-      if (submission.status !== "submitted") return Response.json({ error: "หลักฐานรายการนี้ถูกตรวจแล้ว ไม่สามารถเปลี่ยนผลตรวจหรือให้แต้มซ้ำได้" }, { status: 409 });
+      if (submission.status !== "submitted") return Response.json({ error: "หลักฐานรายการนี้ถูกตรวจแล้ว ไม่สามารถเปลี่ยนผลตรวจหรือให้ Points ซ้ำได้" }, { status: 409 });
       const [workItem] = await db.select().from(workItems).where(eq(workItems.id, submission.workItemId)).limit(1);
       if (!workItem) return Response.json({ error: "ไม่พบงานของหลักฐานรายการนี้" }, { status: 404 });
       if (submission.employeeId !== workItem.assigneeEmployeeId) return Response.json({ error: "ข้อมูลผู้ส่งหลักฐานไม่ตรงกับผู้รับผิดชอบงาน กรุณาให้ HR ตรวจสอบ" }, { status: 409 });
@@ -1640,9 +1669,9 @@ export async function POST(request: Request) {
       const submissionDate = bangkokIsoDayFromTimestamp(submission.submittedAt) ?? bangkokIsoDay();
       const awardsPoints = status === "approved" && workItem.points > 0;
       const { policy: workPointPolicy, rules: workPointPolicyRules } = pointPolicyFromRows(pointPolicyRows, submissionDate);
-      if (awardsPoints && !workPointPolicy) return Response.json({ error: "ไม่มีกติกาแต้มที่ประกาศใช้ในวันที่ส่งงาน จึงยังอนุมัติผลงานไม่ได้" }, { status: 409 });
+      if (awardsPoints && !workPointPolicy) return Response.json({ error: "ไม่มีกติกา Points ที่ประกาศใช้ในวันที่ส่งงาน จึงยังอนุมัติผลงานไม่ได้" }, { status: 409 });
       if (awardsPoints && workPointPolicy && (!workPointPolicy.contentHash || workPointPolicy.contentHash !== await policyIntegrityHash(workPointPolicy))) {
-        return Response.json({ error: "ตรวจสอบความถูกต้องของกติกาแต้มที่ใช้ในวันที่ส่งงานไม่ผ่าน กรุณาให้ HR ประกาศฉบับแก้ไขก่อนอนุมัติ" }, { status: 409 });
+        return Response.json({ error: "ตรวจสอบความถูกต้องของกติกา Points ที่ใช้ในวันที่ส่งงานไม่ผ่าน กรุณาให้ HR ประกาศฉบับแก้ไขก่อนอนุมัติ" }, { status: 409 });
       }
       const now = new Date().toISOString();
       const actor = authenticatedActor(request);
@@ -1696,7 +1725,7 @@ export async function POST(request: Request) {
       const standardCapRemaining = Math.max(0, workPointEconomyPolicy.standardEarnMonthlyCap - workPointsThisMonth - positiveEventsThisMonth);
       const approvedWorkPoints = awardsPoints ? existingWorkPoint ? existingWorkPoint.points : balancedWorkPoints <= workCapRemaining && balancedWorkPoints <= standardCapRemaining ? balancedWorkPoints : 0 : 0;
       if (awardsPoints && !existingWorkPoint && approvedWorkPoints < balancedWorkPoints) {
-        pointCapMessage = `งานผ่านแล้ว แต่พักแต้มรายการนี้ไว้เพราะครบเพดานแต้มงาน ${workPointEconomyPolicy.workAwardsMonthlyCap} แต้มต่อเดือน หรือเพดานแต้มบวกมาตรฐาน ${workPointEconomyPolicy.standardEarnMonthlyCap} แต้ม ระบบไม่ตัดเป็นแต้มเศษ`;
+        pointCapMessage = `งานผ่านแล้ว แต่พักการมอบ Points สำหรับรายการนี้ไว้ เพราะครบเพดาน Points จากงาน ${workPointEconomyPolicy.workAwardsMonthlyCap} Points ต่อเดือน หรือเพดาน Points บวกมาตรฐาน ${workPointEconomyPolicy.standardEarnMonthlyCap} Points ระบบไม่ให้ Points บางส่วน`;
       }
       const sourceType = workItem.kind === "mission" ? "mission" as const : "task" as const;
       const pointId = `points-${workItem.id}`;
@@ -1714,12 +1743,12 @@ export async function POST(request: Request) {
         const deadlinePoints = rule.points ?? 0;
         const mayAwardDeadline = Boolean(existingDeadlineEvent || existingDeadlinePointEntry) || (deadlinePointsThisMonth + deadlinePoints <= workPointEconomyPolicy.deadlineBonusMonthlyCap && workPointsThisMonth + positiveEventsThisMonth + approvedWorkPoints + deadlinePoints <= workPointEconomyPolicy.standardEarnMonthlyCap);
         if (mayAwardDeadline) {
-          const event = { id: eventId, employeeId: workItem.assigneeEmployeeId, eventType, points: deadlinePoints, eventDate: submissionDate, note: `${rule.label}: ${workItem.title}`, evidenceUrl: submission.linkUrl, recordedBy: actor.name, ...policyMetadata, createdAt: now };
+          const event = { id: eventId, employeeId: workItem.assigneeEmployeeId, eventType, points: deadlinePoints, eventDate: submissionDate, note: `${withPointsDisplayTerminology(rule.label)}: ${workItem.title}`, evidenceUrl: submission.linkUrl, recordedBy: actor.name, ...policyMetadata, createdAt: now };
           const entry = { id: `points-deadline-${workItem.id}`, employeeId: workItem.assigneeEmployeeId, sourceType: "deadline" as const, sourceId: `deadline-${workItem.id}`, points: deadlinePoints, note: event.note, ...policyMetadata, createdAt: now };
           newDeadlineEvent = existingDeadlineEvent ? null : event;
           newDeadlinePointEntry = existingDeadlinePointEntry ? null : entry;
         } else {
-          pointCapMessage = [pointCapMessage, `งานผ่านแล้ว แต่ไม่ได้โบนัสกำหนดส่งเพิ่ม เพราะครบเพดาน ${workPointEconomyPolicy.deadlineBonusMonthlyCap} แต้มต่อเดือน`].filter(Boolean).join(" · ");
+          pointCapMessage = [pointCapMessage, `งานผ่านแล้ว แต่ไม่ได้โบนัสกำหนดส่งเพิ่ม เพราะครบเพดาน ${workPointEconomyPolicy.deadlineBonusMonthlyCap} Points ต่อเดือน`].filter(Boolean).join(" · ");
         }
       }
 
@@ -1733,7 +1762,7 @@ export async function POST(request: Request) {
           ...(newDeadlinePointEntry ? [db.insert(pointLedger).values(newDeadlinePointEntry)] : []),
         ]);
       } catch (error) {
-        if (isUniqueConstraintError(error)) return Response.json({ error: "มีการตรวจงานหรือคำนวณเพดานแต้มของพนักงานคนนี้พร้อมกัน กรุณาโหลดข้อมูลล่าสุดแล้วลองใหม่" }, { status: 409 });
+        if (isUniqueConstraintError(error)) return Response.json({ error: "มีการตรวจงานหรือคำนวณเพดาน Points ของพนักงานคนนี้พร้อมกัน กรุณาโหลดข้อมูลล่าสุดแล้วลองใหม่" }, { status: 409 });
         throw error;
       }
       if (awardsPoints) {
@@ -1746,32 +1775,33 @@ export async function POST(request: Request) {
 
     if (payload.action === "recordPointEvent") {
       const employeeId = payload.employeeId ?? "";
-      if (!(await canAccessEmployee(currentUser, employeeId))) return Response.json({ error: "ไม่มีสิทธิ์บันทึกแต้มให้พนักงานคนนี้" }, { status: 403 });
-      if (currentUser.employeeId === employeeId) return Response.json({ error: "ผู้ใช้ไม่สามารถให้หรือหักแต้มของตนเองได้ กรุณาให้ HR คนอื่นเป็นผู้ตรวจสอบ" }, { status: 403 });
+      if (!(await canAccessEmployee(currentUser, employeeId))) return Response.json({ error: "ไม่มีสิทธิ์บันทึก Points ให้พนักงานคนนี้" }, { status: 403 });
+      if (currentUser.employeeId === employeeId) return Response.json({ error: "ผู้ใช้ไม่สามารถให้หรือหัก Points ของตนเองได้ กรุณาให้ HR คนอื่นเป็นผู้ตรวจสอบ" }, { status: 403 });
       const eventType = payload.eventType;
       const eventDate = /^\d{4}-\d{2}-\d{2}$/.test(payload.eventDate ?? "") ? payload.eventDate as string : "";
       const note = payload.note?.trim().slice(0, 1000) ?? "";
       const evidenceUrl = payload.evidenceUrl?.trim().slice(0, 1200) ?? "";
-      if (!eventDate || !note) return Response.json({ error: "กรุณาระบุวันที่และเหตุผลของรายการแต้ม" }, { status: 400 });
+      if (!eventDate || !note) return Response.json({ error: "กรุณาระบุวันที่และเหตุผลของรายการ Points" }, { status: 400 });
       const today = bangkokIsoDay();
-      if (eventDate > today) return Response.json({ error: "ไม่สามารถบันทึกเหตุการณ์แต้มล่วงหน้าได้" }, { status: 400 });
+      if (eventDate > today) return Response.json({ error: "ไม่สามารถบันทึกเหตุการณ์ Points ล่วงหน้าได้" }, { status: 400 });
       const maximumBackdateDays = currentUser.role === "admin" ? 90 : 7;
       if (isoDayDistance(eventDate, today) > maximumBackdateDays) return Response.json({ error: `${currentUser.role === "admin" ? "HR" : "หัวหน้าทีม"} บันทึกย้อนหลังได้ไม่เกิน ${maximumBackdateDays} วัน` }, { status: 409 });
       if (!isSafeOptionalUrl(evidenceUrl)) return Response.json({ error: "ลิงก์หลักฐานต้องขึ้นต้นด้วย http:// หรือ https://" }, { status: 400 });
       const [employee] = await db.select({ id: employees.id }).from(employees).where(and(eq(employees.id, employeeId), eq(employees.status, "active"))).limit(1);
       if (!employee) return Response.json({ error: "ไม่พบพนักงานที่เลือก" }, { status: 404 });
       const { policy: eventPointPolicy, rules: eventPointPolicyRules } = pointPolicyFromRows(pointPolicyRows, eventDate);
-      if (!eventPointPolicy) return Response.json({ error: "ไม่มีกติกาแต้มที่ประกาศใช้สำหรับวันที่เกิดเหตุการณ์ จึงยังบันทึกแต้มไม่ได้" }, { status: 409 });
-      if (!eventPointPolicy.contentHash || eventPointPolicy.contentHash !== await policyIntegrityHash(eventPointPolicy)) return Response.json({ error: "ตรวจสอบความถูกต้องของกติกาแต้มในวันที่เกิดเหตุการณ์ไม่ผ่าน กรุณาให้ HR ตรวจสอบก่อนบันทึก" }, { status: 409 });
+      if (!eventPointPolicy) return Response.json({ error: "ไม่มีกติกา Points ที่ประกาศใช้สำหรับวันที่เกิดเหตุการณ์ จึงยังบันทึก Points ไม่ได้" }, { status: 409 });
+      if (!eventPointPolicy.contentHash || eventPointPolicy.contentHash !== await policyIntegrityHash(eventPointPolicy)) return Response.json({ error: "ตรวจสอบความถูกต้องของกติกา Points ในวันที่เกิดเหตุการณ์ไม่ผ่าน กรุณาให้ HR ตรวจสอบก่อนบันทึก" }, { status: 409 });
       const historicalPointEventRules = eventPointPolicyRules.events;
       const eventPointEconomyPolicy = eventPointPolicyRules.economy;
       const eventMonth = eventDate.slice(0, 7);
-      if (!eventType || !(eventType in historicalPointEventRules) || eventType === "monthly_evaluation") return Response.json({ error: "ประเภทเหตุการณ์แต้มไม่ถูกต้อง" }, { status: 400 });
+      if (!eventType || !(eventType in historicalPointEventRules) || eventType === "monthly_evaluation") return Response.json({ error: "ประเภทเหตุการณ์ Points ไม่ถูกต้อง" }, { status: 400 });
       const rule = historicalPointEventRules[eventType];
       if (rule.points === null) return Response.json({ error: "รายการนี้ต้องประมวลผลจากรอบประเมิน" }, { status: 400 });
-      if (rule.entryMode !== "manual") return Response.json({ error: `${rule.label} เป็นรายการอัตโนมัติ ระบบจะบันทึกหลังตรวจหลักฐานหรือประมวลผลรอบเท่านั้น` }, { status: 409 });
-      if (currentUser.role === "employee" || !rule.authorizedRoles.includes(currentUser.role)) return Response.json({ error: `${rule.label} ต้องดำเนินการโดย ${rule.authorizedRoles.includes("admin") && rule.authorizedRoles.length === 1 ? "HR เท่านั้น" : "หัวหน้าทีมหรือ HR"}` }, { status: 403 });
-      if (rule.requiresEvidence && !evidenceUrl) return Response.json({ error: `${rule.label} ต้องแนบลิงก์หลักฐานก่อนบันทึกแต้ม` }, { status: 400 });
+      const ruleLabel = withPointsDisplayTerminology(rule.label);
+      if (rule.entryMode !== "manual") return Response.json({ error: `${ruleLabel} เป็นรายการอัตโนมัติ ระบบจะบันทึกหลังตรวจหลักฐานหรือประมวลผลรอบเท่านั้น` }, { status: 409 });
+      if (currentUser.role === "employee" || !rule.authorizedRoles.includes(currentUser.role)) return Response.json({ error: `${ruleLabel} ต้องดำเนินการโดย ${rule.authorizedRoles.includes("admin") && rule.authorizedRoles.length === 1 ? "HR เท่านั้น" : "หัวหน้าทีมหรือ HR"}` }, { status: 403 });
+      if (rule.requiresEvidence && !evidenceUrl) return Response.json({ error: `${ruleLabel} ต้องแนบลิงก์หลักฐานก่อนบันทึก Points` }, { status: 400 });
       const [employeeEventRows, employeeLedgerRows, employeeCapClaimRows] = await Promise.all([
         db.select().from(pointEvents).where(eq(pointEvents.employeeId, employeeId)),
         db.select().from(pointLedger).where(eq(pointLedger.employeeId, employeeId)),
@@ -1783,37 +1813,37 @@ export async function POST(request: Request) {
         const expectedAttendanceStatus = eventType === "attendance_on_time" ? "present" : eventType === "attendance_late" ? "late" : eventType === "absence" ? "absent" : "leave";
         const approvalMatches = eventType === "approved_leave" ? attendanceRecord?.approvalStatus === "approved" : attendanceRecord?.approvalStatus === "not_required" || attendanceRecord?.approvalStatus === "approved";
         if (!attendanceRecord || attendanceRecord.status !== expectedAttendanceStatus || !approvalMatches) {
-          return Response.json({ error: "รายการแต้มเวลาเข้างานต้องตรงกับข้อมูลลงเวลาและสถานะอนุมัติของวันนั้น" }, { status: 409 });
+          return Response.json({ error: "รายการ Points เวลาเข้างานต้องตรงกับข้อมูลลงเวลาและสถานะอนุมัติของวันนั้น" }, { status: 409 });
         }
       }
       if (attendanceTypes.includes(eventType) && employeeEventRows.some((event) => attendanceTypes.includes(event.eventType) && event.eventDate === eventDate)) {
-        return Response.json({ error: "วันนี้มีรายการเวลาเข้างานของพนักงานคนนี้แล้ว จึงไม่สามารถรับหรือหักแต้มซ้ำได้" }, { status: 409 });
+        return Response.json({ error: "วันนี้มีรายการเวลาเข้างานของพนักงานคนนี้แล้ว จึงไม่สามารถรับหรือหัก Points ซ้ำได้" }, { status: 409 });
       }
       if (eventType === "attendance_on_time" && employeeEventRows.filter((event) => event.eventType === "attendance_on_time" && event.eventDate.startsWith(eventMonth)).length >= eventPointEconomyPolicy.attendanceDaysPerMonth) {
-        return Response.json({ error: `แต้มเข้างานตรงเวลาครบเพดาน ${eventPointEconomyPolicy.attendanceDaysPerMonth} วันของเดือนนี้แล้ว` }, { status: 409 });
+        return Response.json({ error: `Points จากการเข้างานตรงเวลาครบเพดาน ${eventPointEconomyPolicy.attendanceDaysPerMonth} วันของเดือนนี้แล้ว` }, { status: 409 });
       }
       const disciplineTypes: PointEventType[] = ["warning", "rule_violation"];
       if (disciplineTypes.includes(eventType) && employeeEventRows.some((event) => disciplineTypes.includes(event.eventType) && event.eventDate === eventDate)) {
-        return Response.json({ error: "วันนี้มีรายการวินัยแล้ว ไม่สามารถหักแต้มวินัยซ้ำในวันเดียวกันได้" }, { status: 409 });
+        return Response.json({ error: "วันนี้มีรายการวินัยแล้ว ไม่สามารถหัก Points ด้านวินัยซ้ำในวันเดียวกันได้" }, { status: 409 });
       }
       if ((eventType === "bonus" || eventType === "quest") && employeeEventRows.filter((event) => event.eventType === eventType && event.eventDate.startsWith(eventDate.slice(0, 7))).length >= eventPointEconomyPolicy.positiveManualEventsPerMonth) {
-        return Response.json({ error: `${rule.label} ให้ได้สูงสุด ${eventPointEconomyPolicy.positiveManualEventsPerMonth} ครั้งต่อเดือน` }, { status: 409 });
+        return Response.json({ error: `${ruleLabel} ให้ได้สูงสุด ${eventPointEconomyPolicy.positiveManualEventsPerMonth} ครั้งต่อเดือน` }, { status: 409 });
       }
       const negativePointsThisMonth = employeeEventRows.filter((event) => event.eventDate.startsWith(eventMonth) && event.points < 0).reduce((sum, event) => sum + Math.abs(event.points), 0);
       if (rule.points < 0 && negativePointsThisMonth + Math.abs(rule.points) > eventPointEconomyPolicy.negativePointsPerMonthCap) {
-        return Response.json({ error: `แต้มลบเดือนนี้ถึงเพดาน ${eventPointEconomyPolicy.negativePointsPerMonthCap} แต้มแล้ว ให้ใช้กระบวนการ HR และการอุทธรณ์แทนการหักเพิ่ม` }, { status: 409 });
+        return Response.json({ error: `Points ลบเดือนนี้ถึงเพดาน ${eventPointEconomyPolicy.negativePointsPerMonthCap} Points แล้ว ให้ใช้กระบวนการ HR และการอุทธรณ์แทนการหักเพิ่ม` }, { status: 409 });
       }
       const positiveEventsThisMonth = employeeEventRows.filter((event) => event.eventDate.startsWith(eventMonth) && event.eventType !== "monthly_evaluation" && event.points > 0).reduce((sum, event) => sum + event.points, 0);
       const workAwardsThisMonth = employeeLedgerRows.filter((entry) => (entry.sourceType === "task" || entry.sourceType === "mission") && bangkokMonthFromTimestamp(entry.createdAt) === eventMonth && entry.points > 0).reduce((sum, entry) => sum + entry.points, 0);
       if (rule.points > 0 && positiveEventsThisMonth + workAwardsThisMonth + rule.points > eventPointEconomyPolicy.standardEarnMonthlyCap) {
-        return Response.json({ error: `แต้มบวกมาตรฐานเดือนนี้ถึงเพดาน ${eventPointEconomyPolicy.standardEarnMonthlyCap} แต้มแล้ว` }, { status: 409 });
+        return Response.json({ error: `Points บวกมาตรฐานเดือนนี้ถึงเพดาน ${eventPointEconomyPolicy.standardEarnMonthlyCap} Points แล้ว` }, { status: 409 });
       }
       const actor = authenticatedActor(request);
       const now = new Date().toISOString();
       const eventId = `point-event-${crypto.randomUUID()}`;
       const policyMetadata = pointPolicyMetadata(eventPointPolicy);
       const pointEvent = { id: eventId, employeeId, eventType, points: rule.points, eventDate, note, evidenceUrl, recordedBy: actor.name, ...policyMetadata, createdAt: now };
-      const pointEntry = { id: `points-${eventId}`, employeeId, sourceType: rule.sourceType, sourceId: eventId, points: rule.points, note: `${rule.label}: ${note}`, ...policyMetadata, createdAt: now };
+      const pointEntry = { id: `points-${eventId}`, employeeId, sourceType: rule.sourceType, sourceId: eventId, points: rule.points, note: `${ruleLabel}: ${note}`, ...policyMetadata, createdAt: now };
       const mutationClaim = {
         id: `point-mutation-claim-${crypto.randomUUID()}`,
         pointEventId: eventId,
@@ -1839,7 +1869,7 @@ export async function POST(request: Request) {
           db.insert(pointLedger).values(pointEntry),
         ]);
       } catch (error) {
-        if (isUniqueConstraintError(error)) return Response.json({ error: "มีการบันทึกแต้มของพนักงานคนนี้พร้อมกัน กรุณาโหลดข้อมูลล่าสุดเพื่อตรวจเพดานแล้วลองใหม่" }, { status: 409 });
+        if (isUniqueConstraintError(error)) return Response.json({ error: "มีการบันทึก Points ของพนักงานคนนี้พร้อมกัน กรุณาโหลดข้อมูลล่าสุดเพื่อตรวจเพดานแล้วลองใหม่" }, { status: 409 });
         throw error;
       }
       return Response.json({ pointEvent, pointEntry }, { status: 201 });
@@ -1850,8 +1880,8 @@ export async function POST(request: Request) {
       const selectedPeriod = payload.period ?? periods[0];
       const monthlyEventDate = `${month}-01`;
       const { policy: monthlyPointPolicy, rules: monthlyPointPolicyRules } = pointPolicyFromRows(pointPolicyRows, monthlyEventDate);
-      if (!monthlyPointPolicy) return Response.json({ error: "ไม่มีกติกาแต้มที่ประกาศใช้สำหรับเดือนนี้ จึงยังประมวลผลแต้มไม่ได้" }, { status: 409 });
-      if (!monthlyPointPolicy.contentHash || monthlyPointPolicy.contentHash !== await policyIntegrityHash(monthlyPointPolicy)) return Response.json({ error: "ตรวจสอบความถูกต้องของกติกาแต้มสำหรับรอบเดือนนี้ไม่ผ่าน กรุณาให้ HR ตรวจสอบก่อนประมวลผล" }, { status: 409 });
+      if (!monthlyPointPolicy) return Response.json({ error: "ไม่มีกติกา Points ที่ประกาศใช้สำหรับเดือนนี้ จึงยังประมวลผล Points ไม่ได้" }, { status: 409 });
+      if (!monthlyPointPolicy.contentHash || monthlyPointPolicy.contentHash !== await policyIntegrityHash(monthlyPointPolicy)) return Response.json({ error: "ตรวจสอบความถูกต้องของกติกา Points สำหรับรอบเดือนนี้ไม่ผ่าน กรุณาให้ HR ตรวจสอบก่อนประมวลผล" }, { status: 409 });
       const monthlyPointEconomyPolicy = monthlyPointPolicyRules.economy;
       const [evaluationRows, activeEmployeeRows] = await Promise.all([
         db.select().from(evaluations).where(eq(evaluations.period, selectedPeriod)),
@@ -1868,7 +1898,7 @@ export async function POST(request: Request) {
       const existingLedgerIds = new Set(existingEvaluationLedger.map((entry) => entry.id));
       const pendingEligible = eligible.filter((evaluation) => !existingEventIds.has(`point-event-monthly-evaluation-${month}:${evaluation.employeeId}`) || !existingLedgerIds.has(`points-monthly-evaluation-${month}:${evaluation.employeeId}`));
       if (!pendingEligible.length) {
-        return Response.json({ error: "เดือนนี้ประมวลผลแต้มประเมินครบแล้ว ไม่สามารถบันทึกซ้ำได้" }, { status: 409 });
+        return Response.json({ error: "เดือนนี้ประมวลผล Points จากผลประเมินครบแล้ว ไม่สามารถบันทึกซ้ำได้" }, { status: 409 });
       }
       const actor = authenticatedActor(request);
       const now = new Date().toISOString();
@@ -1884,7 +1914,7 @@ export async function POST(request: Request) {
           eventType: "monthly_evaluation" as const,
           points: monthlyPoints,
           eventDate: monthlyEventDate,
-          note: `แต้มประเมินประจำเดือน ${month} จาก ${selectedPeriod} · คะแนนรวม ${evaluation.totalScore}`,
+          note: `Points จากผลประเมินประจำเดือน ${month} จาก ${selectedPeriod} · คะแนนรวม ${evaluation.totalScore}`,
           evidenceUrl: "",
           recordedBy: actor.name,
           ...policyMetadata,
@@ -1922,10 +1952,10 @@ export async function POST(request: Request) {
       if (!reward) return Response.json({ error: "ไม่พบรางวัลของคำขอนี้ กรุณาให้ผู้ดูแลตรวจสอบข้อมูล" }, { status: 409 });
       const [spendEntry] = await db.select().from(pointLedger).where(and(eq(pointLedger.sourceType, "redemption"), eq(pointLedger.sourceId, redemption.id))).limit(1);
       if (!spendEntry || spendEntry.employeeId !== redemption.employeeId || spendEntry.points !== -redemption.pointsSpent) {
-        return Response.json({ error: "ข้อมูลการหักแต้มของคำขอนี้ไม่สมบูรณ์ จึงยังเปลี่ยนสถานะไม่ได้" }, { status: 409 });
+        return Response.json({ error: "ข้อมูลการหัก Points ของคำขอนี้ไม่สมบูรณ์ จึงยังเปลี่ยนสถานะไม่ได้" }, { status: 409 });
       }
       if (!spendEntry.policyId || spendEntry.policyVersion === null || !spendEntry.policyContentHash) {
-        return Response.json({ error: "คำขอนี้ไม่มีข้อมูลกติกาแต้มอ้างอิง กรุณาให้ HR ตรวจสอบก่อนดำเนินการ" }, { status: 409 });
+        return Response.json({ error: "คำขอนี้ไม่มีข้อมูลกติกา Points อ้างอิง กรุณาให้ HR ตรวจสอบก่อนดำเนินการ" }, { status: 409 });
       }
 
       const reversalId = `points-redemption-reversal-${redemption.id}`;
@@ -1962,7 +1992,7 @@ export async function POST(request: Request) {
         sourceType: "redemption" as const,
         sourceId: `redemption-reversal:${redemption.id}`,
         points: redemption.pointsSpent,
-        note: `คืนแต้มจากการยกเลิกคำขอแลกรางวัล: ${reward.title}`,
+        note: `คืน Points จากการยกเลิกคำขอแลกรางวัล: ${reward.title}`,
         ...policyMetadata,
         createdAt: now,
       } : null;
@@ -2003,12 +2033,12 @@ export async function POST(request: Request) {
 
     if (payload.action === "redeemReward") {
       const employeeId = payload.employeeId ?? "";
-      if (currentUser.role === "employee" && employeeId !== currentUser.employeeId) return Response.json({ error: "ใช้แต้มได้เฉพาะบัญชีของตนเอง" }, { status: 403 });
-      if (currentUser.role === "manager" && employeeId !== currentUser.employeeId) return Response.json({ error: "หัวหน้าไม่สามารถใช้แต้มแทนสมาชิกในทีมได้" }, { status: 403 });
-      if (!(await canAccessEmployee(currentUser, employeeId))) return Response.json({ error: "ไม่มีสิทธิ์ใช้แต้มของพนักงานคนนี้" }, { status: 403 });
-      if (!activePointPolicy) return Response.json({ error: "ยังไม่มีกติกาแต้มที่ประกาศใช้ จึงยังแลกรางวัลไม่ได้" }, { status: 409 });
+      if (currentUser.role === "employee" && employeeId !== currentUser.employeeId) return Response.json({ error: "ใช้ Points ได้เฉพาะบัญชีของตนเอง" }, { status: 403 });
+      if (currentUser.role === "manager" && employeeId !== currentUser.employeeId) return Response.json({ error: "หัวหน้าไม่สามารถใช้ Points แทนสมาชิกในทีมได้" }, { status: 403 });
+      if (!(await canAccessEmployee(currentUser, employeeId))) return Response.json({ error: "ไม่มีสิทธิ์ใช้ Points ของพนักงานคนนี้" }, { status: 403 });
+      if (!activePointPolicy) return Response.json({ error: "ยังไม่มีกติกา Points ที่ประกาศใช้ จึงยังแลกรางวัลไม่ได้" }, { status: 409 });
       const activePointPolicyHash = await policyIntegrityHash(activePointPolicy);
-      if (!activePointPolicy.contentHash || activePointPolicy.contentHash !== activePointPolicyHash) return Response.json({ error: "ตรวจสอบความถูกต้องของกติกาแต้มฉบับปัจจุบันไม่ผ่าน กรุณาแจ้ง HR" }, { status: 409 });
+      if (!activePointPolicy.contentHash || activePointPolicy.contentHash !== activePointPolicyHash) return Response.json({ error: "ตรวจสอบความถูกต้องของกติกา Points ฉบับปัจจุบันไม่ผ่าน กรุณาแจ้ง HR" }, { status: 409 });
       const rewardId = payload.rewardId ?? "";
       const [[employee], [reward], ledgerRows, redemptionRows, acknowledgementRows, employeeClaimRows] = await Promise.all([
         db.select({ id: employees.id }).from(employees).where(and(eq(employees.id, employeeId), eq(employees.status, "active"))).limit(1),
@@ -2020,11 +2050,11 @@ export async function POST(request: Request) {
       ]);
       if (!employee || !reward || !reward.isActive) return Response.json({ error: "ไม่พบพนักงานหรือรางวัลที่เลือก" }, { status: 404 });
       const hasCurrentAcknowledgement = acknowledgementRows.some((acknowledgement) => acknowledgement.contentHash === activePointPolicyHash);
-      if ((activePointPolicy.acknowledgementRequired || activePointRules.redemption.acknowledgementRequired) && !hasCurrentAcknowledgement) return Response.json({ error: "กรุณาอ่านและกดรับทราบกติกาการใช้แต้มฉบับปัจจุบันก่อนแลกรางวัล" }, { status: 409 });
+      if ((activePointPolicy.acknowledgementRequired || activePointRules.redemption.acknowledgementRequired) && !hasCurrentAcknowledgement) return Response.json({ error: "กรุณาอ่านและกดรับทราบกติกาการใช้ Points ฉบับปัจจุบันก่อนแลกรางวัล" }, { status: 409 });
       if (reward.stock <= 0) return Response.json({ error: "รางวัลนี้หมดแล้ว" }, { status: 409 });
       const balance = ledgerRows.reduce((sum, row) => sum + row.points, 0);
       const requiredBalance = reward.costPoints + activePointRules.redemption.minimumBalanceAfterRedemption;
-      if (balance < requiredBalance) return Response.json({ error: `แต้มไม่เพียงพอ ต้องมีอย่างน้อย ${requiredBalance.toLocaleString("th-TH")} แต้มเพื่อรักษายอดคงเหลือตามกติกา` }, { status: 409 });
+      if (balance < requiredBalance) return Response.json({ error: `Points ไม่เพียงพอ ต้องมีอย่างน้อย ${requiredBalance.toLocaleString("th-TH")} Points เพื่อรักษายอดคงเหลือตามกติกา` }, { status: 409 });
 
       const now = new Date().toISOString();
       const activeStatuses = new Set(["requested", "approved", "fulfilled"]);
@@ -2063,7 +2093,7 @@ export async function POST(request: Request) {
           db.update(rewards).set({ stock: reward.stock - 1, inventoryVersion: reward.inventoryVersion + 1, updatedAt: now }).where(and(eq(rewards.id, rewardId), eq(rewards.inventoryVersion, reward.inventoryVersion), eq(rewards.stock, reward.stock))),
         ]);
       } catch (error) {
-        if (isRedemptionConflictError(error)) return Response.json({ error: "สิทธิ์ แต้ม หรือสต็อกมีการเปลี่ยนแปลงพร้อมกัน กรุณาโหลดข้อมูลล่าสุดแล้วลองใหม่" }, { status: 409 });
+        if (isRedemptionConflictError(error)) return Response.json({ error: "สิทธิ์ ยอด Points หรือสต็อกมีการเปลี่ยนแปลงพร้อมกัน กรุณาโหลดข้อมูลล่าสุดแล้วลองใหม่" }, { status: 409 });
         throw error;
       }
       return Response.json({ redemption, pointEntry, reward: { ...reward, stock: reward.stock - 1, inventoryVersion: reward.inventoryVersion + 1, updatedAt: now } });

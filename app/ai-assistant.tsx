@@ -206,10 +206,10 @@ function evaluationHelp(context: PeopleAiContext, employee: PeopleAiEmployee | n
 function systemHelp(query: string, context: PeopleAiContext): AssistantResponse {
   const text = query.toLocaleLowerCase("th");
   if (/หลักฐาน|ส่งงาน|drive|ลิงก์|ไฟล์|ผลงาน/.test(text)) return { content: "วิธีส่งงานและหลักฐาน\n1. เปิดเมนู งาน แล้วเลือกงานที่ต้องการ\n2. กด ส่งหลักฐานงาน\n3. ใส่ลิงก์ Drive, วิดีโอ, Social, Pull Request หรืออัปโหลดไฟล์ตามตำแหน่ง\n4. เขียนสรุปผลลัพธ์สั้น ๆ แล้วส่งให้ผู้ตรวจ\n5. ติดตามสถานะได้ที่ แฟ้มผลงาน หากถูกส่งกลับให้แก้ไข ระบบจะแสดงหมายเหตุผู้ตรวจ", actions: [{ id: "open_portfolio" as const, label: "เปิดแฟ้มผลงาน" }] };
-  if (/แต้ม|รางวัล|แลก/.test(text)) return { content: "ระบบแต้มและรางวัล\nแต้มมาจากผลประเมิน งานตรงเวลา ภารกิจ และพฤติกรรมการทำงาน ยอดคงเหลือจะหักเมื่อส่งคำขอแลกรางวัล หากแต้มไม่พอให้ตรวจประวัติรายการแต้มและรอบประเมินล่าสุดก่อน", actions: [] };
+  if (/แต้ม|points?|พอยต์|พ้อย|รางวัล|แลก/.test(text)) return { content: "ระบบ Points และรางวัล\nPoints มาจากผลประเมิน งานตรงเวลา ภารกิจ และพฤติกรรมการทำงาน ยอดคงเหลือจะหักเมื่อส่งคำขอแลกรางวัล หาก Points ไม่พอให้ตรวจประวัติรายการ Points และรอบประเมินล่าสุดก่อน", actions: [] };
   if (/ลา|สาย|เข้างาน|ลงเวลา/.test(text)) return { content: "เวลาเข้างานและการลา\nพนักงานบันทึกเวลาและส่งคำขอลาได้จากเมนู เวลา & เติบโต ส่วนหัวหน้าหรือ HR ตรวจสถานะและอนุมัติ การลาที่อนุมัติแล้วจะไม่ถูกนับเป็นขาดงาน", actions: context.canManagePeople ? [{ id: "open_hr" as const, label: "เปิดระบบ HR" }] : [] };
   if (/สิทธิ์|เข้าไม่ได้|บัญชี|อีเมล/.test(text)) return { content: "ตรวจปัญหาการเข้าใช้งาน\n1. ตรวจว่าใช้อีเมลบริษัทบัญชีที่ถูกต้อง\n2. ให้ HR ตรวจว่าบัญชีถูกผูกกับโปรไฟล์พนักงานและสถานะเป็น Active\n3. ตรวจบทบาท Admin, Manager หรือ Employee\n4. ออกจากระบบแล้วเข้าใหม่หลังแก้สิทธิ์\nหากยังไม่สำเร็จ ให้ส่งข้อความผิดพลาดและหน้าที่เกิดปัญหาให้ผู้ดูแล", actions: [] };
-  return { content: "ผมช่วยแก้ปัญหาในระบบได้ครับ\nบอกผมได้เลยว่าเกิดที่หน้าไหน กดปุ่มอะไร และเห็นข้อความว่าอย่างไร เช่น “ส่งหลักฐานไม่ได้”, “แต้มไม่เข้า”, “ไม่เห็นงานของฉัน” หรือ “บัญชีเข้าไม่ได้” แล้วผมจะไล่ตรวจทีละขั้นให้", actions: [] };
+  return { content: "ผมช่วยแก้ปัญหาในระบบได้ครับ\nบอกผมได้เลยว่าเกิดที่หน้าไหน กดปุ่มอะไร และเห็นข้อความว่าอย่างไร เช่น “ส่งหลักฐานไม่ได้”, “Points ไม่เข้า”, “ไม่เห็นงานของฉัน” หรือ “บัญชีเข้าไม่ได้” แล้วผมจะไล่ตรวจทีละขั้นให้", actions: [] };
 }
 
 function createAssistantResponse(query: string, context: PeopleAiContext, focusEmployeeId: string): AssistantResponse {
@@ -219,7 +219,7 @@ function createAssistantResponse(query: string, context: PeopleAiContext, focusE
   if (/สกิล|skill|ความสามารถ|ตำแหน่ง|เหมาะสม|พัฒนา|อัปสกิล/.test(text)) return skillAnalysis(context, employee);
   if (/ประเมิน|feedback|ฟีดแบ็ก|สรุปผลงาน/.test(text)) return evaluationHelp(context, employee);
   if (/kpi|เคพีไอ|คะแนน|ผลงาน|วิเคราะห์ข้อมูล|วิเคราะห์ทีม/.test(text)) return kpiAnalysis(context, employee);
-  if (/ช่วย|ปัญหา|ไม่ได้|วิธี|ใช้งาน|แต้ม|รางวัล|หลักฐาน|ส่งงาน|ลา|สาย|สิทธิ์|บัญชี/.test(text)) return systemHelp(query, context);
+  if (/ช่วย|ปัญหา|ไม่ได้|วิธี|ใช้งาน|แต้ม|points?|พอยต์|พ้อย|รางวัล|หลักฐาน|ส่งงาน|ลา|สาย|สิทธิ์|บัญชี/.test(text)) return systemHelp(query, context);
   return {
     content: `ผมวิเคราะห์จากข้อมูลที่คุณมีสิทธิ์เห็นในรอบ ${context.period} ได้ ${context.employees.length} คน และ ${context.tasks.filter((task) => task.status !== "done").length} งานที่ยังไม่เสร็จ\n\nลองระบุสิ่งที่ต้องการ เช่น “วิเคราะห์สกิลของชื่อพนักงาน”, “จัดลำดับงานวันนี้”, “ช่วยเขียนสรุปประเมิน” หรืออธิบายปัญหาที่พบในระบบ ผมจะตอบให้ตรงเรื่องมากขึ้น`,
     actions: taskActions(context.canManageWork),
