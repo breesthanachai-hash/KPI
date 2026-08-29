@@ -4327,20 +4327,24 @@ footer { border-top-color: #ccd9eb; color: #365d80 !important; }
 .access-form-card .access-card-heading p:not(.eyebrow),.access-form-grid label > small { color: #416586 !important; font-size: 13px !important; }
 .access-form-actions button { min-height: 44px; font-size: 13px; }
 
-.access-exact-role-selector { min-width: 0; margin: 2px 0 0; border: 0; padding: 0; display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px; }
+.access-form-grid { padding: 0; }
+.access-form-grid > .wide { width: 100%; min-width: 0; grid-column: 1 / -1; }
+.access-exact-role-selector { min-width: 0; margin: 2px 0 0; border: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit,minmax(min(220px,100%),1fr)); gap: 8px; }
 .access-exact-role-selector legend { width: 100%; margin: 0 0 7px; padding: 0; color: #173252; font-size: 14px; line-height: 1.45; font-weight: 850; }
-.access-exact-role-selector > label { position: relative; min-width: 0; min-height: 76px; border: 1px solid #ceddec; border-radius: 13px; padding: 10px; background: #f9fbfd; cursor: pointer; display: grid; grid-template-columns: 34px minmax(0,1fr); align-items: center; gap: 8px; }
+.access-exact-role-selector > label { position: relative; min-width: 0; min-height: 76px; border: 1px solid #ceddec; border-radius: 13px; padding: 10px; background: #f9fbfd; cursor: pointer; display: grid; grid-template-columns: 34px minmax(0,1fr); align-items: center; align-content: center; gap: 8px; }
 .access-exact-role-selector > label:hover { border-color: #91afd2; background: #f4f8fd; }
 .access-exact-role-selector > label.selected { border-color: #245fbe; background: #edf4fc; box-shadow: inset 0 0 0 1px #245fbe; }
 .access-exact-role-selector > label.employee.selected { border-color: #d57c31; background: #fff5ea; box-shadow: inset 0 0 0 1px #d57c31; }
 .access-exact-role-selector input { position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0; }
-.access-exact-role-selector > label:has(input:focus-visible) { outline: 3px solid rgba(36,95,190,.3); outline-offset: 2px; }
-.access-exact-role-selector > label > span { width: 34px; height: 34px; border-radius: 10px; background: #e7eff9; color: #245fbe; display: grid; place-items: center; font-size: 11px; font-weight: 950; }
+.access-exact-role-selector > label:has(input:focus-visible) { outline: 3px solid #0d4fa8; outline-offset: 2px; }
+.access-exact-role-selector > label > span { position: relative; width: 34px; height: 34px; border-radius: 10px; background: #e7eff9; color: #245fbe; display: grid; place-items: center; font-size: 11px; font-weight: 950; }
+.access-exact-role-selector > label.selected > span::after { content: "✓"; position: absolute; right: -4px; bottom: -4px; width: 16px; height: 16px; border: 2px solid #fff; border-radius: 50%; background: #245fbe; color: #fff; display: grid; place-items: center; font-size: 9px; line-height: 1; }
+.access-exact-role-selector > label.employee.selected > span::after { background: #b85f20; }
 .access-exact-role-selector > label.employee > span { background: #fff0e3; color: #a65316; }
-.access-exact-role-selector > label > div { min-width: 0; display: grid; gap: 1px; }
+.access-exact-role-selector > label > div { min-width: 0; display: grid; gap: 1px; overflow-wrap: anywhere; }
 .access-exact-role-selector > label strong { color: #173252 !important; font-size: 14px !important; line-height: 1.35; }
 .access-exact-role-selector > label small { color: #416586 !important; font-size: 12px !important; line-height: 1.35; }
-.access-exact-role-selector code { grid-column: 2; width: fit-content; border-radius: 99px; padding: 2px 6px; background: #e9eff6; color: #597695; font: 700 11px/1.3 ui-monospace,SFMono-Regular,Menlo,monospace; }
+.access-exact-role-selector code { grid-column: 2; width: fit-content; max-width: 100%; overflow: hidden; border-radius: 99px; padding: 2px 6px; background: #e9eff6; color: #4f6c88; font: 700 11px/1.3 ui-monospace,SFMono-Regular,Menlo,monospace; white-space: nowrap; text-overflow: ellipsis; }
 .access-exact-role-selector > p { grid-column: 1 / -1; margin: 0; color: #547291 !important; font-size: 13px !important; line-height: 1.45; }
 .access-selected-role-note { border-left: 3px solid #245fbe; border-radius: 0 11px 11px 0; padding: 9px 11px; background: #f3f7fc; display: grid; gap: 2px; }
 .access-selected-role-note.worker { border-left-color: #d57c31; background: #fff7ee; }

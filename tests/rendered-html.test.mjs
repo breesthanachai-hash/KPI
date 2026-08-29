@@ -1074,7 +1074,7 @@ test("separates work assigners from workers without changing real permissions", 
   assert.match(accessPage, /className="access-review-boundary" role="note"/);
   assert.match(accessPage, /พนักงานสร้างงานประสานได้ แต่ตรวจอนุมัติเองไม่ได้/);
 
-  const exactRoleSelector = accessPage.match(/<fieldset className="access-exact-role-selector wide">[\s\S]*?<\/fieldset>/)?.[0] ?? "";
+  const exactRoleSelector = accessPage.match(/<fieldset className="access-exact-role-selector wide" aria-describedby="access-role-help">[\s\S]*?<\/fieldset>/)?.[0] ?? "";
   assert.ok(exactRoleSelector, "expected the exact three-role selector");
   const roleOptions = [...exactRoleSelector.matchAll(/\{ role: "(admin|manager|employee)", label: "([^"]+)", group: "([^"]+)", scope: "([^"]+)"/g)]
     .map((match) => ({ role: match[1], label: match[2], group: match[3], scope: match[4] }));
@@ -1085,6 +1085,11 @@ test("separates work assigners from workers without changing real permissions", 
   ]);
   assert.match(exactRoleSelector, /type="radio" name="access-role" value=\{option\.role\}/);
   assert.match(exactRoleSelector, /userAccountForm\.role === option\.role/);
+  assert.match(exactRoleSelector, /<p id="access-role-help">/);
+  assert.match(accessPage, /<form className="access-form-card" id="user-access-form" aria-labelledby="user-access-form-title"/);
+  assert.match(accessPage, /<h2 id="user-access-form-title">/);
+  assert.match(accessPage, /<input required name="displayName" autoComplete="name"/);
+  assert.match(accessPage, /<input required name="email" autoComplete="email" type="email"/);
 
   // The comparison table and directory repeat the distinction in text, not
   // only through color, while every account retains its exact role badge.
@@ -1115,7 +1120,13 @@ test("separates work assigners from workers without changing real permissions", 
   const accessStyles = styles.match(/\/\* Access operating model: one compact workflow and a neutral role comparison\. \*\/[\s\S]*$/)?.[0] ?? "";
   assert.ok(accessStyles, "expected the final access operating-model style block");
   assert.match(accessStyles, /\.access-workflow-list \{[^}]*grid-template-columns: repeat\(4,minmax\(0,1fr\)\)/);
-  assert.match(accessStyles, /\.access-exact-role-selector \{[^}]*grid-template-columns: repeat\(3,minmax\(0,1fr\)\)/);
+  assert.match(accessStyles, /\.access-form-grid > \.wide \{[^}]*width: 100%[^}]*min-width: 0[^}]*grid-column: 1 \/ -1/, "every wide access control must span the full two-column form instead of squeezing into one column");
+  assert.match(accessStyles, /\.access-form-grid \{ padding: 0/, "the access form must not inherit the generic form's double horizontal padding");
+  assert.match(accessStyles, /\.access-exact-role-selector \{[^}]*grid-template-columns: repeat\(auto-fit,minmax\(min\(220px,100%\),1fr\)\)/, "role cards must reflow before their copy becomes cramped");
+  assert.match(accessStyles, /\.access-exact-role-selector > label > div \{[^}]*overflow-wrap: anywhere/, "role-card copy must wrap instead of overlapping adjacent content");
+  assert.match(accessStyles, /\.access-exact-role-selector code \{[^}]*max-width: 100%[^}]*text-overflow: ellipsis/, "role ids must stay inside their cards");
+  assert.match(accessStyles, /\.access-exact-role-selector > label:has\(input:focus-visible\) \{ outline: 3px solid #0d4fa8/, "keyboard focus must remain clearly visible");
+  assert.match(accessStyles, /\.access-exact-role-selector > label\.selected > span::after \{ content: "✓"/, "the selected role must have a non-color visual cue");
   assert.match(accessStyles, /\.access-role-table-wrap \{ overflow-x: auto/);
   assert.match(accessStyles, /@media \(max-width: 1120px\)[\s\S]*?\.access-workflow-list \{ grid-template-columns: 1fr 1fr/);
   assert.match(accessStyles, /@media \(max-width: 760px\)[\s\S]*?\.access-workflow-list \{ grid-template-columns: 1fr/);
