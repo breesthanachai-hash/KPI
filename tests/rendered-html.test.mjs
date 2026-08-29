@@ -4,6 +4,31 @@ import test from "node:test";
 
 const projectRoot = new URL("../", import.meta.url);
 
+function cssHexVariables(css) {
+  return Object.fromEntries(
+    [...css.matchAll(/--([a-z0-9-]+):\s*(#[0-9a-f]{6})\s*;/gi)]
+      .map((match) => [match[1], match[2].toLowerCase()]),
+  );
+}
+
+function relativeLuminance(hex) {
+  const channels = [1, 3, 5].map((offset) => Number.parseInt(hex.slice(offset, offset + 2), 16) / 255);
+  const [red, green, blue] = channels.map((channel) => (
+    channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
+  ));
+  return (0.2126 * red) + (0.7152 * green) + (0.0722 * blue);
+}
+
+function contrastRatio(first, second) {
+  const [lighter, darker] = [relativeLuminance(first), relativeLuminance(second)].sort((a, b) => b - a);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+function assertContrast(first, second, minimum, label) {
+  const ratio = contrastRatio(first, second);
+  assert.ok(ratio >= minimum, `${label} contrast ${ratio.toFixed(2)}:1 must be at least ${minimum}:1`);
+}
+
 test("builds the People Pulse KPI product bundle", async () => {
   const assetRoot = new URL("../dist/client/assets/", import.meta.url);
   const assetNames = await readdir(assetRoot);
@@ -205,16 +230,12 @@ test("builds the People Pulse KPI product bundle", async () => {
   assert.match(styles, /autonomous-hero-layer/);
   assert.match(styles, /office-3d-world-hud/);
   assert.match(styles, /hero-leg-walk/);
-  assert.match(styles, /Modern Nature theme/);
-  assert.match(styles, /Contrast balance/);
   assert.match(styles, /People AI/);
   assert.match(styles, /ai-assistant-panel/);
   assert.match(styles, /Unified Thai typography/);
   assert.match(styles, /Noto Sans Thai Variable/);
-  assert.match(styles, /Botanical text palette/);
-  assert.match(styles, /--text-secondary: #365f54/);
   assert.match(styles, /Complete UI rebuild/);
-  assert.match(styles, /--forest: #245fbe/);
+  assert.match(styles, /Modern four-color palette lock/);
   assert.match(styles, /Work hub/);
   assert.match(styles, /work-section-tabs/);
   assert.match(styles, /Competency framework/);
@@ -228,14 +249,86 @@ test("builds the People Pulse KPI product bundle", async () => {
   assert.match(styles, /top-right-utilities/);
   assert.match(styles, /top-profile-menu/);
   assert.match(styles, /point-balance-charter/);
-  assert.match(styles, /--on-dark-secondary: #e7f1ff/);
   assert.match(styles, /\.skill-profile-hero \.profile-identity h2/);
   assert.match(styles, /\.role-fit-panel \.fit-disclaimer/);
-  assert.match(styles, /\.profile-level-track span \{ color: #365d80/);
   assert.match(office3D, /Noto Sans Thai Variable/);
   assert.match(styles, /calm-shell/);
   assert.match(styles, /prefers-reduced-motion/);
   assert.doesNotMatch(pageAsset, /Your site is taking shape|Building your site|codex-preview/i);
+});
+
+test("locks the final blue, yellow, pink and orange palette with readable contrast", async () => {
+  const styles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+  const paletteMarker = "/* Modern four-color palette lock */";
+  const paletteStart = styles.lastIndexOf(paletteMarker);
+  assert.notEqual(paletteStart, -1, "expected the final four-color palette marker");
+
+  const finalPalette = styles.slice(paletteStart);
+  const paletteRoot = finalPalette.match(/:root\s*\{([\s\S]*?)\n\}/)?.[0] ?? "";
+  assert.ok(paletteRoot, "expected the final semantic palette :root block");
+  const tokens = cssHexVariables(paletteRoot);
+
+  assert.deepEqual(
+    Object.fromEntries([
+      "brand-blue",
+      "accent-yellow",
+      "accent-pink",
+      "accent-orange",
+      "text-primary",
+      "text-secondary",
+      "surface",
+      "focus-ring",
+    ].map((name) => [name, tokens[name]])),
+    {
+      "brand-blue": "#2457b3",
+      "accent-yellow": "#f4c542",
+      "accent-pink": "#d94180",
+      "accent-orange": "#f1843e",
+      "text-primary": "#172b4d",
+      "text-secondary": "#365675",
+      surface: "#ffffff",
+      "focus-ring": "#9f1f60",
+    },
+    "the final cascade must retain the approved four-color theme and readable text tokens",
+  );
+
+  for (const token of [
+    "brand-blue-deep",
+    "accent-yellow-soft",
+    "accent-yellow-ink",
+    "accent-pink-deep",
+    "accent-pink-soft",
+    "accent-orange-deep",
+    "accent-orange-soft",
+    "on-dark-secondary",
+  ]) assert.match(tokens[token] ?? "", /^#[0-9a-f]{6}$/, `expected semantic color token --${token}`);
+
+  assertContrast(tokens["text-primary"], tokens.surface, 7, "primary text on the main surface");
+  assertContrast(tokens["text-secondary"], tokens.surface, 4.5, "secondary text on the main surface");
+  assertContrast(tokens["text-on-dark"], tokens["brand-blue"], 4.5, "white text on brand blue");
+  assertContrast(tokens["on-dark-secondary"], tokens["brand-blue-deep"], 4.5, "secondary text on dark blue");
+  assertContrast(tokens["accent-yellow-ink"], tokens["accent-yellow-soft"], 4.5, "yellow status text");
+  assertContrast(tokens["accent-pink-deep"], tokens["accent-pink-soft"], 4.5, "pink status text");
+  assertContrast(tokens["accent-orange-deep"], tokens["accent-orange-soft"], 4.5, "orange status text");
+  assertContrast(tokens["focus-ring"], tokens.surface, 3, "keyboard focus ring");
+
+  assert.match(finalPalette, /outline: 3px solid var\(--focus-ring\)/, "interactive focus must use the high-contrast focus token");
+  const fourColorStripe = finalPalette.match(/\.page-heading::before\s*\{[\s\S]*?\n\}/)?.[0] ?? "";
+  assert.ok(fourColorStripe, "expected the page-heading four-color accent");
+  for (const token of ["brand-blue", "accent-yellow", "accent-pink", "accent-orange"]) {
+    assert.match(fourColorStripe, new RegExp(`var\\(--${token}\\)`), `the page-heading accent must visibly use --${token}`);
+  }
+  assert.match(finalPalette, /--forest: var\(--brand-blue\)/, "legacy primary aliases must resolve to the final blue");
+  assert.match(finalPalette, /--mustard: var\(--accent-orange\)/, "legacy warm aliases must resolve to the final orange");
+  assert.match(finalPalette, /--terra: var\(--accent-pink\)/, "legacy danger aliases must resolve to the final pink");
+  assert.match(finalPalette, /--ink: var\(--text-primary\)/);
+  assert.match(finalPalette, /--muted: var\(--text-secondary\)/);
+
+  assert.doesNotMatch(
+    finalPalette,
+    /#(?:123f4b|165a62|184d64|17645f|26766c|2c7c6d|176859|8ee2cf|dff5ed|66bca6|365f54|17382f|2f6b5f|255a4e|708079|8a9bb8|9aa9a3|a9bad0)\b/i,
+    "the final cascade must not restore the old teal or low-contrast gray text palette",
+  );
 });
 
 test("ships durable role-based access and scoped people, work, portfolio and reward storage", async () => {
@@ -446,14 +539,13 @@ test("ships a private employee portal with safe team overview and self-only acti
   assert.match(workSubmissionRoute, /งานนี้ส่งตรวจหรือปิดแล้ว/);
   assert.match(workSubmissionRoute, /งานนี้มีหลักฐานรอตรวจอยู่แล้ว/);
 
-  const employeePortalStyles = styles.match(/\/\* Employee portal: the same blue-and-orange visual language as the HR workspace \*\/[\s\S]*?(?=\n@media \(max-width: 1180px\))/)?.[0] ?? "";
-  assert.ok(employeePortalStyles, "expected the employee portal palette block");
-  assert.match(employeePortalStyles, /var\(--forest\)/, "employee portal should inherit the HR blue primary palette");
-  assert.match(employeePortalStyles, /var\(--mustard\)/, "employee portal should use the HR orange accent");
-  assert.match(employeePortalStyles, /color: #fff !important/);
-  assert.match(employeePortalStyles, /color: #c9dbef !important/);
-  assert.match(employeePortalStyles, /color: #ffb467 !important/);
-  assert.doesNotMatch(employeePortalStyles, /#123f4b|#165a62|#184d64|#17645f|#26766c|#2c7c6d|#176859|#8ee2cf|#dff5ed|#66bca6/i, "employee portal must not restore the old teal-green theme");
+  const finalPaletteStart = styles.lastIndexOf("/* Modern four-color palette lock */");
+  assert.notEqual(finalPaletteStart, -1, "expected the employee portal to inherit the final palette cascade");
+  const employeePortalStyles = styles.slice(finalPaletteStart);
+  assert.match(employeePortalStyles, /\.employee-welcome-stats button:nth-child\(4n \+ 1\)[^{]*\{ background: var\(--brand-blue-soft\); color: var\(--brand-blue\); \}/, "employee portal should expose the shared blue accent");
+  assert.match(employeePortalStyles, /\.employee-welcome-stats button:nth-child\(4n \+ 2\)[^{]*\{ background: var\(--accent-yellow-soft\); color: var\(--accent-yellow-ink\); \}/, "employee portal should expose the shared yellow accent");
+  assert.match(employeePortalStyles, /\.employee-welcome-stats button:nth-child\(4n \+ 3\)[^{]*\{ background: var\(--accent-pink-soft\); color: var\(--accent-pink-deep\); \}/, "employee portal should expose the shared pink accent");
+  assert.match(employeePortalStyles, /\.employee-welcome-stats button:nth-child\(4n \+ 4\)[^{]*\{ background: var\(--accent-orange-soft\); color: var\(--accent-orange-deep\); \}/, "employee portal should expose the shared orange accent");
   assert.match(styles, /\.employee-portal-shell/);
   assert.match(styles, /\.employee-growth-portal/);
   assert.match(styles, /\.reward-owner-lock/);
@@ -1125,7 +1217,9 @@ test("separates work assigners from workers without changing real permissions", 
   assert.match(accessStyles, /\.access-exact-role-selector \{[^}]*grid-template-columns: repeat\(auto-fit,minmax\(min\(220px,100%\),1fr\)\)/, "role cards must reflow before their copy becomes cramped");
   assert.match(accessStyles, /\.access-exact-role-selector > label > div \{[^}]*overflow-wrap: anywhere/, "role-card copy must wrap instead of overlapping adjacent content");
   assert.match(accessStyles, /\.access-exact-role-selector code \{[^}]*max-width: 100%[^}]*text-overflow: ellipsis/, "role ids must stay inside their cards");
-  assert.match(accessStyles, /\.access-exact-role-selector > label:has\(input:focus-visible\) \{ outline: 3px solid #0d4fa8/, "keyboard focus must remain clearly visible");
+  const accessFocusColor = accessStyles.match(/\.access-exact-role-selector > label:has\(input:focus-visible\) \{ outline: 3px solid (#[0-9a-f]{6})/i)?.[1];
+  assert.ok(accessFocusColor, "the hidden role radio must expose a visible focus ring on its card");
+  assertContrast(accessFocusColor, "#f9fbfd", 3, "role selector keyboard focus");
   assert.match(accessStyles, /\.access-exact-role-selector > label\.selected > span::after \{ content: "✓"/, "the selected role must have a non-color visual cue");
   assert.match(accessStyles, /\.access-role-table-wrap \{ overflow-x: auto/);
   assert.match(accessStyles, /@media \(max-width: 1120px\)[\s\S]*?\.access-workflow-list \{ grid-template-columns: 1fr 1fr/);

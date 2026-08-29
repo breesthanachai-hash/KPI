@@ -4647,3 +4647,354 @@ footer { border-top-color: #ccd9eb; color: #365d80 !important; }
   .organization-template-icon { width: 42px; height: 42px; border-radius: 12px; }
   .warning-fairness-note,.organization-document-legal-note { grid-template-columns: 34px minmax(0,1fr); }
 }
+
+/* Modern four-color palette lock */
+:root {
+  --brand-blue: #2457b3;
+  --brand-blue-deep: #173e8f;
+  --brand-blue-soft: #eaf2ff;
+  --accent-yellow: #f4c542;
+  --accent-yellow-soft: #fff7d6;
+  --accent-yellow-ink: #6b4a00;
+  --accent-pink: #d94180;
+  --accent-pink-deep: #a92663;
+  --accent-pink-soft: #fff0f6;
+  --accent-orange: #f1843e;
+  --accent-orange-deep: #a94810;
+  --accent-orange-soft: #fff0e5;
+  --text-primary: #172b4d;
+  --text-secondary: #365675;
+  --text-on-dark: #ffffff;
+  --on-dark-secondary: #e7f1ff;
+  --surface: #ffffff;
+  --surface-soft: #f6f8fe;
+  --surface-blue: #edf4ff;
+  --border: #d5e0f0;
+  --focus-ring: #9f1f60;
+
+  /* Legacy aliases keep every existing feature on the same final palette. */
+  --forest: var(--brand-blue);
+  --forest-light: #3e72ce;
+  --forest-soft: var(--brand-blue-soft);
+  --sand: #f2f6fd;
+  --sand-deep: #e7eef9;
+  --paper: var(--surface);
+  --mustard: var(--accent-orange);
+  --mustard-soft: var(--accent-orange-soft);
+  --terra: var(--accent-pink);
+  --ink: var(--text-primary);
+  --muted: var(--text-secondary);
+  --text-tertiary: #4b6885;
+  --text-warm: var(--accent-orange-deep);
+  --line: var(--border);
+  --shadow: 0 16px 38px rgba(28, 62, 119, 0.1);
+}
+
+html {
+  background: #edf3fc;
+  scrollbar-color: #8aa8d5 #edf3fc;
+}
+
+body {
+  background:
+    radial-gradient(circle at 90% 2%, rgba(217, 65, 128, 0.1), transparent 25%),
+    radial-gradient(circle at 72% 13%, rgba(244, 197, 66, 0.12), transparent 20%),
+    radial-gradient(circle at 4% 92%, rgba(241, 132, 62, 0.09), transparent 24%),
+    linear-gradient(145deg, #f9fbff 0%, #eef4fd 58%, #fff8f3 100%);
+  color: var(--text-primary);
+}
+
+::selection { background: #ffd7e7; color: var(--text-primary); }
+
+:is(button, select, textarea, input, a, [tabindex]):focus-visible {
+  outline: 3px solid var(--focus-ring) !important;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 2px #fff, 0 0 0 6px var(--focus-ring) !important;
+}
+
+.dashboard,
+.modal-backdrop,
+.ai-assistant-panel { color: var(--text-primary); }
+
+.topbar {
+  border-color: var(--border);
+  background: rgba(255, 255, 255, 0.97);
+  box-shadow: 0 10px 30px rgba(23, 62, 143, 0.1);
+}
+
+.brand-mark {
+  background: linear-gradient(145deg, var(--accent-pink), var(--brand-blue));
+  box-shadow: 0 10px 24px rgba(36, 87, 179, 0.24);
+}
+.brand-mark i:nth-child(3) { background: var(--accent-yellow); }
+.brand,.brand strong { color: var(--brand-blue-deep); }
+.profile-button { background: linear-gradient(145deg, var(--brand-blue), var(--brand-blue-deep)); color: #fff; }
+.notification-bell-button.has-unread::after,
+.icon-button i { background: var(--accent-pink); }
+
+@media (min-width: 1181px) {
+  .topbar {
+    border-right-color: #2f5ca9;
+    background:
+      radial-gradient(circle at 18% 5%, rgba(217, 65, 128, 0.26), transparent 26%),
+      radial-gradient(circle at 78% 90%, rgba(241, 132, 62, 0.18), transparent 31%),
+      linear-gradient(180deg, #173f8e 0%, #102f70 100%);
+    box-shadow: 14px 0 34px rgba(16, 47, 112, 0.18);
+  }
+  .topbar .brand-mark { background: linear-gradient(145deg, var(--accent-yellow), var(--accent-orange)); }
+  .topbar .brand-mark i { background: #17325f; }
+  .topbar .brand-mark i:nth-child(2) { background: var(--accent-pink-deep); }
+  .topbar .brand strong,.topbar .current-user-chip strong { color: #fff; }
+  .topbar .brand small,.topbar .nav-section-label,.topbar .period-label,.topbar .current-user-chip small,
+  .topbar nav button,.topbar nav button > :is(span,em) { color: var(--on-dark-secondary); }
+  .topbar nav button > span,.topbar nav button > em { background: rgba(255,255,255,.1); }
+  .topbar nav button:hover { background: rgba(255,255,255,.12); color: #fff; }
+  .topbar nav button.active {
+    border-left: 4px solid var(--accent-orange);
+    background: #fff;
+    color: var(--brand-blue-deep);
+    box-shadow: 0 10px 24px rgba(5, 24, 64, .24);
+  }
+  .topbar nav button.active > :is(span,em) { background: var(--accent-yellow-soft); color: var(--accent-yellow-ink); }
+  .topbar .header-actions { border-top-color: rgba(255,255,255,.17); }
+}
+
+.page-heading {
+  border-color: var(--border);
+  background:
+    radial-gradient(circle at 96% 7%, rgba(217,65,128,.08), transparent 28%),
+    linear-gradient(135deg, rgba(255,255,255,.99), rgba(246,249,255,.98));
+  box-shadow: var(--shadow);
+}
+.page-heading::before {
+  width: 112px;
+  height: 5px;
+  background: linear-gradient(90deg,
+    var(--brand-blue) 0 34%,
+    var(--accent-yellow) 34% 53%,
+    var(--accent-pink) 53% 76%,
+    var(--accent-orange) 76% 100%);
+}
+.page-heading h1 { color: var(--text-primary) !important; }
+.page-heading p:not(.eyebrow),.page-heading small,.page-heading label { color: var(--text-secondary) !important; }
+.page-heading .eyebrow { color: var(--accent-pink-deep) !important; }
+
+.metric-card,
+.simple-todo-card,.todo-focus-card,.project-pulse-card,.points-leaderboard-card,.work-board-card,.points-operations-card,.reward-center-card,
+.role-card,.spotlight-card,.directory-card,.skill-summary-card,.skill-matrix-card,.development-card,
+.workforce-board,.talent-action-center,.salary-band-card,.individual-skills-card,.portfolio-finder-card,.power-roster-card,.power-arena,
+.access-form-card,.access-rights-card,.access-account-card,.dossier-main,.dossier-roster,.people-ops-shell,.office-role-demo,
+.organization-document-library,.employee-warning-card,.employee-recognition-card {
+  border-color: var(--border) !important;
+  background: rgba(255,255,255,.98) !important;
+  box-shadow: var(--shadow) !important;
+}
+.metric-card:hover { border-color: #9eb8df !important; box-shadow: 0 20px 44px rgba(28,62,119,.14) !important; }
+.metric-card:nth-child(4n + 1) .metric-icon { border-color: #bed2f2; background: var(--brand-blue-soft); color: var(--brand-blue); }
+.metric-card:nth-child(4n + 2) .metric-icon { border-color: #efd884; background: var(--accent-yellow-soft); color: var(--accent-yellow-ink); }
+.metric-card:nth-child(4n + 3) .metric-icon { border-color: #efbfd2; background: var(--accent-pink-soft); color: var(--accent-pink-deep); }
+.metric-card:nth-child(4n + 4) .metric-icon { border-color: #efc29f; background: var(--accent-orange-soft); color: var(--accent-orange-deep); }
+
+.primary-button,.simple-task-actions button.primary,.todo-focus-heading > button,.portfolio-state button,.team-builder-card > button,
+.work-ticket-actions button.proof,.contract-actions button,.access-form-actions button.primary,.ai-assistant-composer button {
+  border-color: var(--brand-blue-deep) !important;
+  background: linear-gradient(135deg, var(--brand-blue), var(--brand-blue-deep)) !important;
+  color: #fff !important;
+  box-shadow: 0 10px 22px rgba(36,87,179,.22);
+}
+.primary-button:hover { background: linear-gradient(135deg,#3971d2,var(--brand-blue)) !important; }
+.reward-cost button,.point-event-form > button,.organization-documents-hero > button {
+  border-color: var(--accent-orange-deep) !important;
+  background: linear-gradient(135deg,#c65317,var(--accent-orange-deep)) !important;
+  color: #fff !important;
+}
+.organization-documents-hero > button :is(strong,small,span) { color: #fff !important; }
+.recognition-create-button,.employee-recognition-list .employee-file-record-actions button:not(.withdraw) {
+  border-color: #e7a8c1 !important;
+  background: var(--accent-pink-soft) !important;
+  color: var(--accent-pink-deep) !important;
+}
+.secondary-button,.simple-task-actions button,.work-ticket-actions button,.contract-actions :is(a,button),.access-account-actions button {
+  border-color: #bed0e9 !important;
+  background: #fff !important;
+  color: var(--brand-blue-deep) !important;
+}
+
+input,select,textarea,.search-field,.portfolio-filters input,.portfolio-filters select,.todo-control-bar,.work-view-switch,.work-kind-filter {
+  border-color: #bfd0e8 !important;
+  background-color: #fff !important;
+  color: var(--text-primary) !important;
+}
+input::placeholder,textarea::placeholder { color: #526f8d !important; opacity: 1; }
+:is(input,select,textarea):focus { border-color: var(--brand-blue) !important; box-shadow: 0 0 0 4px rgba(36,87,179,.12); }
+
+.filter-row button,.work-section-tabs button,.point-panel-tabs button,.notification-tabs button,.portfolio-status-tabs button,
+.organization-document-tabs button,.skill-category-tabs button {
+  border-color: var(--border);
+  background: #fff;
+  color: var(--text-secondary);
+}
+.filter-row button.active,.work-section-tabs button.active,.point-panel-tabs button.active,.notification-tabs button.active,
+.portfolio-status-tabs button.active,.organization-document-tabs button.active,.skill-category-tabs button.active {
+  border-color: var(--brand-blue) !important;
+  background: linear-gradient(135deg,var(--brand-blue),var(--brand-blue-deep)) !important;
+  color: #fff !important;
+  box-shadow: 0 9px 20px rgba(36,87,179,.2);
+}
+
+.todo-table-head,.employee-table-head,.role-header,.portfolio-archive-head {
+  border-color: var(--border);
+  background: var(--surface-blue);
+  color: var(--text-secondary) !important;
+}
+.todo-agenda-row:hover,.todo-table-row:hover,.employee-table-row:hover,.role-row:hover,.portfolio-archive-row:hover,
+.access-account-list > article:hover { background: #f2f6fd; }
+.mini-progress,.project-progress > i,.todo-table-progress i,.ticket-progress i,.modal-progress,.table-score i,.skill-bar,.simple-task-progress > i { background: #dfe8f5; }
+.mini-progress i,.project-progress > i b,.todo-table-progress i b,.ticket-progress i b,.modal-progress i,.table-score i b,
+.simple-task-progress > i > b,.employee-salary-band > i b {
+  background: linear-gradient(90deg,var(--brand-blue),var(--accent-pink) 55%,var(--accent-orange) 80%,var(--accent-yellow));
+}
+
+.work-kind.task,.simple-task-status { border-color: #b9d0f0; background: var(--brand-blue-soft); color: var(--brand-blue-deep); }
+.work-kind.request,.access-role-pill.manager { border-color: #ecc2d3; background: var(--accent-pink-soft); color: var(--accent-pink-deep); }
+.work-kind.mission,.work-priority.high,.proof-status,.contract-status.sent,.contract-status.viewed,.simple-task-status.in_progress {
+  border-color: #efd684; background: var(--accent-yellow-soft); color: var(--accent-yellow-ink);
+}
+.work-priority { border-color: #ecc3a5; background: var(--accent-orange-soft); color: var(--accent-orange-deep); }
+.work-priority.urgent,.proof-status.revision,.simple-task-status.review { border-color: #ebb1c8; background: var(--accent-pink-soft); color: var(--accent-pink-deep); }
+
+.monthly-points-panel,.redemption-history,.portfolio-owner-banner,.power-hero-card,.portfolio-hero-card,.access-hero-card,
+.office-command-center,.todo-priority-panel,.hero-score,.dossier-hero,.organization-documents-hero {
+  border-color: #315aa4 !important;
+  background:
+    radial-gradient(circle at 92% 8%,rgba(217,65,128,.34),transparent 28%),
+    radial-gradient(circle at 73% 100%,rgba(241,132,62,.22),transparent 32%),
+    linear-gradient(145deg,#19499e,#102f70) !important;
+  color: #fff;
+  box-shadow: 0 18px 42px rgba(16,47,112,.22) !important;
+}
+.monthly-points-panel :is(h1,h2,h3,h4,strong,b,p,small,label,em),.redemption-history :is(h1,h2,h3,h4,strong,b,p,small,label,em),
+.portfolio-owner-banner :is(h1,h2,h3,h4,strong,b,p,small,label,em),.power-hero-card :is(h1,h2,h3,h4,strong,b,p,small,label,em),
+.portfolio-hero-card :is(h1,h2,h3,h4,strong,b,p,small,label,em),.access-hero-card :is(h1,h2,h3,h4,strong,b,p,small,label,em),
+.office-command-center :is(h1,h2,h3,h4,strong,b,p,small,label,em),.todo-priority-panel :is(h1,h2,h3,h4,strong,b,p,small,label,em),
+.hero-score :is(h1,h2,h3,h4,strong,b,p,small,label,em),.dossier-hero :is(h1,h2,h3,h4,strong,b,p,small,label,em),
+.organization-documents-hero :is(h1,h2,h3,h4,strong,b,p,small,label,em) { color: #fff !important; }
+.todo-priority-panel .eyebrow,.hero-copy > span,.organization-documents-kicker,.organization-record-modal-hero .eyebrow { color: #ffe28a !important; }
+.score-ring { background: conic-gradient(var(--accent-yellow) var(--score),rgba(255,255,255,.16) 0); }
+
+.office-3d-loading {
+  border-color: #315aa4;
+  background:
+    radial-gradient(circle at 50% 38%,rgba(217,65,128,.25),transparent 25%),
+    linear-gradient(145deg,#19499e,#102f70);
+  color: #fff;
+}
+.office-3d-loading :is(strong,small) { color: var(--on-dark-secondary) !important; }
+.office-3d-loading > span { border-color: rgba(255,255,255,.2); border-top-color: var(--accent-yellow); }
+
+.modal-backdrop { background: rgba(14,37,84,.46); backdrop-filter: blur(11px); }
+.modal-header,.submission-hero,.profile-editor-hero,.contract-form-hero,.signature-hero,.reward-modal-hero,.work-form-hero,
+.organization-record-modal-hero,.ai-assistant-header {
+  border-color: #2c56a0;
+  background:
+    radial-gradient(circle at 88% 5%,rgba(217,65,128,.3),transparent 31%),
+    linear-gradient(145deg,#19499e,#102f70);
+}
+.modal-header :is(h1,h2,h3,h4,strong,b,span,p,small,label,em),.submission-hero :is(h1,h2,h3,h4,strong,b,span,p,small,label,em),
+.profile-editor-hero :is(h1,h2,h3,h4,strong,b,span,p,small,label,em),.contract-form-hero :is(h1,h2,h3,h4,strong,b,span,p,small,label,em),
+.signature-hero :is(h1,h2,h3,h4,strong,b,span,p,small,label,em),.reward-modal-hero :is(h1,h2,h3,h4,strong,b,span,p,small,label,em),
+.work-form-hero :is(h1,h2,h3,h4,strong,b,span,p,small,label,em),.organization-record-modal-hero :is(h1,h2,h3,h4,strong,b,span,p,small,label,em),
+.ai-assistant-header :is(h1,h2,h3,h4,strong,b,span,p,small,label,em) { color: #fff !important; }
+
+.ai-assistant-launch {
+  border-color: var(--brand-blue-deep);
+  background: linear-gradient(145deg,var(--accent-pink),var(--brand-blue));
+  box-shadow: 0 18px 44px rgba(36,87,179,.3);
+}
+.ai-assistant-launch > span,.ai-assistant-brand > span,.ai-message-avatar { background: var(--accent-yellow); color: var(--text-primary); }
+.ai-message.user .ai-message-body { border-color: var(--brand-blue); background: linear-gradient(135deg,var(--brand-blue),var(--brand-blue-deep)); color: #fff; }
+.ai-quick-prompts button:nth-child(3n + 1) { border-color: #bfd2ef; background: var(--brand-blue-soft); color: var(--brand-blue-deep); }
+.ai-quick-prompts button:nth-child(3n + 2) { border-color: #ecc1d2; background: var(--accent-pink-soft); color: var(--accent-pink-deep); }
+.ai-quick-prompts button:nth-child(3n + 3) { border-color: #efcfac; background: var(--accent-orange-soft); color: var(--accent-orange-deep); }
+
+.point-balance-heading { background: linear-gradient(125deg,var(--brand-blue-deep),#102f70); }
+.point-policy-grid article:nth-child(4n + 1) > span,.point-overview-grid article:nth-child(4n + 1) > span { background: var(--brand-blue-soft); color: var(--brand-blue); }
+.point-policy-grid article:nth-child(4n + 2) > span,.point-overview-grid article:nth-child(4n + 2) > span { background: var(--accent-yellow-soft); color: var(--accent-yellow-ink); }
+.point-policy-grid article:nth-child(4n + 3) > span,.point-overview-grid article:nth-child(4n + 3) > span { background: var(--accent-pink-soft); color: var(--accent-pink-deep); }
+.point-policy-grid article:nth-child(4n + 4) > span,.point-overview-grid article:nth-child(4n + 4) > span { background: var(--accent-orange-soft); color: var(--accent-orange-deep); }
+
+.organization-document-metrics article:nth-child(4n + 1) > span,.organization-document-icon,.organization-template-icon { background: var(--brand-blue-soft); color: var(--brand-blue); }
+.organization-document-metrics article:nth-child(4n + 2) > span { background: var(--accent-yellow-soft); color: var(--accent-yellow-ink); }
+.organization-document-metrics article:nth-child(4n + 3) > span { background: var(--accent-pink-soft); color: var(--accent-pink-deep); }
+.organization-document-metrics article:nth-child(4n + 4) > span { background: var(--accent-orange-soft); color: var(--accent-orange-deep); }
+.employee-warning-card .warning-create-button,.employee-file-record-mark,.warning-fairness-note > span,.organization-template-warning > span,
+.organization-document-legal-note > span,.organization-record-review-note > span,.warning-consent-note > span {
+  background: var(--accent-yellow-soft); color: var(--accent-yellow-ink);
+}
+.employee-recognition-list > article { border-left-color: var(--accent-pink); }
+.employee-recognition-list .employee-file-record-mark,.employee-recognition-list .employee-file-record-copy > span b {
+  background: var(--accent-pink-soft); color: var(--accent-pink-deep);
+}
+
+.access-exact-role-selector > label:nth-of-type(1) > span { background: var(--brand-blue-soft); color: var(--brand-blue-deep); }
+.access-exact-role-selector > label:nth-of-type(2) > span { background: var(--accent-yellow-soft); color: var(--accent-yellow-ink); }
+.access-exact-role-selector > label:nth-of-type(3) > span { background: var(--accent-orange-soft); color: var(--accent-orange-deep); }
+.access-exact-role-selector > label.selected {
+  border-color: var(--brand-blue);
+  background: linear-gradient(145deg,#f3f7ff,#fff4f8);
+  box-shadow: inset 0 0 0 1px var(--brand-blue),0 8px 20px rgba(36,87,179,.1);
+}
+.access-exact-role-selector > label.selected > span::after { background: var(--accent-pink-deep); }
+.access-selected-role-note { border-left-color: var(--accent-orange); background: var(--accent-orange-soft); }
+
+.employee-welcome-card,.employee-growth-portal,.reward-owner-lock,.submission-locked,.employee-growth-privacy {
+  border-color: var(--border);
+  background: rgba(255,255,255,.98);
+}
+.employee-welcome-stats button:nth-child(4n + 1) > span,.employee-growth-summary article:nth-child(4n + 1) > span { background: var(--brand-blue-soft); color: var(--brand-blue); }
+.employee-welcome-stats button:nth-child(4n + 2) > span,.employee-growth-summary article:nth-child(4n + 2) > span { background: var(--accent-yellow-soft); color: var(--accent-yellow-ink); }
+.employee-welcome-stats button:nth-child(4n + 3) > span,.employee-growth-summary article:nth-child(4n + 3) > span { background: var(--accent-pink-soft); color: var(--accent-pink-deep); }
+.employee-welcome-stats button:nth-child(4n + 4) > span,.employee-growth-summary article:nth-child(4n + 4) > span { background: var(--accent-orange-soft); color: var(--accent-orange-deep); }
+
+.employee-preview-banner {
+  border-color: #efcf82;
+  background: linear-gradient(135deg,var(--accent-yellow-soft),var(--accent-orange-soft));
+  color: var(--accent-yellow-ink);
+}
+
+@media (max-width: 1180px) {
+  .topbar { background: rgba(255,255,255,.98); }
+  .topbar nav button,.topbar nav button > em { color: var(--text-secondary); }
+  .topbar nav button > span { color: var(--brand-blue); }
+  .topbar nav button.active,.topbar nav button.active > span { background: linear-gradient(135deg,var(--brand-blue),var(--brand-blue-deep)); color: #fff; }
+  .brand strong { color: var(--brand-blue-deep); }
+}
+
+@media print {
+  :root { --surface: #fff; --surface-soft: #fff; }
+  body { background: #fff !important; color: #000 !important; }
+  .topbar,.ai-assistant-launch,.ai-assistant-panel,.heading-actions,.notification-layer { display: none !important; }
+  .app-shell,.dashboard { padding: 0 !important; }
+  .page-heading,.metric-card,.dossier-main,.organization-document-library { box-shadow: none !important; }
+  :is(
+    .skill-profile-hero,.role-fit-panel,.hr-plan-hero,.people-ops-hero,.skill-verification-form,.promotion-score-card,
+    .monthly-points-panel,.redemption-history,.portfolio-owner-banner,.power-hero-card,.portfolio-hero-card,.access-hero-card,
+    .office-command-center,.todo-priority-panel,.hero-score,.dossier-hero,.employee-power-card.elite,.employee-power-card.legend,
+    .modal-header,.submission-hero,.profile-editor-hero,.contract-form-hero,.signature-hero,.reward-modal-hero,.work-form-hero,
+    .organization-record-modal-hero,.organization-documents-hero,.employee-portal-welcome,.employee-growth-hero,.point-balance-heading,
+    .published-policy-viewer > header
+  ) {
+    border-color: #777 !important;
+    background: #fff !important;
+    color: #000 !important;
+    box-shadow: none !important;
+  }
+  :is(
+    .skill-profile-hero,.role-fit-panel,.hr-plan-hero,.people-ops-hero,.skill-verification-form,.promotion-score-card,
+    .monthly-points-panel,.redemption-history,.portfolio-owner-banner,.power-hero-card,.portfolio-hero-card,.access-hero-card,
+    .office-command-center,.todo-priority-panel,.hero-score,.dossier-hero,.employee-power-card.elite,.employee-power-card.legend,
+    .modal-header,.submission-hero,.profile-editor-hero,.contract-form-hero,.signature-hero,.reward-modal-hero,.work-form-hero,
+    .organization-record-modal-hero,.organization-documents-hero,.employee-portal-welcome,.employee-growth-hero,.point-balance-heading,
+    .published-policy-viewer > header
+  ) * { color: #000 !important; text-shadow: none !important; }
+}
