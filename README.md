@@ -186,9 +186,13 @@ Production จะ **ไม่เติมข้อมูลตัวอย่า
 ต้องใช้ Node.js 22.13 ขึ้นไป
 
 ```bash
-npm install
+node --version
+npm --version
+npm ci
 npm run dev
 ```
+
+ไฟล์ `.node-version` ตรึง Node ที่ `22.13.0` และ `package.json` ตรึง npm ที่ `10.9.2` เพื่อให้เครื่องพัฒนาและเครื่องตรวจ release ใช้ runtime เดียวกัน
 
 สร้างและตรวจระบบ:
 
@@ -205,3 +209,45 @@ npm run db:generate
 ```
 
 การเผยแพร่ผ่าน OpenAI Sites จะผูก D1 binding ชื่อ `DB` และ R2 binding ชื่อ `FILES` ตาม `.openai/hosting.json`
+
+## Release runbook แบบไม่แตะ production อัตโนมัติ
+
+คำสั่งนี้ตรวจ runtime, build, lint, contract tests, ไฟล์ Sites, migration และแม่แบบเอกสารที่ถูก package โดย **ไม่ deploy, ไม่แก้ D1 และไม่แก้ R2**:
+
+```bash
+npm run release:verify
+```
+
+ถ้าต้องการตรวจเฉพาะความพร้อมก่อน build ให้ใช้:
+
+```bash
+npm run release:preflight
+```
+
+Preflight จะหยุดทันทีเมื่อ Node ต่ำกว่า 22.13, binding ไม่ใช่ `DB`/`FILES`, migration ไม่ต่อเนื่อง หรือ environment ของคำสั่งเปิด `PEOPLE_PULSE_ENABLE_DEMO_DATA=true` การผ่าน preflight ไม่ได้ยืนยันสถานะของฐานข้อมูลหรือไฟล์บน production จึงยังต้องทำ checklist ด้านล่างด้วยคนที่ได้รับสิทธิ์
+
+### Checklist สำรองข้อมูลก่อน release
+
+1. กำหนดช่วงหยุดเขียนข้อมูลชั่วคราวและแจ้งผู้ใช้งานที่จะร่วมทดสอบ
+2. ใช้หน้าจัดการ Sites ที่ได้รับสิทธิ์สร้าง snapshot/export ของ D1 และสำรองไฟล์ R2 โดยบันทึกวันเวลา ผู้ดำเนินการ และเวอร์ชันแอป ห้ามใช้สคริปต์ release ใน repository นี้ลบหรือย้ายข้อมูลจริง
+3. บันทึกจำนวนแถวของตารางสำคัญ เช่น `employees`, `user_accounts`, `work_items`, `point_ledger`, `reward_redemptions`, `employment_contracts` และจำนวนไฟล์ R2 เพื่อใช้เทียบหลัง release
+4. ทดลองอ่านไฟล์สำรองและ restore ลงฐานแยกที่ไม่ใช่ production อย่างน้อยหนึ่งครั้ง ห้ามทดลอง restore ทับฐานจริง
+5. ยืนยันว่า production ไม่ได้ตั้ง `PEOPLE_PULSE_ENABLE_DEMO_DATA=true` และตัดสินใจเก็บหรือล้างข้อมูล demo หลังมี backup โดยให้เจ้าของข้อมูลอนุมัติแยกต่างหาก
+
+### Checklist ก่อนอนุมัติเผยแพร่
+
+1. ใช้ commit ที่ clean และผ่าน `npm run release:verify`
+2. ตรวจว่า archive ที่จะบันทึกเป็น Sites version มาจาก commit เดียวกัน และมี `dist/server/index.js`, `dist/client`, `dist/.openai/hosting.json` และ `dist/.openai/drizzle`
+3. ตรวจ access policy แบบ `private/custom`, รายชื่อผู้ดูเว็บไซต์ และบัญชีในแอปให้ใช้อีเมล ChatGPT เดียวกัน ห้ามเปิด public เพื่อแก้ปัญหา onboarding โดยไม่ได้ทบทวนความเสี่ยง
+4. หลังผู้มีอำนาจอนุมัติจึงบันทึก Sites version และ deploy ผ่านกระบวนการ Sites; `release:verify` จะไม่ทำสองขั้นตอนนี้แทน
+5. ทดสอบ HR, หัวหน้า และพนักงานจริงอย่างน้อยบทบาทละหนึ่งบัญชี: เข้าระบบ → มอบหมายงาน → ส่งหลักฐาน R2 → ตรวจงาน → ได้ Points หนึ่งครั้ง → แลกรางวัล
+6. ทดสอบเอกสารส่วนตัวข้ามบัญชีให้ได้ 403, ดาวน์โหลดแม่แบบ DOCX ทั้ง 5 ฉบับ และตรวจว่า `/favicon.ico` เปลี่ยนไปใช้ `/favicon.svg` โดยไม่เป็น 404
+7. ตรวจ custom domain/SSL, หน้าจอ Chrome และมือถือ แล้วตรวจ Worker logs ว่าไม่มี 5xx ก่อนเชิญผู้ใช้เพิ่ม
+
+### Rollback ที่ปลอดภัย
+
+1. หยุดการเขียนข้อมูลและบันทึกอาการ, เวลา, release version และตารางหรือไฟล์ที่ได้รับผลกระทบ
+2. ถ้าเป็นปัญหาเฉพาะ UI/แอป ให้ย้อนกลับไป Sites version ก่อนหน้าได้เมื่อยืนยันแล้วว่า schema ปัจจุบันยัง backward-compatible
+3. ถ้ามี migration หรือข้อมูลเสีย ห้ามรัน SQL ย้อนกลับและห้าม restore ทับ production แบบทันที ให้ restore backup ลงฐานแยก ตรวจความครบถ้วน แล้ววางแผนกู้คืนกับเจ้าของข้อมูลก่อน
+4. ตรวจจำนวนแถว, Points ledger, สต็อกรางวัล, สัญญา และไฟล์ R2 หลังแก้ไข จากนั้นทำ smoke test สามบทบาทซ้ำก่อนเปิดเขียนข้อมูล
+5. บันทึกผล rollback และเหตุผลที่เลือก app rollback หรือ data recovery ไว้ในประวัติ release ทุกครั้ง

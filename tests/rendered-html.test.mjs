@@ -183,7 +183,8 @@ test("builds the People Pulse KPI product bundle", async () => {
   assert.match(pageAsset, /แฟ้มพนักงาน/);
   assert.match(pageAsset, /EMPLOYEE DIGITAL DOSSIER/);
   assert.match(pageAsset, /เอกสารสมัครงาน/);
-  assert.match(pageAsset, /ลงนามสัญญาอิเล็กทรอนิกส์/);
+  assert.match(pageAsset, /สัญญาจ้างและการลงนาม/);
+  assert.match(pageAsset, /ยังไม่ใช่ลายเซ็นอิเล็กทรอนิกส์/);
   assert.match(pageAsset, /saveEmployeeProfile/);
   assert.match(pageAsset, /createContract/);
   assert.match(pageAsset, /signContract/);
@@ -1204,7 +1205,7 @@ test("separates work assigners from workers without changing real permissions", 
   assert.match(dashboardRoute, /canManageAccounts: currentUser\.role === "admin"/);
   assert.match(dashboardRoute, /userAccounts: currentUser\.role === "admin" \? userAccountRows : \[\]/);
   assert.match(accessControl, /if \(account\.role === "admin"\) return true/);
-  assert.match(accessControl, /if \(account\.employeeId === employeeId\) return true/);
+  assert.match(accessControl, /if \(account\.employeeId === employeeId\) \{[\s\S]*?return employee\?\.status === "active";[\s\S]*?\}/);
   assert.match(accessControl, /account\.role !== "manager" \|\| !account\.departmentId/);
   assert.match(kpiData, /role: "admin" \| "manager" \| "employee"/);
   assert.doesNotMatch(kpiData, /role: [^;\n]*(?:assigner|worker)/);
@@ -1226,6 +1227,9 @@ test("separates work assigners from workers without changing real permissions", 
   assert.match(accessStyles, /@media \(max-width: 760px\)[\s\S]*?\.access-workflow-list \{ grid-template-columns: 1fr/);
   assert.match(accessStyles, /@media \(max-width: 760px\)[\s\S]*?\.access-exact-role-selector \{ grid-template-columns: 1fr/);
   assert.match(accessStyles, /@media \(max-width: 480px\)[\s\S]*?\.access-model-counts \{ grid-template-columns: 1fr/);
+  assert.match(styles, /\/\* Pilot readiness: keep the access workspace inside narrow mobile viewports\. \*\/[\s\S]*?\.access-main-grid > \*[\s\S]*?min-width: 0;[\s\S]*?max-width: 100%;/, "access cards must be allowed to shrink inside the viewport");
+  assert.match(styles, /@media \(max-width: 760px\) \{[\s\S]*?\.access-main-grid \{ grid-template-columns: minmax\(0, 1fr\); \}/, "the mobile access grid must use a shrinkable track");
+  assert.match(styles, /\.access-account-list > article\.access-account-row :is\(strong,small\) \{[\s\S]*?overflow-wrap: anywhere;/, "long account copy must wrap instead of widening the page");
 });
 
 test("allows safe employee team coordination without minting points or exposing teammate records", async () => {

@@ -3,7 +3,8 @@ import { getDb, getFilesBucket } from "../../../db";
 import { ensureDatabase } from "../../../db/initialize";
 import { applicationDocuments, employees, employmentContracts } from "../../../db/schema";
 import type { ApplicationDocumentRecord } from "../../../lib/kpi-data";
-import { authenticateRequest, canAccessEmployee, ensureBootstrapAccounts } from "../../../lib/access-control";
+import { authenticateRequest, authenticatedIdentity, canAccessEmployee, ensureBootstrapAccounts } from "../../../lib/access-control";
+import { internalApiError } from "../../../lib/api-errors";
 
 export const dynamic = "force-dynamic";
 
@@ -38,6 +39,31 @@ const allowedContentTypes = new Set([
   "image/jpeg",
   "image/png",
 ]);
+const allowedExtensions: Record<string, Set<string>> = {
+  "application/pdf": new Set(["pdf"]),
+  "application/msword": new Set(["doc"]),
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": new Set(["docx"]),
+  "image/jpeg": new Set(["jpg", "jpeg"]),
+  "image/png": new Set(["png"]),
+};
+
+function startsWith(bytes: Uint8Array, signature: number[]) {
+  return signature.every((value, index) => bytes[index] === value);
+}
+
+async function validFile(file: File) {
+  const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
+  if (file.size <= 0 || file.size > 10 * 1024 * 1024 || !allowedContentTypes.has(file.type) || !allowedExtensions[file.type]?.has(extension)) return false;
+  const bytes = new Uint8Array(await file.slice(0, 8).arrayBuffer());
+  if (file.type === "application/pdf") return startsWith(bytes, [0x25, 0x50, 0x44, 0x46, 0x2d]);
+  if (file.type === "application/msword") return startsWith(bytes, [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
+  if (file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
+    return startsWith(bytes, [0x50, 0x4b, 0x03, 0x04]) || startsWith(bytes, [0x50, 0x4b, 0x05, 0x06]) || startsWith(bytes, [0x50, 0x4b, 0x07, 0x08]);
+  }
+  if (file.type === "image/jpeg") return startsWith(bytes, [0xff, 0xd8, 0xff]);
+  if (file.type === "image/png") return startsWith(bytes, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  return false;
+}
 
 function actorName(request: Request) {
   const encodedName = request.headers.get("oai-authenticated-user-full-name");
@@ -55,11 +81,14 @@ function actorName(request: Request) {
 function errorResponse(error: unknown) {
   const message = error instanceof Error ? error.message : "จัดการเอกสารไม่สำเร็จ";
   if (message.includes("R2 binding")) return Response.json({ error: "พื้นที่เก็บเอกสารยังไม่พร้อม กรุณาเผยแพร่ระบบอีกครั้ง" }, { status: 503 });
-  return Response.json({ error: message }, { status: 500 });
+  return internalApiError(error, "จัดการเอกสารไม่สำเร็จ", "employee-documents");
 }
 
 export async function POST(request: Request) {
+  let uploadedStorageKey = "";
+  let committed = false;
   try {
+    if (!authenticatedIdentity(request)) return Response.json({ error: "บัญชีนี้ไม่มีสิทธิ์ใช้งาน" }, { status: 403 });
     await ensureDatabase();
     await ensureBootstrapAccounts();
     const currentUser = await authenticateRequest(request);
@@ -72,8 +101,7 @@ export async function POST(request: Request) {
     if (!employeeId || !allowedDocumentTypes.includes(documentType) || !(file instanceof File)) {
       return Response.json({ error: "กรุณาเลือกพนักงาน ประเภทเอกสาร และไฟล์ให้ครบ" }, { status: 400 });
     }
-    if (file.size <= 0 || file.size > 10 * 1024 * 1024) return Response.json({ error: "ไฟล์ต้องมีขนาดไม่เกิน 10 MB" }, { status: 400 });
-    if (!allowedContentTypes.has(file.type)) return Response.json({ error: "รองรับไฟล์ PDF, Word, JPG และ PNG เท่านั้น" }, { status: 400 });
+    if (!(await validFile(file))) return Response.json({ error: "ไฟล์ต้องไม่เกิน 10 MB เป็น PDF, Word, JPG หรือ PNG และมีเนื้อไฟล์ตรงกับประเภท" }, { status: 400 });
 
     const db = getDb();
     const [employee] = await db.select({ id: employees.id }).from(employees).where(eq(employees.id, employeeId)).limit(1);
@@ -88,6 +116,7 @@ export async function POST(request: Request) {
       httpMetadata: { contentType: file.type },
       customMetadata: { employeeId, documentType, originalName: file.name.slice(0, 180) },
     });
+    uploadedStorageKey = storageKey;
 
     const now = new Date().toISOString();
     const document = {
@@ -95,7 +124,7 @@ export async function POST(request: Request) {
       employeeId,
       documentType,
       title: documentTitles[documentType],
-      fileName: file.name.slice(0, 180),
+      fileName: file.name.replace(/[\r\n]/g, "").slice(0, 180),
       storageKey,
       contentType: file.type,
       sizeBytes: file.size,
@@ -106,8 +135,9 @@ export async function POST(request: Request) {
       verifiedBy: null,
       verifiedAt: null,
     };
+    let savedDocument: ApplicationDocumentRecord = document;
     if (existing) {
-      await db.update(applicationDocuments).set({
+      const [updated] = await db.update(applicationDocuments).set({
         title: document.title,
         fileName: document.fileName,
         storageKey,
@@ -119,19 +149,37 @@ export async function POST(request: Request) {
         uploadedAt: now,
         verifiedBy: null,
         verifiedAt: null,
-      }).where(eq(applicationDocuments.id, existing.id));
+      }).where(and(
+        eq(applicationDocuments.id, existing.id),
+        eq(applicationDocuments.storageKey, existing.storageKey),
+        eq(applicationDocuments.status, existing.status),
+        eq(applicationDocuments.uploadedAt, existing.uploadedAt),
+      )).returning();
+      if (!updated) {
+        try { await bucket.delete(uploadedStorageKey); } catch { /* Best-effort stale-write cleanup. */ }
+        uploadedStorageKey = "";
+        return Response.json({ error: "เอกสารนี้ถูกแก้ไขหรือตรวจสอบจากอีกหน้าจอ กรุณาโหลดข้อมูลล่าสุด" }, { status: 409 });
+      }
+      savedDocument = updated;
     } else {
       await db.insert(applicationDocuments).values(document);
     }
-    if (existing?.storageKey && existing.storageKey !== storageKey) await bucket.delete(existing.storageKey);
-    return Response.json({ applicationDocument: document }, { status: 201 });
+    committed = true;
+    if (existing?.storageKey && existing.storageKey !== storageKey) {
+      try { await bucket.delete(existing.storageKey); } catch { /* The newly committed file remains authoritative. */ }
+    }
+    return Response.json({ applicationDocument: savedDocument }, { status: 201 });
   } catch (error) {
+    if (uploadedStorageKey && !committed) {
+      try { await getFilesBucket().delete(uploadedStorageKey); } catch { /* Preserve the primary error. */ }
+    }
     return errorResponse(error);
   }
 }
 
 export async function GET(request: Request) {
   try {
+    if (!authenticatedIdentity(request)) return Response.json({ error: "บัญชีนี้ไม่มีสิทธิ์ใช้งาน" }, { status: 403 });
     await ensureDatabase();
     await ensureBootstrapAccounts();
     const currentUser = await authenticateRequest(request);
@@ -161,6 +209,7 @@ export async function GET(request: Request) {
         "content-length": String(object.size),
         "content-disposition": `attachment; filename*=UTF-8''${encodeURIComponent(document.fileName)}`,
         "cache-control": "private, no-store",
+        "x-content-type-options": "nosniff",
       },
     });
   } catch (error) {

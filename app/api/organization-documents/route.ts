@@ -4,6 +4,7 @@ import { ensureDatabase } from "../../../db/initialize";
 import { organizationDocuments } from "../../../db/schema";
 import type { OrganizationDocumentRecord } from "../../../lib/kpi-data";
 import { authenticateRequest, authenticatedIdentity, ensureBootstrapAccounts } from "../../../lib/access-control";
+import { internalApiError } from "../../../lib/api-errors";
 
 export const dynamic = "force-dynamic";
 
@@ -73,7 +74,7 @@ function errorResponse(error: unknown) {
   if (message.includes("R2 binding")) return Response.json({ error: "พื้นที่เก็บเอกสารยังไม่พร้อม" }, { status: 503 });
   if (message.includes("ORGANIZATION_DOCUMENT_STALE_REVISION")) return Response.json({ error: "เอกสารถูกแก้ไขจากอีกหน้าจอ กรุณาโหลดข้อมูลล่าสุด" }, { status: 409 });
   if (message.includes("UNIQUE constraint failed")) return Response.json({ error: "เลขที่เอกสารและเวอร์ชันนี้มีอยู่แล้ว" }, { status: 409 });
-  return Response.json({ error: message }, { status: 500 });
+  return internalApiError(error, "จัดการเอกสารองค์กรไม่สำเร็จ", "organization-documents");
 }
 
 async function requireAdmin(request: Request) {

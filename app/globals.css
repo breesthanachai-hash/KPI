@@ -4998,3 +4998,70 @@ input::placeholder,textarea::placeholder { color: #526f8d !important; opacity: 1
     .published-policy-viewer > header
   ) * { color: #000 !important; text-shadow: none !important; }
 }
+
+/* Production readiness UI states */
+.access-load-error-page section > button {
+  width: 100%; min-height: 48px; margin-top: 16px; border: 0; border-radius: 12px; padding: 0 18px;
+  background: linear-gradient(135deg,var(--brand-blue),var(--brand-blue-deep)); color: #fff; cursor: pointer;
+  font-size: 15px; font-weight: 850;
+}
+
+.toast.error { border-color: #f3a7bf; background: #8d2348; color: #fff; box-shadow: 0 18px 46px rgba(111,21,55,.28); }
+.toast.error > span { background: #ffe4ed; color: #7b173d !important; }
+
+.form-error-message { margin-top: 2px; color: #a51f4b !important; font-size: 13px !important; font-weight: 750; line-height: 1.45 !important; }
+.organization-record-form-grid [aria-invalid="true"] { border-color: #c53161 !important; box-shadow: 0 0 0 3px rgba(197,49,97,.12) !important; }
+
+.organization-document-metrics { grid-template-columns: repeat(auto-fit,minmax(185px,1fr)); }
+.organization-document-metrics article.overdue > span,.dossier-metrics article.metric-overdue > span { background: #ffe2ec; color: #a51f4b; }
+.organization-document-card.is-overdue,.employee-recognition-list > article.is-overdue { border-color: #e29bb3; border-left-color: #c53161; background: #fff8fb; }
+.organization-document-copy > span em.overdue,.employee-file-record-copy > span em.overdue { background: #ffe2ec; color: #9a2149; }
+.organization-document-copy .overdue-date { color: #a51f4b !important; }
+
+.avatar-media { position: relative; isolation: isolate; }
+.avatar-media .avatar-initials { z-index: 0; grid-area: 1 / 1; display: grid; place-items: center; }
+.avatar-media img { position: absolute; z-index: 1; inset: 0; width: 100%; height: 100%; }
+
+@media (max-width: 1180px) {
+  .organization-document-metrics { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}
+
+@media (max-width: 760px) {
+  .organization-document-metrics { grid-template-columns: 1fr; }
+  .toast { width: min(calc(100vw - 28px),520px); }
+}
+
+/* Pilot readiness: keep the access workspace inside narrow mobile viewports. */
+.access-layout,
+.access-main-grid,
+.access-main-grid > *,
+.access-operating-model,
+.access-account-card,
+.access-account-list,
+.access-account-group-heading,
+.access-account-list > article.access-account-row {
+  min-width: 0;
+  max-width: 100%;
+}
+
+@media (max-width: 760px) {
+  .access-main-grid { grid-template-columns: minmax(0, 1fr); }
+  .access-form-card,
+  .access-role-matrix-card,
+  .access-account-card,
+  .access-operating-model,
+  .launch-readiness-center {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+  .access-account-group-heading > div,
+  .access-account-person,
+  .access-account-role,
+  .access-account-link,
+  .access-account-actions { min-width: 0; }
+  .access-account-group-heading :is(strong,small),
+  .access-account-list > article.access-account-row :is(strong,small) {
+    overflow-wrap: anywhere;
+  }
+}

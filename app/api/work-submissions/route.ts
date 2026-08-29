@@ -3,7 +3,8 @@ import { getDb, getFilesBucket } from "../../../db";
 import { ensureDatabase } from "../../../db/initialize";
 import { employees, workItems, workSubmissions } from "../../../db/schema";
 import type { WorkSubmissionRecord } from "../../../lib/kpi-data";
-import { authenticateRequest, canAccessEmployee, ensureBootstrapAccounts } from "../../../lib/access-control";
+import { authenticateRequest, authenticatedIdentity, canAccessEmployee, ensureBootstrapAccounts } from "../../../lib/access-control";
+import { internalApiError } from "../../../lib/api-errors";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +22,48 @@ const allowedContentTypes = new Set([
   "video/mp4",
   "application/zip",
 ]);
+const allowedExtensions: Record<string, Set<string>> = {
+  "application/pdf": new Set(["pdf"]),
+  "application/msword": new Set(["doc"]),
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": new Set(["docx"]),
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": new Set(["xlsx"]),
+  "text/csv": new Set(["csv"]),
+  "text/plain": new Set(["txt"]),
+  "image/jpeg": new Set(["jpg", "jpeg"]),
+  "image/png": new Set(["png"]),
+  "image/webp": new Set(["webp"]),
+  "video/mp4": new Set(["mp4"]),
+  "application/zip": new Set(["zip"]),
+};
+
+function startsWith(bytes: Uint8Array, signature: number[], offset = 0) {
+  return signature.every((value, index) => bytes[offset + index] === value);
+}
+
+async function validSubmissionFile(file: File) {
+  const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
+  if (file.size <= 0 || file.size > 25 * 1024 * 1024 || !allowedContentTypes.has(file.type) || !allowedExtensions[file.type]?.has(extension)) return false;
+  const bytes = new Uint8Array(await file.slice(0, 512).arrayBuffer());
+  if (file.type === "application/pdf") return startsWith(bytes, [0x25, 0x50, 0x44, 0x46, 0x2d]);
+  if (file.type === "application/msword") return startsWith(bytes, [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
+  if (file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" || file.type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" || file.type === "application/zip") {
+    return startsWith(bytes, [0x50, 0x4b, 0x03, 0x04]) || startsWith(bytes, [0x50, 0x4b, 0x05, 0x06]) || startsWith(bytes, [0x50, 0x4b, 0x07, 0x08]);
+  }
+  if (file.type === "image/jpeg") return startsWith(bytes, [0xff, 0xd8, 0xff]);
+  if (file.type === "image/png") return startsWith(bytes, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  if (file.type === "image/webp") return startsWith(bytes, [0x52, 0x49, 0x46, 0x46]) && startsWith(bytes, [0x57, 0x45, 0x42, 0x50], 8);
+  if (file.type === "video/mp4") return startsWith(bytes, [0x66, 0x74, 0x79, 0x70], 4);
+  if (file.type === "text/csv" || file.type === "text/plain") {
+    if (bytes.includes(0)) return false;
+    try {
+      new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
 
 function actorName(request: Request) {
   const encodedName = request.headers.get("oai-authenticated-user-full-name");
@@ -53,13 +96,14 @@ function errorResponse(error: unknown) {
   if (message.includes("UNIQUE constraint failed") && message.includes("work_submissions")) {
     return Response.json({ error: "งานนี้มีหลักฐานรอตรวจอยู่แล้ว กรุณาโหลดข้อมูลล่าสุด" }, { status: 409 });
   }
-  return Response.json({ error: message }, { status: 500 });
+  return internalApiError(error, "ส่งหลักฐานงานไม่สำเร็จ", "work-submissions");
 }
 
 export async function POST(request: Request) {
   let uploadedStorageKey = "";
   let submissionCommitted = false;
   try {
+    if (!authenticatedIdentity(request)) return Response.json({ error: "บัญชีนี้ไม่มีสิทธิ์ใช้งาน" }, { status: 403 });
     await ensureDatabase();
     await ensureBootstrapAccounts();
     const currentUser = await authenticateRequest(request);
@@ -75,7 +119,7 @@ export async function POST(request: Request) {
     if (!workItemId || !title || !allowedSubmissionTypes.includes(submissionType)) return Response.json({ error: "กรุณาระบุงาน ประเภทหลักฐาน และชื่อผลงาน" }, { status: 400 });
     if (!linkUrl && !file) return Response.json({ error: "กรุณาแนบลิงก์ผลงานหรือไฟล์หลักฐานอย่างน้อย 1 รายการ" }, { status: 400 });
     if (!isSafeWebUrl(linkUrl)) return Response.json({ error: "ลิงก์ผลงานต้องขึ้นต้นด้วย http:// หรือ https://" }, { status: 400 });
-    if (file && (file.size > 25 * 1024 * 1024 || !allowedContentTypes.has(file.type))) return Response.json({ error: "ไฟล์ต้องไม่เกิน 25 MB และเป็น PDF, Word, Excel, CSV, รูปภาพ, MP4, TXT หรือ ZIP" }, { status: 400 });
+    if (file && !(await validSubmissionFile(file))) return Response.json({ error: "ไฟล์ต้องไม่เกิน 25 MB เป็น PDF, Word, Excel, CSV, รูปภาพ, MP4, TXT หรือ ZIP และมีเนื้อไฟล์ตรงกับประเภท" }, { status: 400 });
 
     const db = getDb();
     const [workItem] = await db.select().from(workItems).where(eq(workItems.id, workItemId)).limit(1);
@@ -94,7 +138,7 @@ export async function POST(request: Request) {
     if (file) {
       const safeName = file.name.normalize("NFKC").replace(/[^\p{L}\p{N}._-]+/gu, "-").slice(-140) || "work-proof";
       storageKey = `work-submissions/${workItemId}/${crypto.randomUUID()}-${safeName}`;
-      fileName = file.name.slice(0, 180);
+      fileName = file.name.replace(/[\r\n]/g, "").slice(0, 180);
       contentType = file.type;
       sizeBytes = file.size;
       await getFilesBucket().put(storageKey, file.stream(), {
@@ -145,6 +189,7 @@ export async function POST(request: Request) {
 
 export async function GET(request: Request) {
   try {
+    if (!authenticatedIdentity(request)) return Response.json({ error: "บัญชีนี้ไม่มีสิทธิ์ใช้งาน" }, { status: 403 });
     await ensureDatabase();
     await ensureBootstrapAccounts();
     const currentUser = await authenticateRequest(request);
@@ -162,6 +207,7 @@ export async function GET(request: Request) {
         "content-length": String(object.size),
         "content-disposition": `attachment; filename*=UTF-8''${encodeURIComponent(submission.fileName)}`,
         "cache-control": "private, no-store",
+        "x-content-type-options": "nosniff",
       },
     });
   } catch (error) {

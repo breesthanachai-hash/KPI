@@ -4,6 +4,7 @@ import { ensureDatabase } from "../../../db/initialize";
 import { employees, employeeRecognitions } from "../../../db/schema";
 import type { EmployeeRecognitionRecord } from "../../../lib/kpi-data";
 import { authenticateRequest, authenticatedIdentity, ensureBootstrapAccounts } from "../../../lib/access-control";
+import { internalApiError } from "../../../lib/api-errors";
 
 export const dynamic = "force-dynamic";
 
@@ -82,7 +83,7 @@ function errorResponse(error: unknown) {
   if (message.includes("R2 binding")) return Response.json({ error: "พื้นที่เก็บเอกสารรางวัลยังไม่พร้อม" }, { status: 503 });
   if (message.includes("EMPLOYEE_RECOGNITION_STALE_REVISION")) return Response.json({ error: "รายการนี้ถูกแก้ไขจากอีกหน้าจอ กรุณาโหลดข้อมูลล่าสุด" }, { status: 409 });
   if (message.includes("UNIQUE constraint failed")) return Response.json({ error: "ไฟล์หรือรายการนี้ซ้ำกับข้อมูลเดิม" }, { status: 409 });
-  return Response.json({ error: message }, { status: 500 });
+  return internalApiError(error, "จัดการเกียรติบัตรหรือรางวัลไม่สำเร็จ", "employee-recognitions");
 }
 
 async function requireAdmin(request: Request) {

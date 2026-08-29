@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { Fragment, lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import type { Office3DPerson } from "./office-3d";
 import AiAssistant, { type PeopleAiActionId, type PeopleAiContext } from "./ai-assistant";
 import {
@@ -196,7 +196,7 @@ const employeeWarningLevelLabels: Record<EmployeeWarningLevel, string> = {
 const employeeWarningStatusLabels: Record<EmployeeWarningStatus, string> = {
   draft: "ฉบับร่าง",
   issued: "ออกเอกสารแล้ว",
-  acknowledged: "รับทราบแล้ว",
+  acknowledged: "HR บันทึกรับทราบ",
   resolved: "ปิดเรื่องแล้ว",
   withdrawn: "เพิกถอนแล้ว",
 };
@@ -783,7 +783,7 @@ function officeBehaviorFor(level: OfficeLoadLevel, index: number): OfficeBehavio
 const viewMeta: Record<View, { eyebrow: string; title: string; description: string }> = {
   overview: { eyebrow: "ภาพรวมองค์กร", title: "ภาพรวม KPI พนักงาน", description: "ติดตามเป้าหมาย ประเมินผลงาน และวางแผนพัฒนาทีมในที่เดียว" },
   employees: { eyebrow: "ทะเบียนและการประเมิน", title: "พนักงานและผลประเมิน", description: "ค้นหา เพิ่มพนักงาน และบันทึกผล KPI พร้อมระดับสกิลรายบุคคล" },
-  profiles: { eyebrow: "EMPLOYEE DIGITAL DOSSIER", title: "แฟ้มประวัติพนักงาน", description: "รวมข้อมูลส่วนตัว เอกสารสมัครงาน การตรวจเอกสาร และสัญญาจ้างพร้อมลายเซ็นอิเล็กทรอนิกส์" },
+  profiles: { eyebrow: "EMPLOYEE DIGITAL DOSSIER", title: "แฟ้มประวัติพนักงาน", description: "รวมข้อมูลส่วนตัว เอกสารสมัครงาน การตรวจเอกสาร และสัญญาจ้างพร้อมขั้นตอนยืนยันใน Pilot" },
   organizationDocs: { eyebrow: "ORGANIZATION DOCUMENT CENTER", title: "เอกสารองค์กร", description: "จัดเก็บสัญญา เอกสาร HR และแม่แบบฉบับร่าง พร้อมค้นหาและดาวน์โหลดจากที่เดียว" },
   skills: { eyebrow: "COMPETENCY MATRIX", title: "ภาพรวมสกิลของทีม", description: "มองเห็นจุดแข็ง ช่องว่าง และความพร้อมของแต่ละสายงาน" },
   power: { eyebrow: "TEAM POWER RATINGS", title: "ค่าพลังพนักงาน", description: "ดูค่าพลังรวมและ 6 สกิลหลักในรูปแบบการ์ด พร้อมเปรียบเทียบจุดเด่นของพนักงานแบบตัวต่อตัว" },
@@ -838,12 +838,15 @@ export default function Home() {
   const [skillCategoryFilter, setSkillCategoryFilter] = useState<SkillCategoryId>("role");
   const [note, setNote] = useState("");
   const [search, setSearch] = useState("");
-  const [toast, setToast] = useState("");
+  const [toast, setToast] = useState<{ message: string; tone: "success" | "error" } | null>(null);
+  const toastTimerRef = useRef<number | null>(null);
+  const lastFocusedElementRef = useRef<HTMLElement | null>(null);
   const [showAiAssistant, setShowAiAssistant] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [notificationFilter, setNotificationFilter] = useState<NotificationFilter>("all");
   const [isLoading, setIsLoading] = useState(true);
+  const [dashboardReloadKey, setDashboardReloadKey] = useState(0);
   const [isSaving, setIsSaving] = useState(false);
   const [dataWarning, setDataWarning] = useState("");
   const [showAddEmployee, setShowAddEmployee] = useState(false);
@@ -910,6 +913,7 @@ export default function Home() {
   const [attendanceForm, setAttendanceForm] = useState({ employeeId: "", workDate: bangkokIsoDate(), status: "present" as AttendanceRecord["status"], clockIn: "09:00", clockOut: "", leaveType: "personal" as NonNullable<AttendanceRecord["leaveType"]>, note: "" });
   const [skillAchievementForm, setSkillAchievementForm] = useState({ skillId: "", level: 2, evidenceUrl: "", note: "" });
   const [userAccountForm, setUserAccountForm] = useState({ accountId: "", email: "", displayName: "", role: "employee" as UserAccountRecord["role"], employeeId: "", departmentId: "", status: "active" as UserAccountRecord["status"] });
+  const canManageEmployeeFiles = currentUser?.role === "admin" && permissions.canManagePeople && !isEmployeePreview;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -932,6 +936,7 @@ export default function Home() {
           return;
         }
         if (!response.ok) throw new Error(body.error ?? "โหลดข้อมูลไม่สำเร็จ");
+        if (!body.currentUser) throw new Error("ระบบไม่พบข้อมูลผู้ใช้งาน กรุณาลองโหลดใหม่");
         setCurrentUser(body.currentUser ?? null);
         setEmployeePreview(body.employeePreview ?? null);
         setPermissions(body.permissions ?? { canManageAccounts: false, canManagePeople: false, canManageWork: false, canAssignTeamWork: false, canReviewWork: false, canViewTeam: false, canViewTeamOverview: false, canViewOwnGrowth: false, canViewOwnRewards: false, canManageOrganizationDocuments: false, canManageEmployeeWarnings: false, canManageEmployeeRecognitions: false });
@@ -1001,7 +1006,7 @@ export default function Home() {
         if (!controller.signal.aborted) setIsLoading(false);
       });
     return () => controller.abort();
-  }, [period]);
+  }, [dashboardReloadKey, period]);
 
   useEffect(() => {
     const updateClock = () => setOfficeClock(new Intl.DateTimeFormat("th-TH-u-nu-latn", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date()));
@@ -1029,8 +1034,42 @@ export default function Home() {
   }, [currentUser, isEmployeePreview, permissions.canManageOrganizationDocuments, view]);
 
   useEffect(() => {
-    if (!selectedEmployee && !skillProfileEmployee && !hrEmployee && !showAddEmployee && !showWorkForm && !showProjectForm && !submissionWorkItem && !rewardToRedeem && !showProfileEditor && !showContractForm && !contractToSign && !showOrganizationDocumentForm && !showEmployeeWarningForm && !showEmployeeRecognitionForm && !showNotifications && !showUserMenu) return;
+    if (view !== "profiles" || canManageEmployeeFiles) return;
+    const timer = window.setTimeout(() => setView("work"), 0);
+    return () => window.clearTimeout(timer);
+  }, [canManageEmployeeFiles, view]);
+
+  useEffect(() => {
+    const hasOpenOverlay = Boolean(selectedEmployee || skillProfileEmployee || hrEmployee || showAddEmployee || showWorkForm || showProjectForm || submissionWorkItem || rewardToRedeem || showProfileEditor || showContractForm || contractToSign || showOrganizationDocumentForm || showEmployeeWarningForm || showEmployeeRecognitionForm || showNotifications || showUserMenu);
+    if (!hasOpenOverlay) return;
+    lastFocusedElementRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const focusFrame = window.requestAnimationFrame(() => {
+      const overlay = document.querySelector<HTMLElement>('[role="dialog"], .top-profile-menu');
+      if (!overlay) return;
+      const firstFocusable = overlay.querySelector<HTMLElement>('button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])');
+      (firstFocusable ?? overlay).focus();
+    });
     const onKeyDown = (event: KeyboardEvent) => {
+      const overlay = document.querySelector<HTMLElement>('[role="dialog"], .top-profile-menu');
+      if (event.key === "Tab" && overlay) {
+        const focusable = [...overlay.querySelectorAll<HTMLElement>('button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')].filter((element) => element.getClientRects().length > 0);
+        if (!focusable.length) {
+          event.preventDefault();
+          overlay.focus();
+        } else {
+          const first = focusable[0];
+          const last = focusable[focusable.length - 1];
+          if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault();
+            last.focus();
+          } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault();
+            first.focus();
+          }
+        }
+      }
       if (event.key === "Escape") {
         setSelectedEmployee(null);
         setSkillProfileEmployee(null);
@@ -1052,7 +1091,13 @@ export default function Home() {
       }
     };
     document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      document.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = previousOverflow;
+      lastFocusedElementRef.current?.focus();
+      lastFocusedElementRef.current = null;
+    };
   }, [selectedEmployee, skillProfileEmployee, hrEmployee, showAddEmployee, showWorkForm, showProjectForm, submissionWorkItem, rewardToRedeem, showProfileEditor, showContractForm, contractToSign, showOrganizationDocumentForm, showEmployeeWarningForm, showEmployeeRecognitionForm, showNotifications, showUserMenu]);
 
   const evaluationsByEmployee = useMemo(
@@ -1136,14 +1181,16 @@ export default function Home() {
   const profileContracts = profileEmployee ? employmentContracts.filter((contract) => contract.employeeId === profileEmployee.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt)) : [];
   const profileWarnings = profileEmployee ? employeeWarnings.filter((warning) => warning.employeeId === profileEmployee.id).slice().sort((a, b) => b.issuedDate.localeCompare(a.issuedDate) || b.updatedAt.localeCompare(a.updatedAt)) : [];
   const profileRecognitions = profileEmployee ? employeeRecognitions.filter((recognition) => recognition.employeeId === profileEmployee.id).slice().sort((a, b) => b.issuedDate.localeCompare(a.issuedDate) || b.updatedAt.localeCompare(a.updatedAt)) : [];
+  const employeeRecordToday = bangkokIsoDate();
   const activeProfileWarningCount = profileWarnings.filter((warning) => warning.status === "issued" || warning.status === "acknowledged").length;
-  const activeProfileRecognitionCount = profileRecognitions.filter((recognition) => recognition.status === "active").length;
+  const overdueActiveProfileRecognitionCount = profileRecognitions.filter((recognition) => recognition.status === "active" && Boolean(recognition.expiryDate) && recognition.expiryDate! < employeeRecordToday).length;
+  const activeProfileRecognitionCount = profileRecognitions.filter((recognition) => recognition.status === "active" && (!recognition.expiryDate || recognition.expiryDate >= employeeRecordToday)).length;
   const employeeContracts = currentUser?.employeeId ? employmentContracts.filter((contract) => contract.employeeId === currentUser.employeeId).sort((a, b) => b.createdAt.localeCompare(a.createdAt)) : [];
   const contractSigningEmployee = contractToSign ? employeesById.get(contractToSign.employeeId) ?? null : null;
   const verifiedRequiredDocuments = requiredDocumentTypes.filter((type) => profileDocuments.some((document) => document.documentType === type && document.status === "verified")).length;
   const profileFilledFields = profileRecord ? [profileRecord.personalEmail, profileRecord.phone, profileRecord.birthDate, profileRecord.nationalIdLast4, profileRecord.address, profileRecord.emergencyName, profileRecord.emergencyPhone, profileRecord.startDate, profileRecord.education, profileRecord.applicationSource].filter(Boolean).length : 0;
   const dossierCompleteness = Math.round((profileFilledFields / 10 * .45 + verifiedRequiredDocuments / requiredDocumentTypes.length * .4 + (profileContracts.some((contract) => contract.status === "signed") ? .15 : 0)) * 100);
-  const organizationDocumentToday = bangkokIsoDate();
+  const organizationDocumentToday = employeeRecordToday;
   const organizationDocumentExpiryWindow = addIsoDays(organizationDocumentToday, 30);
   const organizationDocumentQuery = organizationDocumentSearch.trim().toLocaleLowerCase("th");
   const visibleOrganizationDocuments = organizationDocuments
@@ -1157,9 +1204,11 @@ export default function Home() {
     const queryMatches = !organizationDocumentQuery || `${template.title} ${template.description} ${organizationDocumentCategoryMeta[template.category].label}`.toLocaleLowerCase("th").includes(organizationDocumentQuery);
     return categoryMatches && queryMatches;
   });
-  const activeOrganizationDocumentCount = organizationDocuments.filter((document) => document.status === "active").length;
+  const overdueOrganizationDocumentCount = organizationDocuments.filter((document) => document.status === "active" && Boolean(document.expiryDate) && document.expiryDate! < organizationDocumentToday).length;
+  const activeOrganizationDocumentCount = organizationDocuments.filter((document) => document.status === "active" && (!document.expiryDate || document.expiryDate >= organizationDocumentToday)).length;
   const draftOrganizationDocumentCount = organizationDocuments.filter((document) => document.status === "draft").length;
   const expiringOrganizationDocumentCount = organizationDocuments.filter((document) => document.status === "active" && Boolean(document.expiryDate) && document.expiryDate! >= organizationDocumentToday && document.expiryDate! <= organizationDocumentExpiryWindow).length;
+  const warningIssueDateInvalid = employeeWarningForm.issuedDate < employeeWarningForm.incidentDate;
   const hrEmployeeInsight = hrEmployee ? workforceInsights.find(({ employee }) => employee.id === hrEmployee.id) ?? null : null;
   const projectsById = useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects]);
   const accessiblePointLedger = useMemo(() => currentUser?.role === "employee" ? pointLedger.filter((entry) => entry.employeeId === currentUser.employeeId) : pointLedger, [currentUser, pointLedger]);
@@ -1554,14 +1603,26 @@ export default function Home() {
   const selectedSkillCategory = skillCategories.find((category) => category.id === skillCategoryFilter) ?? skillCategories[0];
   const selectedCategorySkills = selectedRole?.skills.filter((skill) => (skill.category ?? "role") === selectedSkillCategory.id) ?? [];
 
-  const showToast = (message: string) => {
-    setToast(message);
-    window.setTimeout(() => setToast(""), 2800);
+  const showToast = (message: string, tone: "success" | "error" = "success") => {
+    if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
+    setToast({ message, tone });
+    toastTimerRef.current = window.setTimeout(() => {
+      setToast(null);
+      toastTimerRef.current = null;
+    }, tone === "error" ? 5200 : 2800);
   };
+
+  const showErrorToast = (error: unknown, fallback: string) => {
+    showToast(error instanceof Error ? error.message : fallback, "error");
+  };
+
+  useEffect(() => () => {
+    if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
+  }, []);
 
   const guardEmployeePreviewMutation = (actionLabel: string) => {
     if (!isEmployeePreview) return false;
-    showToast(`โหมดทดลองเป็นแบบอ่านอย่างเดียว จึงไม่สามารถ${actionLabel}ได้`);
+    showToast(`โหมดทดลองเป็นแบบอ่านอย่างเดียว จึงไม่สามารถ${actionLabel}ได้`, "error");
     return true;
   };
 
@@ -1589,7 +1650,7 @@ export default function Home() {
       }
     } catch (error) {
       setNotificationReads(previousReads);
-      showToast(error instanceof Error ? error.message : "บันทึกสถานะแจ้งเตือนไม่สำเร็จ");
+      showErrorToast(error, "บันทึกสถานะแจ้งเตือนไม่สำเร็จ");
     }
   };
 
@@ -1617,7 +1678,7 @@ export default function Home() {
     if (!powerLeft) {
       setPowerLeftId(employeeId);
     } else if (powerLeft.employee.id === employeeId) {
-      showToast("พนักงานคนนี้อยู่ในการ์ดฝั่ง A แล้ว");
+      showToast("พนักงานคนนี้อยู่ในการ์ดฝั่ง A แล้ว", "error");
       return;
     } else {
       setPowerRightId(employeeId);
@@ -1682,7 +1743,7 @@ export default function Home() {
       setHrEmployee(null);
       showToast(`บันทึกแผนบุคลากรของ ${employeeName} แล้ว`);
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "บันทึกแผนบุคลากรไม่สำเร็จ");
+      showErrorToast(error, "บันทึกแผนบุคลากรไม่สำเร็จ");
     } finally {
       setIsSaving(false);
     }
@@ -1696,7 +1757,7 @@ export default function Home() {
       setTalentActions((items) => items.map((item) => item.id === action.id ? body.talentAction as TalentActionRecord : item));
       showToast(`ปิดงาน “${action.title}” แล้ว`);
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "อัปเดตสถานะไม่สำเร็จ");
+      showErrorToast(error, "อัปเดตสถานะไม่สำเร็จ");
     }
   };
 
@@ -1723,7 +1784,7 @@ export default function Home() {
       setAttendanceForm((form) => ({ ...form, note: "" }));
       showToast(body.attendanceRecord.status === "leave" ? "ส่งคำขอลาเข้าคิวอนุมัติแล้ว" : `บันทึกเวลาของ ${employeesById.get(body.attendanceRecord.employeeId)?.name ?? "พนักงาน"} แล้ว`);
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "บันทึกเวลาไม่สำเร็จ");
+      showErrorToast(error, "บันทึกเวลาไม่สำเร็จ");
     } finally {
       setIsSaving(false);
     }
@@ -1745,7 +1806,7 @@ export default function Home() {
       setAttendanceDate(todayDate);
       showToast(existing?.clockIn ? `ลงเวลาออก ${nowTime} แล้ว` : `ลงเวลาเข้า ${nowTime} แล้ว`);
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "ลงเวลาไม่สำเร็จ");
+      showErrorToast(error, "ลงเวลาไม่สำเร็จ");
     } finally {
       setIsSaving(false);
     }
@@ -1759,7 +1820,7 @@ export default function Home() {
       setAttendanceRecords((items) => items.map((item) => item.id === attendanceRecord.id ? body.attendanceRecord as AttendanceRecord : item));
       showToast(approvalStatus === "approved" ? "อนุมัติวันลาแล้ว โดยไม่หักคะแนนความน่าเชื่อถือ" : "ไม่อนุมัติคำขอลาแล้ว");
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "อัปเดตคำขอลาไม่สำเร็จ");
+      showErrorToast(error, "อัปเดตคำขอลาไม่สำเร็จ");
     }
   };
 
@@ -1777,7 +1838,7 @@ export default function Home() {
       setSkillAchievementForm((form) => ({ ...form, evidenceUrl: "", note: "" }));
       showToast(`ยืนยันสกิลแล้ว เพิ่มค่าตอบแทน ฿${formatMoney(body.skillAchievement.monthlyAllowance)}/เดือน`);
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "ยืนยันสกิลไม่สำเร็จ");
+      showErrorToast(error, "ยืนยันสกิลไม่สำเร็จ");
     } finally {
       setIsSaving(false);
     }
@@ -1848,7 +1909,7 @@ export default function Home() {
         showToast(body.pointEntry ? `ทำภารกิจสำเร็จ รับ ${body.pointEntry.points} Points` : "บันทึกงานและความคืบหน้าแล้ว");
       }
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "บันทึกงานไม่สำเร็จ");
+      showErrorToast(error, "บันทึกงานไม่สำเร็จ");
     } finally {
       setIsSaving(false);
     }
@@ -1881,7 +1942,7 @@ export default function Home() {
       setWorkItems((items) => items.map((workItem) => workItem.id === body.workItem?.id ? body.workItem as WorkItemRecord : workItem));
       showToast(`เริ่มงาน “${item.title}” แล้ว`);
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "เริ่มงานไม่สำเร็จ");
+      showErrorToast(error, "เริ่มงานไม่สำเร็จ");
     } finally {
       setQuickUpdatingWorkId("");
     }
@@ -1919,7 +1980,7 @@ export default function Home() {
       setSubmissionFile(null);
       showToast("ส่งหลักฐานแล้ว งานถูกย้ายไปรอตรวจ");
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "ส่งหลักฐานงานไม่สำเร็จ");
+      showErrorToast(error, "ส่งหลักฐานงานไม่สำเร็จ");
     } finally {
       setIsSaving(false);
     }
@@ -1940,7 +2001,7 @@ export default function Home() {
       setReviewerNote("");
       showToast(body.pointCapMessage ?? (status === "approved" ? `อนุมัติหลักฐานและมอบ ${body.workItem.points + (body.deadlinePointEntry?.points ?? 0)} Points แล้ว` : "ส่งงานกลับให้แก้ไขแล้ว"));
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "ตรวจหลักฐานไม่สำเร็จ");
+      showErrorToast(error, "ตรวจหลักฐานไม่สำเร็จ");
     } finally {
       setIsSaving(false);
     }
@@ -1959,7 +2020,7 @@ export default function Home() {
       setShowProjectForm(false);
       showToast(`สร้างโปรเจกต์ “${body.project.name}” แล้ว`);
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "สร้างโปรเจกต์ไม่สำเร็จ");
+      showErrorToast(error, "สร้างโปรเจกต์ไม่สำเร็จ");
     } finally {
       setIsSaving(false);
     }
@@ -1979,7 +2040,7 @@ export default function Home() {
       setPointPanel("history");
       showToast(`${body.pointEvent.points >= 0 ? "เพิ่ม" : "หัก"} ${Math.abs(body.pointEvent.points)} Points เรียบร้อยแล้ว`);
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "บันทึกรายการ Points ไม่สำเร็จ");
+      showErrorToast(error, "บันทึกรายการ Points ไม่สำเร็จ");
     } finally {
       setIsSaving(false);
     }
@@ -1998,7 +2059,7 @@ export default function Home() {
       setPointPanel("history");
       showToast(`ประมวลผล Points รายเดือนให้ ${body.count ?? body.pointEntries.length} คนแล้ว`);
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "ประมวลผล Points รายเดือนไม่สำเร็จ");
+      showErrorToast(error, "ประมวลผล Points รายเดือนไม่สำเร็จ");
     } finally {
       setIsSaving(false);
     }
@@ -2040,14 +2101,14 @@ export default function Home() {
       await persistOrganizationPolicyDraft();
       showToast("บันทึกร่างกฎองค์กรแล้ว");
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "บันทึกร่างกฎองค์กรไม่สำเร็จ");
+      showErrorToast(error, "บันทึกร่างกฎองค์กรไม่สำเร็จ");
     } finally {
       setIsSaving(false);
     }
   };
 
   const publishOrganizationPolicy = async () => {
-    if (!complianceChecklistComplete || !legalReviewConfirmed) return showToast(policyDraft.category === "work_rules" ? "ตรวจเช็กรายการทั้ง 8 หัวข้อและยืนยันการทบทวนก่อนประกาศ" : "ยืนยันการทบทวนโดย HR หรือผู้รับผิดชอบก่อนประกาศ");
+    if (!complianceChecklistComplete || !legalReviewConfirmed) return showToast(policyDraft.category === "work_rules" ? "ตรวจเช็กรายการทั้ง 8 หัวข้อและยืนยันการทบทวนก่อนประกาศ" : "ยืนยันการทบทวนโดย HR หรือผู้รับผิดชอบก่อนประกาศ", "error");
     setIsSaving(true);
     try {
       const savedPolicy = await persistOrganizationPolicyDraft();
@@ -2066,7 +2127,7 @@ export default function Home() {
       }
       showToast(`ประกาศ “${body.organizationPolicy.title}” เวอร์ชัน ${body.organizationPolicy.version} แล้ว`);
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "ประกาศกฎองค์กรไม่สำเร็จ");
+      showErrorToast(error, "ประกาศกฎองค์กรไม่สำเร็จ");
     } finally {
       setIsSaving(false);
     }
@@ -2074,7 +2135,7 @@ export default function Home() {
 
   const acknowledgeOrganizationPolicy = async () => {
     if (guardEmployeePreviewMutation("ยืนยันรับทราบกฎองค์กร")) return;
-    if (!selectedOrganizationPolicy || !currentUser?.employeeId) return showToast("บัญชีนี้ยังไม่ได้ผูกกับพนักงาน");
+    if (!selectedOrganizationPolicy || !currentUser?.employeeId) return showToast("บัญชีนี้ยังไม่ได้ผูกกับพนักงาน", "error");
     setIsSaving(true);
     try {
       const response = await fetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "acknowledgeOrganizationPolicy", policyId: selectedOrganizationPolicy.id }) });
@@ -2083,7 +2144,7 @@ export default function Home() {
       setPolicyAcknowledgements((items) => [body.policyAcknowledgement as PolicyAcknowledgementRecord, ...items.filter((item) => item.id !== body.policyAcknowledgement?.id)]);
       showToast("บันทึกการรับทราบกฎองค์กรแล้ว");
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "ยืนยันรับทราบกฎองค์กรไม่สำเร็จ");
+      showErrorToast(error, "ยืนยันรับทราบกฎองค์กรไม่สำเร็จ");
     } finally {
       setIsSaving(false);
     }
@@ -2094,8 +2155,8 @@ export default function Home() {
     if (guardEmployeePreviewMutation("ส่งคำขอแลกรางวัล")) return;
     if (!rewardToRedeem) return;
     const redemptionEmployeeId = currentUser?.role === "admin" ? rewardEmployeeId : currentUser?.employeeId ?? "";
-    if (!redemptionEmployeeId) return showToast("บัญชีนี้ยังไม่ได้ผูกกับพนักงาน");
-    if (!canSubmitRewardRedemption) return showToast("ยังไม่ผ่านเกณฑ์การแลกรางวัล กรุณาตรวจรายการในหน้าต่างนี้");
+    if (!redemptionEmployeeId) return showToast("บัญชีนี้ยังไม่ได้ผูกกับพนักงาน", "error");
+    if (!canSubmitRewardRedemption) return showToast("ยังไม่ผ่านเกณฑ์การแลกรางวัล กรุณาตรวจรายการในหน้าต่างนี้", "error");
     setIsSaving(true);
     try {
       const response = await fetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "redeemReward", employeeId: redemptionEmployeeId, rewardId: rewardToRedeem.id }) });
@@ -2107,7 +2168,7 @@ export default function Home() {
       setRewardToRedeem(null);
       showToast(`ส่งคำขอแลก “${body.reward.title}” แล้ว`);
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "แลกรางวัลไม่สำเร็จ");
+      showErrorToast(error, "แลกรางวัลไม่สำเร็จ");
     } finally {
       setIsSaving(false);
     }
@@ -2129,7 +2190,7 @@ export default function Home() {
       if (body.reward) setRewards((items) => items.map((reward) => reward.id === body.reward?.id ? body.reward as RewardRecord : reward));
       showToast(`อัปเดตคำขอเป็น“${rewardRedemptionStatusLabel(status)}”แล้ว`);
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "อัปเดตสถานะคำขอแลกรางวัลไม่สำเร็จ");
+      showErrorToast(error, "อัปเดตสถานะคำขอแลกรางวัลไม่สำเร็จ");
     } finally {
       setIsSaving(false);
     }
@@ -2166,7 +2227,7 @@ export default function Home() {
       setShowProfileEditor(false);
       showToast(`อัปเดตแฟ้มประวัติของ ${profileEmployee.name} แล้ว`);
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "บันทึกโปรไฟล์ไม่สำเร็จ");
+      showErrorToast(error, "บันทึกโปรไฟล์ไม่สำเร็จ");
     } finally {
       setIsSaving(false);
     }
@@ -2185,7 +2246,7 @@ export default function Home() {
       setEmployeeProfiles((items) => [...items.filter((item) => item.employeeId !== body.employeeProfile?.employeeId), body.employeeProfile as EmployeeProfileRecord]);
       showToast(`อัปเดตรูปโปรไฟล์ของ ${profileEmployee.name} แล้ว`);
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "อัปโหลดรูปโปรไฟล์ไม่สำเร็จ");
+      showErrorToast(error, "อัปโหลดรูปโปรไฟล์ไม่สำเร็จ");
     } finally {
       setUploadingProfileImage(false);
     }
@@ -2206,7 +2267,7 @@ export default function Home() {
       setApplicationDocuments((items) => [...items.filter((item) => item.id !== body.applicationDocument?.id && (allowsMultiple || !(item.employeeId === profileEmployee.id && item.documentType === documentType))), body.applicationDocument as ApplicationDocumentRecord]);
       showToast(`อัปโหลด ${documentTypeLabels[documentType]} แล้ว รอตรวจเอกสาร`);
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "อัปโหลดเอกสารไม่สำเร็จ");
+      showErrorToast(error, "อัปโหลดเอกสารไม่สำเร็จ");
     } finally {
       setUploadingDocumentType(null);
     }
@@ -2221,7 +2282,7 @@ export default function Home() {
       setApplicationDocuments((items) => items.map((item) => item.id === document.id ? body.applicationDocument as ApplicationDocumentRecord : item));
       showToast(status === "verified" ? "ตรวจเอกสารผ่านแล้ว" : "ส่งเอกสารกลับให้แก้ไขแล้ว");
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "อัปเดตสถานะเอกสารไม่สำเร็จ");
+      showErrorToast(error, "อัปเดตสถานะเอกสารไม่สำเร็จ");
     }
   };
 
@@ -2244,7 +2305,7 @@ export default function Home() {
       setShowContractForm(false);
       showToast(contractForm.status === "sent" ? "สร้างและส่งสัญญาให้ลงนามแล้ว" : "บันทึกฉบับร่างสัญญาแล้ว");
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "สร้างสัญญาไม่สำเร็จ");
+      showErrorToast(error, "สร้างสัญญาไม่สำเร็จ");
     } finally {
       setIsSaving(false);
     }
@@ -2263,7 +2324,7 @@ export default function Home() {
       setEmploymentContracts((items) => items.map((item) => item.id === contract.id ? body.employmentContract as EmploymentContractRecord : item));
       showToast("ส่งสัญญาให้พนักงานลงนามแล้ว");
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "ส่งสัญญาไม่สำเร็จ");
+      showErrorToast(error, "ส่งสัญญาไม่สำเร็จ");
     }
   };
 
@@ -2277,9 +2338,9 @@ export default function Home() {
       if (!response.ok || !body.employmentContract) throw new Error(body.error ?? "ลงนามสัญญาไม่สำเร็จ");
       setEmploymentContracts((items) => items.map((item) => item.id === contractToSign.id ? body.employmentContract as EmploymentContractRecord : item));
       setContractToSign(null);
-      showToast("ลงนามสัญญาและบันทึกหลักฐานเรียบร้อยแล้ว");
+      showToast("บันทึกการทดสอบขั้นตอนยืนยันสัญญาแล้ว");
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "ลงนามสัญญาไม่สำเร็จ");
+      showErrorToast(error, "ลงนามสัญญาไม่สำเร็จ");
     } finally {
       setIsSaving(false);
     }
@@ -2308,7 +2369,7 @@ export default function Home() {
       setOrganizationDocumentFile(null);
       showToast(`เพิ่ม “${body.organizationDocument.title}” ในคลังเอกสารแล้ว`);
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "เพิ่มเอกสารองค์กรไม่สำเร็จ");
+      showErrorToast(error, "เพิ่มเอกสารองค์กรไม่สำเร็จ");
     } finally {
       setIsSaving(false);
     }
@@ -2316,6 +2377,7 @@ export default function Home() {
 
   const updateOrganizationDocumentStatus = async (document: OrganizationDocumentRecord, status: OrganizationDocumentStatus) => {
     if (!permissions.canManageOrganizationDocuments || isEmployeePreview) return;
+    if (status === "archived" && !window.confirm(`ยืนยันเก็บ “${document.title}” เข้าคลังถาวร?\n\nสถานะจะเปลี่ยนจาก “${organizationDocumentStatusLabels[document.status]}” เป็น “เก็บถาวร” และจะเปลี่ยนกลับจากหน้านี้ไม่ได้`)) return;
     setIsSaving(true);
     try {
       const response = await fetch("/api/organization-documents", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: document.id, expectedRevision: document.revision, status }) });
@@ -2324,7 +2386,7 @@ export default function Home() {
       setOrganizationDocuments((items) => items.map((item) => item.id === body.organizationDocument?.id ? body.organizationDocument as OrganizationDocumentRecord : item));
       showToast(`อัปเดตเป็น “${organizationDocumentStatusLabels[status]}” แล้ว`);
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "อัปเดตสถานะเอกสารไม่สำเร็จ");
+      showErrorToast(error, "อัปเดตสถานะเอกสารไม่สำเร็จ");
     } finally {
       setIsSaving(false);
     }
@@ -2340,6 +2402,7 @@ export default function Home() {
   const saveEmployeeWarning = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!profileEmployee || !permissions.canManageEmployeeWarnings || isEmployeePreview) return;
+    if (employeeWarningForm.issuedDate < employeeWarningForm.incidentDate) return showToast("วันที่ออกเอกสารต้องไม่ก่อนวันที่เกิดเหตุ", "error");
     setIsSaving(true);
     try {
       const formData = new FormData();
@@ -2354,7 +2417,7 @@ export default function Home() {
       setEmployeeWarningFile(null);
       showToast(employeeWarningForm.status === "issued" ? "ออกหนังสือเตือนและบันทึกในแฟ้มแล้ว" : "บันทึกหนังสือเตือนเป็นฉบับร่างแล้ว");
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "บันทึกใบเตือนไม่สำเร็จ");
+      showErrorToast(error, "บันทึกใบเตือนไม่สำเร็จ");
     } finally {
       setIsSaving(false);
     }
@@ -2362,6 +2425,7 @@ export default function Home() {
 
   const updateEmployeeWarningStatus = async (warning: EmployeeWarningRecord, status: "issued" | "acknowledged" | "resolved" | "withdrawn") => {
     if (!permissions.canManageEmployeeWarnings || isEmployeePreview) return;
+    if (status === "withdrawn" && !window.confirm(`ยืนยันเพิกถอนใบเตือน “${warning.subject}” ของ ${profileEmployee?.name ?? "พนักงาน"}?\n\nสถานะจะเปลี่ยนจาก “${employeeWarningStatusLabels[warning.status]}” เป็น “เพิกถอน” และจะเปลี่ยนกลับจากหน้านี้ไม่ได้`)) return;
     setIsSaving(true);
     try {
       const response = await fetch("/api/employee-warnings", {
@@ -2379,7 +2443,7 @@ export default function Home() {
       setEmployeeWarnings((items) => items.map((item) => item.id === body.employeeWarning?.id ? body.employeeWarning as EmployeeWarningRecord : item));
       showToast(`อัปเดตใบเตือนเป็น “${employeeWarningStatusLabels[status]}” แล้ว`);
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "อัปเดตสถานะใบเตือนไม่สำเร็จ");
+      showErrorToast(error, "อัปเดตสถานะใบเตือนไม่สำเร็จ");
     } finally {
       setIsSaving(false);
     }
@@ -2409,7 +2473,7 @@ export default function Home() {
       setEmployeeRecognitionFile(null);
       showToast(`เพิ่ม “${body.employeeRecognition.title}” ในแฟ้มแล้ว`);
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "เพิ่มเกียรติบัตรหรือรางวัลไม่สำเร็จ");
+      showErrorToast(error, "เพิ่มเกียรติบัตรหรือรางวัลไม่สำเร็จ");
     } finally {
       setIsSaving(false);
     }
@@ -2417,6 +2481,7 @@ export default function Home() {
 
   const updateEmployeeRecognitionStatus = async (recognition: EmployeeRecognitionRecord, status: EmployeeRecognitionStatus) => {
     if (!permissions.canManageEmployeeRecognitions || isEmployeePreview) return;
+    if (status === "revoked" && !window.confirm(`ยืนยันเพิกถอน “${recognition.title}” ของ ${profileEmployee?.name ?? "พนักงาน"}?\n\nสถานะจะเปลี่ยนจาก “${employeeRecognitionStatusLabels[recognition.status]}” เป็น “เพิกถอน” และจะเปลี่ยนกลับจากหน้านี้ไม่ได้`)) return;
     setIsSaving(true);
     try {
       const response = await fetch("/api/employee-recognitions", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: recognition.id, expectedRevision: recognition.revision, status }) });
@@ -2425,7 +2490,7 @@ export default function Home() {
       setEmployeeRecognitions((items) => items.map((item) => item.id === body.employeeRecognition?.id ? body.employeeRecognition as EmployeeRecognitionRecord : item));
       showToast(`อัปเดตเป็น “${employeeRecognitionStatusLabels[status]}” แล้ว`);
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "อัปเดตสถานะเกียรติบัตรหรือรางวัลไม่สำเร็จ");
+      showErrorToast(error, "อัปเดตสถานะเกียรติบัตรหรือรางวัลไม่สำเร็จ");
     } finally {
       setIsSaving(false);
     }
@@ -2434,7 +2499,7 @@ export default function Home() {
   const saveEvaluation = async () => {
     if (!selectedEmployee) return;
     if (!skillAssessmentComplete) {
-      showToast(`กรุณาประเมินสมรรถนะให้ครบอีก ${(selectedRole?.skills.length ?? 0) - ratedSkillCount} ด้าน`);
+      showToast(`กรุณาประเมินสมรรถนะให้ครบอีก ${(selectedRole?.skills.length ?? 0) - ratedSkillCount} ด้าน`, "error");
       return;
     }
     setIsSaving(true);
@@ -2464,7 +2529,7 @@ export default function Home() {
         ? `บันทึกผลประเมิน ${selectedEmployee.name} และมอบ ${body.pointEntry.points} Points ประจำเดือนแล้ว`
         : `บันทึกผลประเมิน ${selectedEmployee.name} แล้ว · รอประมวลผล Points ตามกติกาที่มีผลใช้`);
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "บันทึกผลประเมินไม่สำเร็จ");
+      showErrorToast(error, "บันทึกผลประเมินไม่สำเร็จ");
     } finally {
       setIsSaving(false);
     }
@@ -2488,7 +2553,7 @@ export default function Home() {
       setEmployeeForm({ name: "", email: "", roleId: roles[0].id, manager: "" });
       showToast(`เพิ่ม ${body.employee.name} ในระบบแล้ว`);
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "เพิ่มพนักงานไม่สำเร็จ");
+      showErrorToast(error, "เพิ่มพนักงานไม่สำเร็จ");
     } finally {
       setIsSaving(false);
     }
@@ -2510,7 +2575,7 @@ export default function Home() {
       setUserAccountForm({ accountId: "", email: "", displayName: "", role: "employee", employeeId: "", departmentId: "", status: "active" });
       showToast("บันทึกสิทธิ์ของ " + body.userAccount.displayName + " แล้ว");
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "บันทึกบัญชีผู้ใช้ไม่สำเร็จ");
+      showErrorToast(error, "บันทึกบัญชีผู้ใช้ไม่สำเร็จ");
     } finally {
       setIsSaving(false);
     }
@@ -2525,7 +2590,7 @@ export default function Home() {
       setUserAccounts((items) => items.map((item) => item.id === account.id ? body.userAccount as UserAccountRecord : item));
       showToast(body.userAccount.status === "active" ? "เปิดสิทธิ์ใช้งานแล้ว" : "พักสิทธิ์ใช้งานแล้ว");
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "อัปเดตบัญชีไม่สำเร็จ");
+      showErrorToast(error, "อัปเดตบัญชีไม่สำเร็จ");
     } finally {
       setIsSaving(false);
     }
@@ -2799,6 +2864,21 @@ export default function Home() {
 
   if (isLoading && !currentUser) {
     return <main className="access-loading-page"><span /><strong>กำลังตรวจสอบสิทธิ์ใช้งาน...</strong></main>;
+  }
+
+  if (!currentUser && dataWarning) {
+    return (
+      <main className="access-denied-page access-load-error-page">
+        <section role="alert" aria-labelledby="dashboard-load-error-title">
+          <span className="access-lock" aria-hidden="true">!</span>
+          <p className="eyebrow">เชื่อมต่อระบบไม่สำเร็จ</p>
+          <h1 id="dashboard-load-error-title">ยังเปิดพื้นที่ทำงานไม่ได้</h1>
+          <p>ข้อมูลผู้ใช้งานยังโหลดไม่ครบ ระบบจึงหยุดไว้ก่อนเพื่อไม่แสดงเมนูหรือข้อมูลผิดสิทธิ์</p>
+          <div><small>รายละเอียด</small><strong>{dataWarning}</strong></div>
+          <button type="button" onClick={() => { setDataWarning(""); setIsLoading(true); setDashboardReloadKey((key) => key + 1); }}>ลองเชื่อมต่ออีกครั้ง</button>
+        </section>
+      </main>
+    );
   }
 
   return (
@@ -3110,7 +3190,7 @@ export default function Home() {
             <div className="directory-toolbar">
               <label className="search-field"><span aria-hidden="true">⌕</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="ค้นหาชื่อ อีเมล หรือตำแหน่ง" /><span className="sr-only">ค้นหาพนักงาน</span></label>
               <p>{isLoading ? "กำลังอัปเดต..." : `พบ ${filteredEmployees.length} คน`}</p>
-              <button className="primary-button" onClick={() => setShowAddEmployee(true)}>＋ เพิ่มพนักงาน</button>
+              {canManageEmployeeFiles && <button className="primary-button" onClick={() => setShowAddEmployee(true)}>＋ เพิ่มพนักงาน</button>}
             </div>
             <div className="employee-table" role="table" aria-label="รายชื่อพนักงาน">
               <div className="employee-table-head" role="row"><span>พนักงาน</span><span>ตำแหน่ง / ผู้จัดการ</span><span>KPI</span><span>สกิล</span><span>สถานะ</span><span /></div>
@@ -3126,7 +3206,7 @@ export default function Home() {
                     <ScoreCell value={evaluation?.skillScore ?? null} />
                     <span><b className={`status-pill ${status === "ควรติดตาม" ? "alert" : status === "รอประเมิน" ? "pending" : ""}`}>{status}</b><small>{evaluation ? `อัปเดต ${formatUpdatedAt(evaluation.evaluatedAt)}` : "ยังไม่มีผลรอบนี้"}</small></span>
                     <span className="table-actions">
-                      <button className="dossier-button" onClick={() => { setProfileEmployeeId(employee.id); setView("profiles"); }}>ดูแฟ้ม</button>
+                      {canManageEmployeeFiles && <button className="dossier-button" onClick={() => { setProfileEmployeeId(employee.id); setView("profiles"); }}>ดูแฟ้ม</button>}
                       <button className="skill-profile-button" onClick={() => setSkillProfileEmployee(employee)}>ดูสกิล</button>
                       <button className="evaluate-button" onClick={() => openEvaluation(employee)}>{evaluation ? "แก้ไขผล" : "ประเมิน"}</button>
                     </span>
@@ -3138,7 +3218,7 @@ export default function Home() {
           </section>
         )}
 
-        {view === "profiles" && (
+        {view === "profiles" && canManageEmployeeFiles && (
           <section className="dossier-layout">
             <aside className="dossier-roster">
               <div className="dossier-roster-heading"><div><p className="eyebrow">EMPLOYEE FILES</p><h2>เลือกพนักงาน</h2></div><span>{filteredEmployees.length}</span></div>
@@ -3166,7 +3246,7 @@ export default function Home() {
                   <article><span>✎</span><div><small>สถานะสัญญา</small><strong>{profileContracts[0] ? contractStatusLabel(profileContracts[0].status) : "ยังไม่มีสัญญา"}</strong><em>{profileContracts[0]?.signedAt ? `ลงนาม ${formatUpdatedAt(profileContracts[0].signedAt)}` : "ติดตามในแฟ้มนี้"}</em></div></article>
                   <article><span>◷</span><div><small>วันเริ่มงาน</small><strong>{profileRecord?.startDate ? new Date(`${profileRecord.startDate}T00:00:00`).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" }) : "ยังไม่ระบุ"}</strong><em>{profileRecord ? employmentTypeLabel(profileRecord.employmentType) : "กรอกข้อมูลการจ้าง"}</em></div></article>
                   <article className={activeProfileWarningCount ? "metric-warning" : ""}><span>!</span><div><small>ใบเตือนที่ยังไม่ปิดเรื่อง</small><strong>{activeProfileWarningCount}</strong><em>{profileWarnings.length ? `ทั้งหมด ${profileWarnings.length} รายการ` : "ยังไม่มีประวัติ"}</em></div></article>
-                  <article className="metric-recognition"><span>★</span><div><small>เกียรติบัตร / รางวัล</small><strong>{activeProfileRecognitionCount}</strong><em>{profileRecognitions.length ? `ทั้งหมด ${profileRecognitions.length} รายการ` : "ยังไม่มีรายการ"}</em></div></article>
+                  <article className={overdueActiveProfileRecognitionCount ? "metric-recognition metric-overdue" : "metric-recognition"}><span>★</span><div><small>เกียรติบัตร / รางวัลที่ใช้ได้</small><strong>{activeProfileRecognitionCount}</strong><em>{overdueActiveProfileRecognitionCount ? `เลยวันหมดอายุ ${overdueActiveProfileRecognitionCount} รายการ` : profileRecognitions.length ? `ทั้งหมด ${profileRecognitions.length} รายการ` : "ยังไม่มีรายการ"}</em></div></article>
                 </div>
 
                 <div className="dossier-content-grid">
@@ -3216,7 +3296,7 @@ export default function Home() {
                         <div className="employee-file-record-actions">
                           {warning.hasFile && <a href={`/api/employee-warnings?id=${encodeURIComponent(warning.id)}`}>ดาวน์โหลด</a>}
                           {warning.status === "draft" && <button type="button" disabled={isSaving} onClick={() => void updateEmployeeWarningStatus(warning, "issued")}>ออกใบเตือน</button>}
-                          {warning.status === "issued" && <button type="button" disabled={isSaving} onClick={() => void updateEmployeeWarningStatus(warning, "acknowledged")}>บันทึกรับทราบ</button>}
+                          {warning.status === "issued" && <button type="button" disabled={isSaving} onClick={() => void updateEmployeeWarningStatus(warning, "acknowledged")}>HR บันทึกรับทราบ</button>}
                           {(warning.status === "issued" || warning.status === "acknowledged") && <button type="button" disabled={isSaving} onClick={() => void updateEmployeeWarningStatus(warning, "resolved")}>ปิดเรื่อง</button>}
                           {warning.status !== "withdrawn" && warning.status !== "resolved" && <button type="button" className="withdraw" disabled={isSaving} onClick={() => void updateEmployeeWarningStatus(warning, "withdrawn")}>เพิกถอน</button>}
                         </div>
@@ -3229,17 +3309,20 @@ export default function Home() {
                   {permissions.canManageEmployeeRecognitions && <section className="employee-recognition-card">
                     <div className="dossier-section-heading"><div><p className="eyebrow">RECOGNITION &amp; CREDENTIALS</p><h3>เกียรติบัตรและรางวัลจากผลงาน</h3></div><button type="button" className="recognition-create-button" onClick={openEmployeeRecognitionCreator}>＋ เพิ่มรายการ</button></div>
                     <div className="employee-recognition-list">
-                      {profileRecognitions.map((recognition) => <article key={recognition.id} className={`status-${recognition.status}`}>
-                        <span className="employee-file-record-mark" aria-hidden="true">★</span>
-                        <div className="employee-file-record-copy"><span><b>{employeeRecognitionTypeLabels[recognition.recognitionType]}</b><em className={recognition.status}>{employeeRecognitionStatusLabels[recognition.status]}</em></span><strong>{recognition.title}</strong><p>{recognition.issuer || "ไม่ระบุผู้ออก"} · {formatDueDate(recognition.issuedDate)}</p>{recognition.credentialId && <small>Credential ID: {recognition.credentialId}</small>}</div>
-                        <div className="employee-file-record-actions">
-                          {recognition.hasFile && <a href={`/api/employee-recognitions?id=${encodeURIComponent(recognition.id)}`}>ดาวน์โหลด</a>}
-                          {recognition.verificationUrl && <a href={recognition.verificationUrl} target="_blank" rel="noreferrer">ตรวจสอบลิงก์</a>}
-                          {recognition.status === "active" && recognition.expiryDate && recognition.expiryDate < organizationDocumentToday && <button type="button" disabled={isSaving} onClick={() => void updateEmployeeRecognitionStatus(recognition, "expired")}>ทำเครื่องหมายหมดอายุ</button>}
-                          {recognition.status === "expired" && <button type="button" disabled={isSaving} onClick={() => void updateEmployeeRecognitionStatus(recognition, "active")}>เปิดใช้งานอีกครั้ง</button>}
-                          {recognition.status !== "revoked" && <button type="button" className="withdraw" disabled={isSaving} onClick={() => void updateEmployeeRecognitionStatus(recognition, "revoked")}>เพิกถอน</button>}
-                        </div>
-                      </article>)}
+                      {profileRecognitions.map((recognition) => {
+                        const isOverdue = recognition.status === "active" && Boolean(recognition.expiryDate) && recognition.expiryDate! < organizationDocumentToday;
+                        return <article key={recognition.id} className={`status-${recognition.status}${isOverdue ? " is-overdue" : ""}`}>
+                          <span className="employee-file-record-mark" aria-hidden="true">★</span>
+                          <div className="employee-file-record-copy"><span><b>{employeeRecognitionTypeLabels[recognition.recognitionType]}</b><em className={recognition.status}>{employeeRecognitionStatusLabels[recognition.status]}</em>{isOverdue && <em className="overdue">เลยวันหมดอายุ</em>}</span><strong>{recognition.title}</strong><p>{recognition.issuer || "ไม่ระบุผู้ออก"} · ได้รับ {formatDueDate(recognition.issuedDate)} · หมดอายุ {recognition.expiryDate ? formatDueDate(recognition.expiryDate) : "ไม่กำหนด"}</p>{recognition.credentialId && <small>Credential ID: {recognition.credentialId}</small>}</div>
+                          <div className="employee-file-record-actions">
+                            {recognition.hasFile && <a href={`/api/employee-recognitions?id=${encodeURIComponent(recognition.id)}`}>ดาวน์โหลด</a>}
+                            {recognition.verificationUrl && <a href={recognition.verificationUrl} target="_blank" rel="noreferrer">ตรวจสอบลิงก์</a>}
+                            {recognition.status === "active" && recognition.expiryDate && recognition.expiryDate < organizationDocumentToday && <button type="button" disabled={isSaving} onClick={() => void updateEmployeeRecognitionStatus(recognition, "expired")}>ทำเครื่องหมายหมดอายุ</button>}
+                            {recognition.status === "expired" && <button type="button" disabled={isSaving} onClick={() => void updateEmployeeRecognitionStatus(recognition, "active")}>เปิดใช้งานอีกครั้ง</button>}
+                            {recognition.status !== "revoked" && <button type="button" className="withdraw" disabled={isSaving} onClick={() => void updateEmployeeRecognitionStatus(recognition, "revoked")}>เพิกถอน</button>}
+                          </div>
+                        </article>;
+                      })}
                       {!profileRecognitions.length && <div className="employee-file-record-empty recognition"><span>★</span><strong>ยังไม่มีเกียรติบัตรหรือรางวัล</strong><p>เพิ่มหลักฐานความสำเร็จ ใบรับรองการอบรม หรือใบอนุญาตวิชาชีพได้ที่นี่</p></div>}
                     </div>
                   </section>}
@@ -3262,7 +3345,7 @@ export default function Home() {
                       })}
                       {!profileContracts.length && <div className="contract-empty"><span>✎</span><div><strong>ยังไม่มีสัญญาจ้าง</strong><p>อัปโหลดไฟล์ต้นฉบับ แล้วสร้างสัญญาเพื่อส่งให้พนักงานลงนาม</p></div><button onClick={openContractCreator}>เริ่มสร้างสัญญา</button></div>}
                     </div>
-                    <div className="signature-trust-note"><span>i</span><p>การลงนามจะเก็บชื่อผู้ลงนาม คำยินยอม บัญชีผู้ใช้งาน และวันเวลาไว้เป็นหลักฐานอิเล็กทรอนิกส์</p></div>
+                    <div className="signature-trust-note"><span>i</span><p><strong>ขอบเขต Pilot:</strong> ขั้นตอนนี้ใช้ทดสอบ workflow และเก็บชื่อ บัญชี คำยินยอม และเวลาเท่านั้น ยังไม่ผูก hash กับไฟล์เอกสาร และยังไม่ใช่ลายเซ็นอิเล็กทรอนิกส์สำหรับใช้ยืนยันผลทางกฎหมาย</p></div>
                   </section>
                 </div>
               </section>
@@ -3284,9 +3367,10 @@ export default function Home() {
 
             <div className="organization-document-metrics" aria-label="สรุปเอกสารองค์กร">
               <article><span>▤</span><p><small>เอกสารทั้งหมด</small><strong>{organizationDocuments.length}</strong><em>รายการในคลัง</em></p></article>
-              <article className="active"><span>✓</span><p><small>ใช้งานอยู่</small><strong>{activeOrganizationDocumentCount}</strong><em>ฉบับปัจจุบัน</em></p></article>
+              <article className="active"><span>✓</span><p><small>ใช้งานอยู่</small><strong>{activeOrganizationDocumentCount}</strong><em>ฉบับที่ยังไม่หมดอายุ</em></p></article>
               <article className="draft"><span>✎</span><p><small>ฉบับร่าง</small><strong>{draftOrganizationDocumentCount}</strong><em>รอตรวจทาน</em></p></article>
               <article className="expiring"><span>◷</span><p><small>หมดอายุใน 30 วัน</small><strong>{expiringOrganizationDocumentCount}</strong><em>ควรตรวจต่ออายุ</em></p></article>
+              <article className="overdue"><span>!</span><p><small>เลยวันหมดอายุ</small><strong>{overdueOrganizationDocumentCount}</strong><em>สถานะยังเป็นใช้งานอยู่</em></p></article>
             </div>
 
             <section className="organization-document-library">
@@ -3306,13 +3390,14 @@ export default function Home() {
                 {visibleOrganizationDocuments.map((document) => {
                   const categoryMeta = organizationDocumentCategoryMeta[document.category];
                   const availableStatuses = [document.status, ...organizationDocumentAllowedStatuses[document.status]];
-                  return <article key={document.id} className={`organization-document-card status-${document.status}`}>
+                  const isOverdue = document.status === "active" && Boolean(document.expiryDate) && document.expiryDate! < organizationDocumentToday;
+                  return <article key={document.id} className={`organization-document-card status-${document.status}${isOverdue ? " is-overdue" : ""}`}>
                     <span className="organization-document-icon" aria-hidden="true">{categoryMeta.icon}</span>
                     <div className="organization-document-copy">
-                      <span><b>{categoryMeta.label}</b><em className={document.status}>{organizationDocumentStatusLabels[document.status]}</em></span>
+                      <span><b>{categoryMeta.label}</b><em className={document.status}>{organizationDocumentStatusLabels[document.status]}</em>{isOverdue && <em className="overdue">เลยวันหมดอายุ</em>}</span>
                       <h3>{document.title}</h3>
                       <p>{[document.description, document.note].filter(Boolean).join(" · ") || "ไม่มีคำอธิบายเพิ่มเติม"}</p>
-                      <div><span><small>เลขที่เอกสาร</small><strong>{document.documentNumber || "—"}</strong></span><span><small>เวอร์ชัน</small><strong>{document.version || "—"}</strong></span><span><small>เจ้าของ</small><strong>{document.owner || "—"}</strong></span><span><small>วันที่มีผล</small><strong>{document.effectiveDate ? formatDueDate(document.effectiveDate) : "—"}</strong></span></div>
+                      <div><span><small>เลขที่เอกสาร</small><strong>{document.documentNumber || "—"}</strong></span><span><small>เวอร์ชัน</small><strong>{document.version || "—"}</strong></span><span><small>เจ้าของ</small><strong>{document.owner || "—"}</strong></span><span><small>วันที่มีผล</small><strong>{document.effectiveDate ? formatDueDate(document.effectiveDate) : "—"}</strong></span><span><small>วันหมดอายุ</small><strong className={isOverdue ? "overdue-date" : ""}>{document.expiryDate ? formatDueDate(document.expiryDate) : "ไม่กำหนด"}</strong></span></div>
                     </div>
                     <aside className="organization-document-file">
                       <p><small>ไฟล์เอกสาร</small><strong>{document.fileName || "ไม่มีไฟล์"}</strong><span>{document.hasFile ? formatFileSize(document.sizeBytes) : "ไม่พบไฟล์ต้นฉบับ"}</span></p>
@@ -3593,7 +3678,7 @@ export default function Home() {
                     })}
                     {!employeeContracts.length && <div className="employee-growth-empty"><span>✎</span><strong>ยังไม่มีสัญญาที่ส่งถึงคุณ</strong><p>เมื่อ HR ส่งสัญญาแล้ว คุณจะอ่าน ดาวน์โหลด และลงนามได้จากส่วนนี้</p></div>}
                   </div>
-                  <p className="employee-contract-note">อ่านไฟล์ให้ครบก่อนลงนาม ระบบจะบันทึกบัญชี ชื่อ คำยินยอม และเวลาเป็นหลักฐาน</p>
+                  <p className="employee-contract-note"><strong>โหมด Pilot:</strong> อ่านไฟล์ให้ครบก่อนยืนยัน ขั้นตอนนี้ใช้ทดสอบ workflow และยังไม่ใช่ลายเซ็นอิเล็กทรอนิกส์ที่ผูก hash เอกสารหรือใช้ยืนยันผลทางกฎหมาย</p>
                 </section>
               </aside>
             </div>
@@ -4292,7 +4377,7 @@ export default function Home() {
                 <label className="wide"><span>เลขที่ใบเตือน <em>ไม่บังคับ</em></span><input maxLength={80} value={employeeWarningForm.warningNumber} onChange={(event) => setEmployeeWarningForm((form) => ({ ...form, warningNumber: event.target.value }))} placeholder="เว้นว่างเพื่อให้ระบบสร้างเลขที่อัตโนมัติ" /></label>
                 <label className="wide"><span>หัวข้อ</span><input autoFocus required value={employeeWarningForm.subject} onChange={(event) => setEmployeeWarningForm((form) => ({ ...form, subject: event.target.value }))} placeholder="ระบุเรื่องให้สั้นและตรงกับข้อเท็จจริง" /></label>
                 <label><span>วันที่เกิดเหตุ</span><input required type="date" value={employeeWarningForm.incidentDate} onChange={(event) => setEmployeeWarningForm((form) => ({ ...form, incidentDate: event.target.value }))} /></label>
-                <label><span>วันที่ออกเอกสาร</span><input required type="date" value={employeeWarningForm.issuedDate} onChange={(event) => setEmployeeWarningForm((form) => ({ ...form, issuedDate: event.target.value }))} /></label>
+                <label><span>วันที่ออกเอกสาร</span><input required type="date" min={employeeWarningForm.incidentDate} aria-invalid={warningIssueDateInvalid} aria-describedby={warningIssueDateInvalid ? "warning-issued-date-error" : undefined} value={employeeWarningForm.issuedDate} onChange={(event) => setEmployeeWarningForm((form) => ({ ...form, issuedDate: event.target.value }))} />{warningIssueDateInvalid && <small id="warning-issued-date-error" className="form-error-message" role="alert">วันที่ออกเอกสารต้องไม่ก่อนวันที่เกิดเหตุ</small>}</label>
                 <label className="wide"><span>รายละเอียดข้อเท็จจริง</span><textarea required value={employeeWarningForm.facts} onChange={(event) => setEmployeeWarningForm((form) => ({ ...form, facts: event.target.value }))} placeholder="บันทึกเหตุการณ์ วันเวลา และข้อมูลอ้างอิงโดยใช้ภาษาที่เป็นกลาง" /></label>
                 <label className="wide"><span>สิ่งที่ต้องปรับปรุง / แนวทางแก้ไข</span><textarea required value={employeeWarningForm.correctiveAction} onChange={(event) => setEmployeeWarningForm((form) => ({ ...form, correctiveAction: event.target.value }))} placeholder="ระบุพฤติกรรมหรือผลลัพธ์ที่คาดหวังให้ชัดเจน" /></label>
                 <label><span>วันติดตามผล <em>ไม่บังคับ</em></span><input type="date" min={employeeWarningForm.issuedDate} value={employeeWarningForm.reviewDate} onChange={(event) => setEmployeeWarningForm((form) => ({ ...form, reviewDate: event.target.value }))} /></label>
@@ -4301,7 +4386,7 @@ export default function Home() {
               </div>
               <div className="warning-consent-note"><span>i</span><p><strong>การรับทราบไม่เท่ากับการยอมรับผิด</strong><small>การสร้างใบเตือนไม่หัก Points อัตโนมัติ และควรเปิดโอกาสให้พนักงานชี้แจงก่อนดำเนินการตามระเบียบ</small></p></div>
             </div>
-            <div className="modal-actions organization-record-modal-actions"><button type="button" className="secondary-button" onClick={() => setShowEmployeeWarningForm(false)}>ยกเลิก</button><button className="primary-button" disabled={isSaving}>{isSaving ? "กำลังบันทึก..." : employeeWarningForm.status === "issued" ? "บันทึกและออกเอกสาร" : "บันทึกฉบับร่าง"}</button></div>
+            <div className="modal-actions organization-record-modal-actions"><button type="button" className="secondary-button" onClick={() => setShowEmployeeWarningForm(false)}>ยกเลิก</button><button className="primary-button" disabled={isSaving || warningIssueDateInvalid}>{isSaving ? "กำลังบันทึก..." : employeeWarningForm.status === "issued" ? "บันทึกและออกเอกสาร" : "บันทึกฉบับร่าง"}</button></div>
           </form>
         </div>
       )}
@@ -4377,14 +4462,14 @@ export default function Home() {
       {contractToSign && contractSigningEmployee && (
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setContractToSign(null)}>
           <form className="signature-modal" onSubmit={signEmploymentContract} role="dialog" aria-modal="true" aria-labelledby="signature-title">
-            <div className="signature-hero"><span>✎</span><div><p className="eyebrow">ELECTRONIC SIGNATURE</p><h2 id="signature-title">ลงนามสัญญาอิเล็กทรอนิกส์</h2><p>{contractToSign.title} · เวอร์ชัน {contractToSign.version}</p></div><button type="button" className="modal-close dark" onClick={() => setContractToSign(null)} aria-label="ปิดหน้าต่าง">×</button></div>
+            <div className="signature-hero"><span>✎</span><div><p className="eyebrow">PILOT CONTRACT WORKFLOW</p><h2 id="signature-title">ทดสอบขั้นตอนยืนยันสัญญา</h2><p>{contractToSign.title} · เวอร์ชัน {contractToSign.version}</p></div><button type="button" className="modal-close dark" onClick={() => setContractToSign(null)} aria-label="ปิดหน้าต่าง">×</button></div>
             <div className="signature-body">
               <div className="contract-sign-summary"><span><small>ผู้ลงนาม</small><strong>{contractSigningEmployee.name}</strong></span><span><small>วันที่มีผล</small><strong>{new Date(`${contractToSign.effectiveDate}T00:00:00`).toLocaleDateString("th-TH", { day: "numeric", month: "long", year: "numeric" })}</strong></span></div>
               <label className="signature-name-field"><span>พิมพ์ชื่อ–นามสกุลให้ตรงกับโปรไฟล์</span><input required value={signatureForm.signedName} onChange={(event) => setSignatureForm((form) => ({ ...form, signedName: event.target.value }))} /><em>{signatureForm.signedName || "ชื่อผู้ลงนาม"}</em></label>
-              <label className="signature-consent"><input type="checkbox" checked={signatureForm.consent} onChange={(event) => setSignatureForm((form) => ({ ...form, consent: event.target.checked }))} /><span><strong>ยืนยันการลงนาม</strong> ข้าพเจ้าได้อ่าน เข้าใจ และยอมรับข้อกำหนดในสัญญาจ้างฉบับนี้ และยืนยันใช้ชื่อที่พิมพ์เป็นลายเซ็นอิเล็กทรอนิกส์</span></label>
-              <div className="signature-audit"><span>⌁</span><p>ระบบจะบันทึกบัญชีผู้ใช้งาน ชื่อผู้ลงนาม คำยินยอม และวันเวลาที่ลงนามไว้ในประวัติสัญญา</p></div>
+              <label className="signature-consent"><input type="checkbox" checked={signatureForm.consent} onChange={(event) => setSignatureForm((form) => ({ ...form, consent: event.target.checked }))} /><span><strong>ยืนยันการทดสอบขั้นตอน</strong> ข้าพเจ้าได้อ่านเอกสารและยืนยันใช้ชื่อที่พิมพ์เพื่อทดสอบ workflow ใน Pilot โดยรับทราบว่ายังไม่ใช่ลายเซ็นอิเล็กทรอนิกส์สำหรับยืนยันผลทางกฎหมาย</span></label>
+              <div className="signature-audit"><span>⌁</span><p><strong>ข้อจำกัด:</strong> ระบบจะบันทึกบัญชี ชื่อ คำยินยอม และเวลา แต่ยังไม่ผูก hash กับไฟล์เอกสาร จึงห้ามใช้รายการนี้แทนบริการลงนามที่ผ่านการตรวจด้านกฎหมายและความน่าเชื่อถือ</p></div>
             </div>
-            <div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setContractToSign(null)}>ยกเลิก</button><button className="primary-button" disabled={isSaving || !signatureForm.consent || signatureForm.signedName.trim() !== contractSigningEmployee.name.trim()}>{isSaving ? "กำลังลงนาม..." : "ยืนยันและลงนามสัญญา"}</button></div>
+            <div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setContractToSign(null)}>ยกเลิก</button><button className="primary-button" disabled={isSaving || !signatureForm.consent || signatureForm.signedName.trim() !== contractSigningEmployee.name.trim()}>{isSaving ? "กำลังบันทึก..." : "ยืนยันขั้นตอน (Pilot)"}</button></div>
           </form>
         </div>
       )}
@@ -4703,7 +4788,7 @@ export default function Home() {
         </div>
       )}
 
-      {showAddEmployee && (
+      {showAddEmployee && canManageEmployeeFiles && (
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setShowAddEmployee(false)}>
           <form className="employee-modal" onSubmit={addEmployee} role="dialog" aria-modal="true" aria-labelledby="add-employee-title">
             <div className="modal-header"><div><p className="eyebrow">ทะเบียนพนักงาน</p><h2 id="add-employee-title">เพิ่มพนักงานใหม่</h2><small>ข้อมูลนี้จะพร้อมสำหรับการประเมินในทุกรอบ</small></div><button type="button" className="modal-close" onClick={() => setShowAddEmployee(false)} aria-label="ปิดหน้าต่าง">×</button></div>
@@ -4719,19 +4804,21 @@ export default function Home() {
       )}
 
       {!isEmployeeUser && <AiAssistant open={showAiAssistant} context={peopleAiContext} onClose={() => setShowAiAssistant(false)} onSystemAction={handlePeopleAiAction} />}
-      <div className={`toast ${toast ? "show" : ""}`} role="status"><span>✓</span>{toast}</div>
+      <div className={`toast ${toast ? `show ${toast.tone}` : ""}`} role={toast?.tone === "error" ? "alert" : "status"} aria-live={toast?.tone === "error" ? "assertive" : "polite"} aria-atomic="true"><span>{toast?.tone === "error" ? "!" : "✓"}</span>{toast?.message}</div>
     </main>
   );
 }
 
 function EmployeeAvatar({ employee, profile, className = "avatar-md" }: { employee: EmployeeRecord; profile?: EmployeeProfileRecord | null; className?: string }) {
   const imageVersion = profile?.profileImageUpdatedAt ? encodeURIComponent(profile.profileImageUpdatedAt) : "1";
+  const hasValidProfileImage = Boolean(profile?.profileImageKey?.startsWith(`employee-profile-images/${employee.id}/`));
   return (
     <i className={`avatar-media ${className}`} aria-hidden="true">
-      {profile?.profileImageKey
+      <span className="avatar-initials">{employee.initials || makeInitials(employee.name)}</span>
+      {hasValidProfileImage
         // The authenticated R2 route serves private employee images and is not compatible with public image optimization.
-        ? <img src={`/api/profile-image?employeeId=${encodeURIComponent(employee.id)}&v=${imageVersion}`} alt="" loading="lazy" /> // eslint-disable-line @next/next/no-img-element
-        : employee.initials || makeInitials(employee.name)}
+        ? <img src={`/api/profile-image?employeeId=${encodeURIComponent(employee.id)}&v=${imageVersion}`} alt="" loading="lazy" onError={(event) => event.currentTarget.remove()} /> // eslint-disable-line @next/next/no-img-element
+        : null}
     </i>
   );
 }

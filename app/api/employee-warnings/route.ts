@@ -4,6 +4,7 @@ import { ensureDatabase } from "../../../db/initialize";
 import { employees, employeeWarnings } from "../../../db/schema";
 import type { EmployeeWarningRecord } from "../../../lib/kpi-data";
 import { authenticateRequest, authenticatedIdentity, ensureBootstrapAccounts } from "../../../lib/access-control";
+import { internalApiError } from "../../../lib/api-errors";
 
 export const dynamic = "force-dynamic";
 
@@ -74,7 +75,7 @@ function errorResponse(error: unknown) {
   if (message.includes("EMPLOYEE_WARNING_FIELDS_LOCKED")) return Response.json({ error: "ใบเตือนที่ออกแล้วห้ามแก้ไขข้อเท็จจริงหรือไฟล์ต้นฉบับ" }, { status: 409 });
   if (message.includes("EMPLOYEE_WARNING_INVALID_TRANSITION")) return Response.json({ error: "ไม่สามารถเปลี่ยนสถานะใบเตือนตามลำดับนี้ได้" }, { status: 409 });
   if (message.includes("UNIQUE constraint failed")) return Response.json({ error: "เลขที่ใบเตือนนี้มีอยู่แล้ว" }, { status: 409 });
-  return Response.json({ error: message }, { status: 500 });
+  return internalApiError(error, "จัดการใบเตือนไม่สำเร็จ", "employee-warnings");
 }
 
 async function requireAdmin(request: Request) {
