@@ -1,3 +1,5 @@
+import { pbkdf2 } from "node:crypto";
+
 export const PASSWORD_ALGORITHM = "pbkdf2-sha256" as const;
 export const PASSWORD_ITERATIONS = 100_000;
 export const MAX_PASSWORD_ITERATIONS = 100_000;
@@ -132,9 +134,20 @@ async function derivePasswordHash(password: string, saltEncoded: string, iterati
   const pepper = passwordPepper(pepperVersion);
   const pepperKey = await crypto.subtle.importKey("raw", encoder.encode(pepper), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   const pepperedPassword = await crypto.subtle.sign("HMAC", pepperKey, encoder.encode(password.normalize("NFC")));
-  const baseKey = await crypto.subtle.importKey("raw", pepperedPassword, "PBKDF2", false, ["deriveBits"]);
-  const derived = await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt, iterations }, baseKey, PASSWORD_HASH_BYTES * 8);
-  return encodeBase64Url(new Uint8Array(derived));
+  const derived = await derivePbkdf2WithNodeCrypto(new Uint8Array(pepperedPassword), salt, iterations);
+  return encodeBase64Url(derived);
+}
+
+function derivePbkdf2WithNodeCrypto(password: Uint8Array, salt: Uint8Array, iterations: number) {
+  return new Promise<Uint8Array>((resolve, reject) => {
+    pbkdf2(password, salt, iterations, PASSWORD_HASH_BYTES, "sha256", (error, derivedKey) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve(new Uint8Array(derivedKey));
+    });
+  });
 }
 
 function currentPepperVersion() {

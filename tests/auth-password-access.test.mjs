@@ -23,7 +23,7 @@ function assertBefore(block, first, second, label) {
   const secondIndex = block.search(second);
   assert.ok(firstIndex >= 0, `${label}: expected ${first}`);
   assert.ok(secondIndex >= 0, `${label}: expected ${second}`);
-  assert.ok(firstIndex < secondIndex, `${label}: security gate must run before request body parsing`);
+  assert.ok(firstIndex < secondIndex, `${label}: the guard must run before the protected operation`);
 }
 
 test("bootstrap output is compatible with the real PBKDF2 verifier and keeps independent secrets", { timeout: 30_000 }, async () => {
@@ -206,10 +206,11 @@ test("bootstrap output is compatible with the real PBKDF2 verifier and keeps ind
   });
 });
 
-test("the runtime rejects iteration counts above Cloudflare's 100,000 ceiling before WebCrypto derivation", async () => {
-  const [passwordCrypto, generator, schema, initialize, migration, snapshot] = await Promise.all([
+test("the runtime uses async native PBKDF2 with fixed-vector parity and rejects unsupported work before the KDF", async () => {
+  const [passwordCrypto, generator, viteConfig, schema, initialize, migration, snapshot] = await Promise.all([
     source("lib/password-crypto.ts"),
     source("scripts/generate-auth-bootstrap.mjs"),
+    source("vite.config.ts"),
     source("db/schema.ts"),
     source("db/initialize.ts"),
     source("drizzle/0016_jittery_lily_hollister.sql"),
@@ -224,16 +225,47 @@ test("the runtime rejects iteration counts above Cloudflare's 100,000 ceiling be
   assertBefore(
     deriveBlock,
     /iterations > MAX_PASSWORD_ITERATIONS/,
-    /crypto\.subtle\.importKey/,
+    /derivePbkdf2WithNodeCrypto\(/,
     "PBKDF2 platform ceiling",
   );
   assert.match(deriveBlock, /Password iteration count is unsupported on this platform/);
+  assert.match(passwordCrypto, /import \{ pbkdf2 \} from "node:crypto"/);
+  assert.match(deriveBlock, /crypto\.subtle\.importKey\("raw", encoder\.encode\(pepper\), \{ name: "HMAC", hash: "SHA-256" \}/);
+  assert.match(deriveBlock, /crypto\.subtle\.sign\("HMAC", pepperKey, encoder\.encode\(password\.normalize\("NFC"\)\)\)/);
+  assert.match(deriveBlock, /return new Promise<Uint8Array>\(\(resolve, reject\) => \{[\s\S]*?pbkdf2\(password, salt, iterations, PASSWORD_HASH_BYTES, "sha256", \(error, derivedKey\) =>/);
+  assert.doesNotMatch(passwordCrypto, /pbkdf2Sync|crypto\.subtle\.deriveBits|name: "PBKDF2"/);
+  assert.match(viteConfig, /compatibility_flags: \["nodejs_compat"\]/);
   assert.match(generator, /const PASSWORD_ITERATIONS = 100_000/);
+  assert.match(generator, /createHmac\("sha256", pepper\)[\s\S]*?password\.normalize\("NFC"\)/);
+  assert.match(generator, /pbkdf2Sync\(pepperedPassword, salt, PASSWORD_ITERATIONS, 32, "sha256"\)/);
   assert.match(schema, /passwordIterations: integer\("password_iterations"\)\.notNull\(\)\.default\(100000\)/);
   assert.match(initialize, /password_iterations INTEGER NOT NULL DEFAULT 100000/);
   assert.match(migration, /`password_iterations` integer DEFAULT 100000 NOT NULL/);
   assert.equal(snapshot.tables.auth_credentials.columns.password_iterations.default, 100000);
   assert.doesNotMatch(`${passwordCrypto}\n${generator}\n${schema}`, /600_000|600000/);
+
+  const fixedPassword = "People Pulse fixed vector – รหัสผ่าน";
+  const fixedVerifier = "pbkdf2-sha256$100000$1$AAECAwQFBgcICQoLDA0ODw$me-DHdEkZqHOISG6329gWohf7sLJ3JtlHj5z-fLc11E";
+  const cryptoModule = new URL("../lib/password-crypto.ts", import.meta.url).href;
+  const fixedVectorScript = `
+    import { parsePasswordVerifier, verifyPassword } from ${JSON.stringify(cryptoModule)};
+    const verifier = parsePasswordVerifier(process.env.AUTH_FIXED_VERIFIER);
+    const correct = verifier ? await verifyPassword(process.env.AUTH_FIXED_PASSWORD, verifier) : false;
+    const wrong = verifier ? await verifyPassword(process.env.AUTH_FIXED_PASSWORD + "x", verifier) : true;
+    process.stdout.write(JSON.stringify({ parsed: Boolean(verifier), correct, wrong }));
+  `;
+  const fixedVectorResult = spawnSync(process.execPath, ["--experimental-strip-types", "--input-type=module", "--eval", fixedVectorScript], {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      AUTH_FIXED_PASSWORD: fixedPassword,
+      AUTH_FIXED_VERIFIER: fixedVerifier,
+      PEOPLE_PULSE_PASSWORD_PEPPER_VERSION: "1",
+      PEOPLE_PULSE_PASSWORD_PEPPER_V1: "0123456789abcdef0123456789abcdef0123456789abcdef",
+    },
+  });
+  assert.equal(fixedVectorResult.status, 0, fixedVectorResult.stderr || "native PBKDF2 fixed vector must execute");
+  assert.deepEqual(JSON.parse(fixedVectorResult.stdout), { parsed: true, correct: true, wrong: false });
 });
 
 test("every unsafe API checks the centralized same-origin gate before reading a body", async () => {
