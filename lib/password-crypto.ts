@@ -1,8 +1,11 @@
 import { pbkdf2 } from "node:crypto";
 
-export const PASSWORD_ALGORITHM = "pbkdf2-sha256" as const;
+export const LEGACY_PASSWORD_ALGORITHM = "pbkdf2-sha256" as const;
+export const PASSWORD_ALGORITHM = "pbkdf2-sha256-chain-v1" as const;
 export const LEGACY_PASSWORD_ITERATIONS = 100_000;
 export const PASSWORD_ITERATIONS = 600_000;
+export const PASSWORD_STAGE_ITERATIONS = 100_000;
+export const PASSWORD_STAGE_COUNT = PASSWORD_ITERATIONS / PASSWORD_STAGE_ITERATIONS;
 export const MAX_PASSWORD_ITERATIONS = PASSWORD_ITERATIONS;
 export const MIN_PASSWORD_LENGTH = 15;
 export const MAX_PASSWORD_LENGTH = 256;
@@ -23,7 +26,7 @@ export class AuthConfigurationError extends Error {
 export type PasswordVerifier = {
   passwordHash: string;
   passwordSalt: string;
-  passwordAlgorithm: typeof PASSWORD_ALGORITHM;
+  passwordAlgorithm: typeof PASSWORD_ALGORITHM | typeof LEGACY_PASSWORD_ALGORITHM;
   passwordIterations: number;
   pepperVersion: number;
 };
@@ -58,13 +61,13 @@ export async function hashPassword(password: string): Promise<PasswordVerifier> 
   if (validationError) throw new RangeError(validationError);
   const pepperVersion = currentPepperVersion();
   const passwordSalt = randomToken(PASSWORD_SALT_BYTES);
-  const passwordHash = await derivePasswordHash(password, passwordSalt, PASSWORD_ITERATIONS, pepperVersion);
+  const passwordHash = await derivePasswordHash(password, passwordSalt, PASSWORD_ALGORITHM, PASSWORD_ITERATIONS, pepperVersion);
   return { passwordHash, passwordSalt, passwordAlgorithm: PASSWORD_ALGORITHM, passwordIterations: PASSWORD_ITERATIONS, pepperVersion };
 }
 
 export async function verifyPassword(password: string, verifier: PasswordVerifier) {
   if (!passwordInputIsWithinLimit(password)) return false;
-  if (verifier.passwordAlgorithm !== PASSWORD_ALGORITHM || !passwordIterationsAreSupported(verifier.passwordIterations)) {
+  if (!passwordVerifierIsSupported(verifier.passwordAlgorithm, verifier.passwordIterations)) {
     await dummyVerifyPassword(password);
     return false;
   }
@@ -74,14 +77,26 @@ export async function verifyPassword(password: string, verifier: PasswordVerifie
     await dummyVerifyPassword(password);
     return false;
   }
-  const calculated = decodeBase64Url(await derivePasswordHash(password, verifier.passwordSalt, verifier.passwordIterations, verifier.pepperVersion));
+  const calculated = decodeBase64Url(await derivePasswordHash(
+    password,
+    verifier.passwordSalt,
+    verifier.passwordAlgorithm,
+    verifier.passwordIterations,
+    verifier.pepperVersion,
+  ));
   return Boolean(calculated && timingSafeEqual(calculated, storedHash));
 }
 
 export async function dummyVerifyPassword(password: string) {
   if (!passwordInputIsWithinLimit(password)) return false;
   const dummySalt = "cGVvcGxlLXB1bHNlLWR1bW15LXNhbHQ";
-  const calculated = decodeBase64Url(await derivePasswordHash(password, dummySalt, PASSWORD_ITERATIONS, currentPepperVersion()));
+  const calculated = decodeBase64Url(await derivePasswordHash(
+    password,
+    dummySalt,
+    PASSWORD_ALGORITHM,
+    PASSWORD_ITERATIONS,
+    currentPepperVersion(),
+  ));
   const impossibleHash = new Uint8Array(PASSWORD_HASH_BYTES);
   return Boolean(calculated && timingSafeEqual(calculated, impossibleHash) && false);
 }
@@ -100,11 +115,22 @@ export function parsePasswordVerifier(value: string): PasswordVerifier | null {
   const [passwordAlgorithm, iterationsRaw, pepperVersionRaw, passwordSalt, passwordHash, extra] = value.trim().split("$");
   const passwordIterations = Number(iterationsRaw);
   const pepperVersion = Number(pepperVersionRaw);
-  if (extra !== undefined || passwordAlgorithm !== PASSWORD_ALGORITHM || !passwordIterationsAreSupported(passwordIterations) || !Number.isInteger(pepperVersion) || pepperVersion < 1) return null;
+  if (
+    extra !== undefined
+    || !passwordVerifierIsSupported(passwordAlgorithm, passwordIterations)
+    || !Number.isInteger(pepperVersion)
+    || pepperVersion < 1
+  ) return null;
   const salt = decodeBase64Url(passwordSalt ?? "");
   const hash = decodeBase64Url(passwordHash ?? "");
   if (!salt || salt.byteLength < PASSWORD_SALT_BYTES || hash?.byteLength !== PASSWORD_HASH_BYTES) return null;
-  return { passwordAlgorithm, passwordIterations, pepperVersion, passwordSalt, passwordHash };
+  return {
+    passwordAlgorithm: passwordAlgorithm as PasswordVerifier["passwordAlgorithm"],
+    passwordIterations,
+    pepperVersion,
+    passwordSalt,
+    passwordHash,
+  };
 }
 
 export function randomToken(byteLength = 32) {
@@ -126,22 +152,47 @@ export async function privateLookupHash(purpose: string, value: string) {
   return encodeBase64Url(new Uint8Array(signature));
 }
 
-async function derivePasswordHash(password: string, saltEncoded: string, iterations: number, pepperVersion: number) {
-  if (!passwordIterationsAreSupported(iterations)) {
-    throw new AuthConfigurationError("Password iteration count is unsupported on this platform.");
+async function derivePasswordHash(
+  password: string,
+  saltEncoded: string,
+  algorithm: PasswordVerifier["passwordAlgorithm"],
+  iterations: number,
+  pepperVersion: number,
+) {
+  if (!passwordVerifierIsSupported(algorithm, iterations)) {
+    throw new AuthConfigurationError("Password verifier is unsupported on this platform.");
   }
   const salt = decodeBase64Url(saltEncoded);
   if (!salt) throw new AuthConfigurationError("Password salt is invalid.");
   const pepper = passwordPepper(pepperVersion);
   const pepperKey = await crypto.subtle.importKey("raw", encoder.encode(pepper), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   const pepperedPassword = await crypto.subtle.sign("HMAC", pepperKey, encoder.encode(password.normalize("NFC")));
-  const derived = await derivePbkdf2WithNodeCrypto(new Uint8Array(pepperedPassword), salt, iterations);
+  const derived = algorithm === LEGACY_PASSWORD_ALGORITHM
+    ? await derivePbkdf2WithNodeCrypto(new Uint8Array(pepperedPassword), salt, LEGACY_PASSWORD_ITERATIONS)
+    : await deriveChainedPbkdf2(new Uint8Array(pepperedPassword), salt);
   return encodeBase64Url(derived);
 }
 
-function passwordIterationsAreSupported(iterations: number) {
-  return Number.isInteger(iterations)
-    && (iterations === LEGACY_PASSWORD_ITERATIONS || iterations === PASSWORD_ITERATIONS);
+function passwordVerifierIsSupported(algorithm: string, iterations: number) {
+  return Number.isInteger(iterations) && (
+    (algorithm === LEGACY_PASSWORD_ALGORITHM && iterations === LEGACY_PASSWORD_ITERATIONS)
+    || (algorithm === PASSWORD_ALGORITHM && iterations === PASSWORD_ITERATIONS)
+  );
+}
+
+async function deriveChainedPbkdf2(password: Uint8Array, salt: Uint8Array) {
+  let stageInput = password;
+  for (let stage = 0; stage < PASSWORD_STAGE_COUNT; stage += 1) {
+    const stageSalt = new Uint8Array(salt.byteLength + 4);
+    stageSalt.set(salt);
+    new DataView(stageSalt.buffer).setUint32(salt.byteLength, stage + 1, false);
+    stageInput = await derivePbkdf2WithNodeCrypto(
+      stageInput,
+      stageSalt,
+      PASSWORD_STAGE_ITERATIONS,
+    );
+  }
+  return stageInput;
 }
 
 function derivePbkdf2WithNodeCrypto(password: Uint8Array, salt: Uint8Array, iterations: number) {

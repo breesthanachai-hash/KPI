@@ -46,7 +46,7 @@ test("bootstrap output is compatible with the real PBKDF2 verifier and keeps ind
   assert.ok(environment.PEOPLE_PULSE_PASSWORD_PEPPER_V1.length >= 32);
   assert.ok(environment.PEOPLE_PULSE_RATE_LIMIT_SECRET.length >= 32);
   assert.notEqual(environment.PEOPLE_PULSE_PASSWORD_PEPPER_V1, environment.PEOPLE_PULSE_RATE_LIMIT_SECRET);
-  assert.match(environment.PEOPLE_PULSE_BOOTSTRAP_PASSWORD_HASH, /^pbkdf2-sha256\$600000\$1\$[A-Za-z0-9_-]+\$[A-Za-z0-9_-]+$/);
+  assert.match(environment.PEOPLE_PULSE_BOOTSTRAP_PASSWORD_HASH, /^pbkdf2-sha256-chain-v1\$600000\$1\$[A-Za-z0-9_-]+\$[A-Za-z0-9_-]+$/);
   assert.doesNotMatch(bootstrapScript, /argument\(["']--password["']\)/);
   assert.match(bootstrapScript, /จะไม่รับรหัสผ่านผ่าน command line/);
 
@@ -172,7 +172,7 @@ test("bootstrap output is compatible with the real PBKDF2 verifier and keeps ind
   });
 });
 
-test("the runtime accepts exact legacy/current PBKDF2 costs, uses current cost for new work, and rejects gaps before the KDF", async () => {
+test("the runtime accepts legacy PBKDF2 and uses a Worker-safe six-stage current verifier", async () => {
   const [passwordCrypto, generator, viteConfig, schema, initialize, migration, snapshot] = await Promise.all([
     source("lib/password-crypto.ts"),
     source("scripts/generate-auth-bootstrap.mjs"),
@@ -184,30 +184,39 @@ test("the runtime accepts exact legacy/current PBKDF2 costs, uses current cost f
   ]);
 
   assert.match(passwordCrypto, /export const LEGACY_PASSWORD_ITERATIONS = 100_000/);
+  assert.match(passwordCrypto, /export const LEGACY_PASSWORD_ALGORITHM = "pbkdf2-sha256"/);
+  assert.match(passwordCrypto, /export const PASSWORD_ALGORITHM = "pbkdf2-sha256-chain-v1"/);
   assert.match(passwordCrypto, /export const PASSWORD_ITERATIONS = 600_000/);
+  assert.match(passwordCrypto, /export const PASSWORD_STAGE_ITERATIONS = 100_000/);
+  assert.match(passwordCrypto, /export const PASSWORD_STAGE_COUNT = PASSWORD_ITERATIONS \/ PASSWORD_STAGE_ITERATIONS/);
   assert.match(passwordCrypto, /export const MAX_PASSWORD_ITERATIONS = PASSWORD_ITERATIONS/);
-  assert.match(passwordCrypto, /function passwordIterationsAreSupported\(iterations: number\)[\s\S]*?Number\.isInteger\(iterations\)[\s\S]*?iterations === LEGACY_PASSWORD_ITERATIONS \|\| iterations === PASSWORD_ITERATIONS/);
-  assert.match(passwordCrypto, /verifier\.passwordAlgorithm !== PASSWORD_ALGORITHM \|\| !passwordIterationsAreSupported\(verifier\.passwordIterations\)/);
-  assert.match(passwordCrypto, /passwordAlgorithm !== PASSWORD_ALGORITHM \|\| !passwordIterationsAreSupported\(passwordIterations\)/);
+  assert.match(passwordCrypto, /function passwordVerifierIsSupported\(algorithm: string, iterations: number\)[\s\S]*?algorithm === LEGACY_PASSWORD_ALGORITHM && iterations === LEGACY_PASSWORD_ITERATIONS[\s\S]*?algorithm === PASSWORD_ALGORITHM && iterations === PASSWORD_ITERATIONS/);
+  assert.match(passwordCrypto, /!passwordVerifierIsSupported\(verifier\.passwordAlgorithm, verifier\.passwordIterations\)/);
+  assert.match(passwordCrypto, /!passwordVerifierIsSupported\(passwordAlgorithm, passwordIterations\)/);
   const deriveBlock = passwordCrypto.match(/async function derivePasswordHash[\s\S]*?(?=\nfunction currentPepperVersion)/)?.[0] ?? "";
   assertBefore(
     deriveBlock,
-    /!passwordIterationsAreSupported\(iterations\)/,
+    /!passwordVerifierIsSupported\(algorithm, iterations\)/,
     /derivePbkdf2WithNodeCrypto\(/,
-    "PBKDF2 supported-cost guard",
+    "password verifier support guard",
   );
-  assert.match(deriveBlock, /Password iteration count is unsupported on this platform/);
+  assert.match(deriveBlock, /Password verifier is unsupported on this platform/);
   assert.match(passwordCrypto, /import \{ pbkdf2 \} from "node:crypto"/);
   assert.match(deriveBlock, /crypto\.subtle\.importKey\("raw", encoder\.encode\(pepper\), \{ name: "HMAC", hash: "SHA-256" \}/);
   assert.match(deriveBlock, /crypto\.subtle\.sign\("HMAC", pepperKey, encoder\.encode\(password\.normalize\("NFC"\)\)\)/);
+  assert.match(deriveBlock, /for \(let stage = 0; stage < PASSWORD_STAGE_COUNT; stage \+= 1\)/);
+  assert.match(deriveBlock, /setUint32\(salt\.byteLength, stage \+ 1, false\)/);
+  assert.match(deriveBlock, /derivePbkdf2WithNodeCrypto\([\s\S]*?PASSWORD_STAGE_ITERATIONS/);
   assert.match(deriveBlock, /return new Promise<Uint8Array>\(\(resolve, reject\) => \{[\s\S]*?pbkdf2\(password, salt, iterations, PASSWORD_HASH_BYTES, "sha256", \(error, derivedKey\) =>/);
   assert.doesNotMatch(passwordCrypto, /pbkdf2Sync|crypto\.subtle\.deriveBits|name: "PBKDF2"/);
-  assert.match(passwordCrypto, /hashPassword[\s\S]*?derivePasswordHash\(password, passwordSalt, PASSWORD_ITERATIONS, pepperVersion\)/);
-  assert.match(passwordCrypto, /dummyVerifyPassword[\s\S]*?derivePasswordHash\(password, dummySalt, PASSWORD_ITERATIONS, currentPepperVersion\(\)\)/);
+  assert.match(passwordCrypto, /hashPassword[\s\S]*?derivePasswordHash\(password, passwordSalt, PASSWORD_ALGORITHM, PASSWORD_ITERATIONS, pepperVersion\)/);
+  assert.match(passwordCrypto, /dummyVerifyPassword[\s\S]*?dummySalt,[\s\S]*?PASSWORD_ALGORITHM,[\s\S]*?PASSWORD_ITERATIONS/);
   assert.match(viteConfig, /compatibility_flags: \["nodejs_compat"\]/);
+  assert.match(generator, /const PASSWORD_ALGORITHM = "pbkdf2-sha256-chain-v1"/);
   assert.match(generator, /const PASSWORD_ITERATIONS = 600_000/);
+  assert.match(generator, /const PASSWORD_STAGE_ITERATIONS = 100_000/);
   assert.match(generator, /createHmac\("sha256", pepper\)[\s\S]*?password\.normalize\("NFC"\)/);
-  assert.match(generator, /pbkdf2Sync\(pepperedPassword, salt, PASSWORD_ITERATIONS, 32, "sha256"\)/);
+  assert.match(generator, /for \(let stage = 0; stage < PASSWORD_STAGE_COUNT; stage \+= 1\)[\s\S]*?writeUInt32BE\(stage \+ 1, salt\.length\)[\s\S]*?pbkdf2Sync\(hash, stageSalt, PASSWORD_STAGE_ITERATIONS, 32, "sha256"\)/);
   assert.match(schema, /passwordIterations: integer\("password_iterations"\)\.notNull\(\)\.default\(100000\)/);
   assert.match(initialize, /password_iterations INTEGER NOT NULL DEFAULT 100000/);
   assert.match(migration, /`password_iterations` integer DEFAULT 100000 NOT NULL/);
@@ -215,7 +224,7 @@ test("the runtime accepts exact legacy/current PBKDF2 costs, uses current cost f
 
   const fixedPassword = "People Pulse fixed vector – รหัสผ่าน";
   const legacyFixedVerifier = "pbkdf2-sha256$100000$1$AAECAwQFBgcICQoLDA0ODw$me-DHdEkZqHOISG6329gWohf7sLJ3JtlHj5z-fLc11E";
-  const currentFixedVerifier = "pbkdf2-sha256$600000$1$AAECAwQFBgcICQoLDA0ODw$YKbBH5Ppt-VO3cp7V3Ualsr6hSTbOL1XcERp74GOL7M";
+  const currentFixedVerifier = "pbkdf2-sha256-chain-v1$600000$1$AAECAwQFBgcICQoLDA0ODw$8Bxh8MfcJ5zUL5B2a3NaeLGEfCzudEWuPb9a6BQWtbk";
   const cryptoModule = new URL("../lib/password-crypto.ts", import.meta.url).href;
   const fixedVectorScript = `
     import { parsePasswordVerifier, verifyPassword } from ${JSON.stringify(cryptoModule)};
@@ -496,12 +505,13 @@ test("bootstrap repairs only a pristine or pre-first-party legacy owner through 
   assert.match(bootstrap, /if \(!hasAnyBootstrapConfig\) return/);
   assert.match(bootstrap, /if \(!loginIdCanonical \|\| !verifier \|\| !\/\^\[/);
   assert.match(bootstrap, /configuration is incomplete or invalid/);
-  const currentCostGuard = /if \(!existingCredential && verifier\.passwordIterations !== PASSWORD_ITERATIONS\)/;
+  const currentCostGuard = /!existingCredential[\s\S]*?verifier\.passwordAlgorithm !== PASSWORD_ALGORITHM \|\| verifier\.passwordIterations !== PASSWORD_ITERATIONS/;
   assert.match(bootstrap, currentCostGuard);
   assertBefore(bootstrap, currentCostGuard, /db\.insert\(userAccounts\)/, "empty-database bootstrap work factor");
   assertBefore(bootstrap, currentCostGuard, /db\.insert\(authCredentials\)/, "empty-database bootstrap credential");
 
   const executableBootstrap = `
+    const PASSWORD_ALGORITHM = "pbkdf2-sha256-chain-v1";
     const PASSWORD_ITERATIONS = 600000;
     const LEGACY_PASSWORD_ITERATIONS = 100000;
     const userAccounts = { id: "id" };

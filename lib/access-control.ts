@@ -5,6 +5,7 @@ import { authCredentials, authEvents, authSessions, employees, userAccounts } fr
 import { getRole, type UserAccountRecord } from "./kpi-data";
 import {
   LEGACY_PASSWORD_ITERATIONS,
+  PASSWORD_ALGORITHM,
   PASSWORD_ITERATIONS,
   hashOpaqueToken,
   parsePasswordVerifier,
@@ -99,7 +100,10 @@ async function initializeBootstrapAccounts() {
   ]);
   const existingOwner = ownerRows[0];
   const existingCredential = credentialRows[0];
-  if (!existingCredential && verifier.passwordIterations !== PASSWORD_ITERATIONS) {
+  if (
+    !existingCredential
+    && (verifier.passwordAlgorithm !== PASSWORD_ALGORITHM || verifier.passwordIterations !== PASSWORD_ITERATIONS)
+  ) {
     throw new Error("A new bootstrap credential must use the current password work factor.");
   }
   if (!existingOwner) {

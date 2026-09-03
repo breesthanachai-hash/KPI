@@ -1,7 +1,9 @@
 import { createHmac, pbkdf2Sync, randomBytes } from "node:crypto";
 
-const PASSWORD_ALGORITHM = "pbkdf2-sha256";
+const PASSWORD_ALGORITHM = "pbkdf2-sha256-chain-v1";
 const PASSWORD_ITERATIONS = 600_000;
+const PASSWORD_STAGE_ITERATIONS = 100_000;
+const PASSWORD_STAGE_COUNT = PASSWORD_ITERATIONS / PASSWORD_STAGE_ITERATIONS;
 const PEPPER_VERSION = 1;
 const PASSWORD_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%";
 const deprecatedRepairMode = process.argv.includes("--repair-existing");
@@ -32,7 +34,13 @@ function verifier(password, pepper) {
   const pepperedPassword = createHmac("sha256", pepper)
     .update(password.normalize("NFC"), "utf8")
     .digest();
-  const hash = pbkdf2Sync(pepperedPassword, salt, PASSWORD_ITERATIONS, 32, "sha256");
+  let hash = pepperedPassword;
+  for (let stage = 0; stage < PASSWORD_STAGE_COUNT; stage += 1) {
+    const stageSalt = Buffer.alloc(salt.length + 4);
+    salt.copy(stageSalt);
+    stageSalt.writeUInt32BE(stage + 1, salt.length);
+    hash = pbkdf2Sync(hash, stageSalt, PASSWORD_STAGE_ITERATIONS, 32, "sha256");
+  }
   return [
     PASSWORD_ALGORITHM,
     PASSWORD_ITERATIONS,

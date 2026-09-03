@@ -239,13 +239,13 @@ npm run auth:bootstrap -- --login-id admin --email owner@example.com --name "ช
 - `PEOPLE_PULSE_BOOTSTRAP_LOGIN_ID`, `PEOPLE_PULSE_BOOTSTRAP_PASSWORD_HASH`, `PEOPLE_PULSE_BOOTSTRAP_ADMIN_EMAIL` และ `PEOPLE_PULSE_BOOTSTRAP_ADMIN_NAME` — บัญชี Admin แรก โดยสามค่าหลักต้องกำหนดครบหรือไม่กำหนดเลย
 - `PEOPLE_PULSE_CANONICAL_ORIGIN=https://peoplepulse.profaiprofit.com` — Origin หลักที่อนุญาตใน production
 
-ระบบใช้ `PBKDF2-SHA-256` ผ่าน `node:crypto` ที่ **600,000 รอบ** สำหรับรหัสใหม่ การรีเซ็ต และการเปลี่ยนรหัสทุกครั้ง ตัวตรวจรหัสยอมรับจำนวนรอบแบบตายตัวเพียง 2 ค่า: 600,000 รอบสำหรับปัจจุบัน และ 100,000 รอบสำหรับ credential เก่าที่มีอยู่แล้วระหว่างรอบบังคับเปลี่ยนรหัสเท่านั้น ค่าอื่นจะถูกปฏิเสธก่อนเริ่มคำนวณ ห้ามแก้จำนวนรอบเองเฉพาะบาง environment เพราะจะทำให้บัญชีเข้าใช้ไม่ได้และนโยบาย runtime ไม่ตรงกัน
+ระบบใช้ `PBKDF2-SHA-256` แบบต่อเนื่อง 6 ช่วงผ่าน `node:crypto` ช่วงละ **100,000 รอบ** รวมงาน **600,000 รอบ** สำหรับรหัสใหม่ การรีเซ็ต และการเปลี่ยนรหัสทุกครั้ง รูปแบบปัจจุบันชื่อ `pbkdf2-sha256-chain-v1` เพื่อไม่ให้สับสนกับ PBKDF2 แบบช่วงเดียว ตัวตรวจรหัสยอมรับเพียง 2 รูปแบบตายตัว: รูปแบบปัจจุบันรวม 600,000 รอบ และ credential เก่า `pbkdf2-sha256` 100,000 รอบระหว่างการบังคับเปลี่ยนรหัสเท่านั้น วิธีแบ่งช่วงนี้จำเป็นเพราะ Worker จำกัด PBKDF2 หนึ่งคำสั่งไม่เกิน 100,000 รอบ ค่าอื่นหรือการจับคู่ algorithm/จำนวนรอบที่ไม่ตรงนโยบายจะถูกปฏิเสธก่อนเริ่มคำนวณ
 
 ห้าม commit ค่าเหล่านี้หรือไฟล์ `.dev.vars` ลง Git; repository ignore `.dev.vars*` และยอมให้ commit ได้เฉพาะ `.dev.vars.example` ที่ไม่มี secret ห้ามสร้างค่า `PEOPLE_PULSE_PASSWORD_PEPPER_V1` ใหม่ทับของเดิมเมื่อมีผู้ใช้แล้ว เพราะรหัสผ่านเดิมจะตรวจไม่ได้ การหมุน pepper ต้องเก็บเวอร์ชันเก่าไว้จนกว่าจะเปลี่ยนรหัสผ่านครบทุกบัญชี
 
-`0017_legacy_bootstrap_repair.sql` และเงื่อนไขซ่อมใน runtime คงไว้เพื่อรองรับประวัติการอัปเกรดที่ทำไปแล้วเท่านั้น คำสั่ง `--repair-existing` ถูกยกเลิกและสคริปต์จะหยุดโดยไม่สร้าง verifier หรือ secret ใหม่ บัญชีเดิมต้องเข้าสู่ระบบด้วยรหัสชั่วคราวเดิม แล้วเปลี่ยนรหัสผ่านผ่านหน้าบังคับเปลี่ยนรหัส ระบบจะเขียน credential 600,000 รอบด้วย compare-and-swap, เพิ่ม credential version, เพิกถอน session เก่า และบันทึก audit ในขั้นตอนที่ตรวจสอบได้ ห้ามแก้ hash, salt, iteration หรือ credential version ใน D1 ด้วยมือ
+`0017_legacy_bootstrap_repair.sql` และเงื่อนไขซ่อมใน runtime คงไว้เพื่อรองรับประวัติการอัปเกรดที่ทำไปแล้วเท่านั้น คำสั่ง `--repair-existing` ถูกยกเลิกและสคริปต์จะหยุดโดยไม่สร้าง verifier หรือ secret ใหม่ บัญชีเดิมต้องเข้าสู่ระบบด้วยรหัสชั่วคราวเดิม แล้วเปลี่ยนรหัสผ่านผ่านหน้าบังคับเปลี่ยนรหัส ระบบจะเขียน credential แบบ chain รวม 600,000 รอบด้วย compare-and-swap, เพิ่ม credential version, เพิกถอน session เก่า และบันทึก audit ในขั้นตอนที่ตรวจสอบได้ ห้ามแก้ hash, salt, iteration หรือ credential version ใน D1 ด้วยมือ
 
-การสร้าง bootstrap บนฐานใหม่ยอมรับเฉพาะ verifier 600,000 รอบจาก generator รุ่นปัจจุบัน หากนำ bootstrap hash เก่า 100,000 รอบไปใช้กับฐานที่ยังไม่มี credential ระบบจะหยุดก่อนสร้างบัญชีหรือ credential ส่วนฐานที่มี credential 100,000 รอบอยู่แล้วจะตรวจรหัสเดิมได้ชั่วคราวเพื่อพาเจ้าของไปยังหน้าบังคับเปลี่ยนรหัสเท่านั้น
+การสร้าง bootstrap บนฐานใหม่ยอมรับเฉพาะ verifier `pbkdf2-sha256-chain-v1` รวม 600,000 รอบจาก generator รุ่นปัจจุบัน หากนำ bootstrap hash เก่า 100,000 รอบไปใช้กับฐานที่ยังไม่มี credential ระบบจะหยุดก่อนสร้างบัญชีหรือ credential ส่วนฐานที่มี credential 100,000 รอบอยู่แล้วจะตรวจรหัสเดิมได้ชั่วคราวเพื่อพาเจ้าของไปยังหน้าบังคับเปลี่ยนรหัสเท่านั้น
 
 ก่อนเปิด Sites เป็น `public` ให้คำสั่งแรกคืน 0 แถว เพื่อยืนยันว่าบัญชี active ทุกบัญชีใช้ค่าปัจจุบัน และให้คำสั่งที่สองคืน 0 แถว เพื่อยืนยันว่าเจ้าของระบบเปลี่ยนรหัสชั่วคราวเสร็จแล้ว:
 
@@ -255,7 +255,7 @@ FROM auth_credentials AS credential
 INNER JOIN user_accounts AS account ON account.id = credential.user_account_id
 WHERE account.status = 'active'
   AND (
-    credential.password_algorithm <> 'pbkdf2-sha256'
+    credential.password_algorithm <> 'pbkdf2-sha256-chain-v1'
     OR credential.password_iterations <> 600000
   );
 
