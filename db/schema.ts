@@ -93,7 +93,7 @@ export const authRateLimits = sqliteTable("auth_rate_limits", {
 export const authEvents = sqliteTable("auth_events", {
   id: text("id").primaryKey(),
   userAccountId: text("user_account_id").references(() => userAccounts.id, { onDelete: "set null" }),
-  eventType: text("event_type", { enum: ["login_succeeded", "login_failed", "login_rate_limited", "logout", "sessions_revoked", "password_changed", "credential_created", "credential_reset", "credential_updated", "bootstrap_credential_repaired"] }).notNull(),
+  eventType: text("event_type", { enum: ["login_succeeded", "login_failed", "login_rate_limited", "logout", "sessions_revoked", "password_changed", "credential_created", "credential_reset", "credential_updated", "account_deleted", "bootstrap_credential_repaired"] }).notNull(),
   sourceHash: text("source_hash").notNull().default(""),
   detail: text("detail").notNull().default(""),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),

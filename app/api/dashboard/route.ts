@@ -840,6 +840,11 @@ type UserAccountPayload = {
   status?: "active" | "inactive";
 };
 
+type DeleteUserAccountPayload = {
+  action: "deleteUserAccount";
+  accountId?: string;
+};
+
 type MarkNotificationsReadPayload = {
   action: "markNotificationsRead";
   notificationIds?: string[];
@@ -881,10 +886,10 @@ export async function POST(request: Request) {
     const currentUser = authentication.currentUser;
     await ensureSeedData();
     const db = getDb();
-    const payload = await request.json() as EmployeePayload | EvaluationPayload | HrPlanPayload | CompleteTalentActionPayload | AttendancePayload | AttendanceApprovalPayload | SkillAchievementPayload | ProjectPayload | WorkItemPayload | ReviewWorkSubmissionPayload | RecordPointEventPayload | RunMonthlyPointCyclePayload | RedeemRewardPayload | UpdateRewardRedemptionPayload | EmployeeProfilePayload | DocumentStatusPayload | ContractPayload | SignContractPayload | SendContractPayload | UserAccountPayload | MarkNotificationsReadPayload | SaveOrganizationPolicyPayload | PublishOrganizationPolicyPayload | AcknowledgeOrganizationPolicyPayload;
+    const payload = await request.json() as EmployeePayload | EvaluationPayload | HrPlanPayload | CompleteTalentActionPayload | AttendancePayload | AttendanceApprovalPayload | SkillAchievementPayload | ProjectPayload | WorkItemPayload | ReviewWorkSubmissionPayload | RecordPointEventPayload | RunMonthlyPointCyclePayload | RedeemRewardPayload | UpdateRewardRedemptionPayload | EmployeeProfilePayload | DocumentStatusPayload | ContractPayload | SignContractPayload | SendContractPayload | UserAccountPayload | DeleteUserAccountPayload | MarkNotificationsReadPayload | SaveOrganizationPolicyPayload | PublishOrganizationPolicyPayload | AcknowledgeOrganizationPolicyPayload;
     const pointPolicyRows = await db.select().from(organizationPolicies);
     const { policy: activePointPolicy, rules: activePointRules } = pointPolicyFromRows(pointPolicyRows);
-    const adminOnlyActions = new Set(["createEmployee", "saveHrPlan", "verifySkillAchievement", "runMonthlyPointCycle", "saveEmployeeProfile", "updateDocumentStatus", "createContract", "sendContract", "saveUserAccount", "saveOrganizationPolicy", "publishOrganizationPolicy", "updateRewardRedemption"]);
+    const adminOnlyActions = new Set(["createEmployee", "saveHrPlan", "verifySkillAchievement", "runMonthlyPointCycle", "saveEmployeeProfile", "updateDocumentStatus", "createContract", "sendContract", "saveUserAccount", "deleteUserAccount", "saveOrganizationPolicy", "publishOrganizationPolicy", "updateRewardRedemption"]);
     const teamActions = new Set(["saveEvaluation", "completeTalentAction", "approveAttendance", "saveProject", "reviewWorkSubmission", "recordPointEvent"]);
     const employeePortalActions = new Set(["markNotificationsRead", "saveWorkItem", "redeemReward", "acknowledgeOrganizationPolicy", "signContract"]);
     if (currentUser.role === "employee" && !employeePortalActions.has(payload.action)) return Response.json({ error: "สิทธิ์พนักงานใช้ได้เฉพาะงานของฉัน การแจ้งเตือน การแลกรางวัล การรับทราบกฎองค์กร และการลงนามสัญญาของตนเอง" }, { status: 403 });
@@ -1105,6 +1110,32 @@ export async function POST(request: Request) {
         savedReads.push(record);
       }
       return Response.json({ notificationReads: savedReads });
+    }
+
+    if (payload.action === "deleteUserAccount") {
+      const accountId = typeof payload.accountId === "string" ? payload.accountId.trim().slice(0, 100) : "";
+      if (!accountId) return Response.json({ error: "กรุณาเลือกบัญชีที่ต้องการลบ" }, { status: 400 });
+      if (accountId === currentUser.id) return Response.json({ error: "ไม่สามารถลบบัญชีที่กำลังใช้งานอยู่" }, { status: 409 });
+      if (accountId === "user-owner") return Response.json({ error: "บัญชีเจ้าของระบบลบไม่ได้ สามารถพักสิทธิ์บัญชีอื่นแทนได้" }, { status: 409 });
+      const [account] = await db.select().from(userAccounts).where(eq(userAccounts.id, accountId)).limit(1);
+      if (!account) return Response.json({ error: "ไม่พบบัญชีผู้ใช้ที่เลือก" }, { status: 404 });
+      if (account.role === "admin" && account.status === "active") {
+        const activeAdmins = await db.select({ id: userAccounts.id }).from(userAccounts).where(and(eq(userAccounts.role, "admin"), eq(userAccounts.status, "active")));
+        if (activeAdmins.length <= 1) return Response.json({ error: "ต้องมีบัญชี HR / Admin ที่ใช้งานอยู่อย่างน้อย 1 บัญชี" }, { status: 409 });
+      }
+      const now = new Date().toISOString();
+      await db.batch([
+        db.insert(authEvents).values({
+          id: `auth-event-${crypto.randomUUID()}`,
+          userAccountId: accountId,
+          eventType: "account_deleted",
+          sourceHash: await requestSourceHash(request),
+          detail: `target:${accountId};actor:${currentUser.id}`,
+          createdAt: now,
+        }),
+        db.delete(userAccounts).where(eq(userAccounts.id, accountId)),
+      ]);
+      return Response.json({ deletedUserAccountId: accountId });
     }
 
     if (payload.action === "saveUserAccount") {

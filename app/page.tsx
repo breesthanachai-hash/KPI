@@ -2773,6 +2773,31 @@ export default function Home() {
     }
   };
 
+  const deleteUserAccount = async (account: PublicUserAccount) => {
+    if (account.id === currentUser?.id || account.id === "user-owner") return;
+    const confirmed = window.confirm(
+      `ลบบัญชี “${account.displayName}” ใช่หรือไม่?\n\nบัญชี รหัสผ่าน และเซสชันจะถูกลบถาวร แต่โปรไฟล์พนักงานและประวัติงานจะยังอยู่`,
+    );
+    if (!confirmed) return;
+    setIsSaving(true);
+    try {
+      const response = await fetch("/api/dashboard", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "deleteUserAccount", accountId: account.id }),
+      });
+      const body = await response.json() as { deletedUserAccountId?: string; error?: string };
+      if (!response.ok || body.deletedUserAccountId !== account.id) throw new Error(body.error ?? "ลบบัญชีผู้ใช้ไม่สำเร็จ");
+      setUserAccounts((items) => items.filter((item) => item.id !== account.id));
+      if (userAccountForm.accountId === account.id) setUserAccountForm(blankUserAccountForm());
+      showToast(`ลบบัญชี ${account.displayName} แล้ว`);
+    } catch (error) {
+      showErrorToast(error, "ลบบัญชีผู้ใช้ไม่สำเร็จ");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const exportReport = () => {
     const rows = employees.map((employee) => {
       const role = getRole(employee.roleId);
@@ -4189,7 +4214,7 @@ export default function Home() {
                       <div className="access-account-role"><strong className={`access-user-kind ${group.id}`}>{group.title}</strong><span className={`access-role-pill ${account.role}`}>{roleName}</span></div>
                       <div className="access-account-link"><strong>{employee?.name ?? (account.role === "admin" ? "สิทธิ์ระดับองค์กร" : "ยังไม่ผูกโปรไฟล์")}</strong><small>{employee ? `ผูกโปรไฟล์แล้ว · ${getRole(employee.roleId).name}` : account.role === "admin" ? "ไม่ต้องผูกโปรไฟล์พนักงาน" : "กรุณาเลือกโปรไฟล์ก่อนเปิดใช้"}</small><small className="access-login-state">{credentialState.detail}</small></div>
                       <b className={`access-status ${credentialState.id}`}>{credentialState.label}</b>
-                      <span className="access-account-actions"><button aria-label={`แก้ไขบัญชีของ ${account.displayName}`} disabled={isSaving || account.id === currentUser?.id} title={account.id === currentUser?.id ? "บัญชีที่กำลังใช้งานให้เปลี่ยนรหัสผ่านจากเมนูโปรไฟล์" : undefined} onClick={() => editUserAccount(account)}>แก้ไข</button><button aria-label={`สร้างรหัสผ่านชั่วคราวใหม่ให้ ${account.displayName}`} disabled={isSaving || account.id === currentUser?.id} onClick={() => prepareUserAccountPasswordReset(account)}>รีเซ็ตรหัส</button><button aria-label={`${account.status === "active" ? "พักสิทธิ์" : "เปิดสิทธิ์"}ของ ${account.displayName}`} disabled={isSaving || account.id === currentUser?.id} onClick={() => void toggleUserAccount(account)}>{account.status === "active" ? "พักสิทธิ์" : "เปิดสิทธิ์"}</button></span>
+                      <span className="access-account-actions"><button aria-label={`แก้ไขบัญชีของ ${account.displayName}`} disabled={isSaving || account.id === currentUser?.id} title={account.id === currentUser?.id ? "บัญชีที่กำลังใช้งานให้เปลี่ยนรหัสผ่านจากเมนูโปรไฟล์" : undefined} onClick={() => editUserAccount(account)}>แก้ไข</button><button aria-label={`สร้างรหัสผ่านชั่วคราวใหม่ให้ ${account.displayName}`} disabled={isSaving || account.id === currentUser?.id} onClick={() => prepareUserAccountPasswordReset(account)}>รีเซ็ตรหัส</button><button aria-label={`${account.status === "active" ? "พักสิทธิ์" : "เปิดสิทธิ์"}ของ ${account.displayName}`} disabled={isSaving || account.id === currentUser?.id} onClick={() => void toggleUserAccount(account)}>{account.status === "active" ? "พักสิทธิ์" : "เปิดสิทธิ์"}</button><button className="delete-account" aria-label={`ลบบัญชีของ ${account.displayName}`} disabled={isSaving || account.id === currentUser?.id || account.id === "user-owner"} title={account.id === "user-owner" ? "บัญชีเจ้าของระบบลบไม่ได้" : account.id === currentUser?.id ? "ไม่สามารถลบบัญชีที่กำลังใช้งาน" : "ลบบัญชีและข้อมูลเข้าสู่ระบบถาวร"} onClick={() => void deleteUserAccount(account)}>ลบบัญชี</button></span>
                     </article>;
                   })}
                   {!group.accounts.length && <div className={`access-account-group-empty ${group.id}`}>ยังไม่มีบัญชี{group.title}</div>}

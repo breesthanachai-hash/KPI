@@ -5552,6 +5552,8 @@ input::placeholder,textarea::placeholder { color: #526f8d !important; opacity: 1
 .access-account-list > article.access-account-row { grid-template-columns: 42px minmax(165px,1fr) 132px minmax(190px,1fr) minmax(100px,auto) minmax(220px,auto); }
 .access-account-actions { min-width: 0; flex-wrap: wrap; }
 .access-account-actions button { flex: 1 1 auto; min-width: 66px; }
+.access-account-actions button.delete-account { border-color: #e5a4b8 !important; background: #fff1f5 !important; color: #9b2850 !important; }
+.access-account-actions button.delete-account:hover:not(:disabled) { border-color: #bd3f69 !important; background: #ffe2eb !important; color: #7d173a !important; }
 .top-profile-menu nav button:disabled { opacity: .52; cursor: wait; }
 .access-denied-page section > button { width: 100%; min-height: 48px; margin-top: 14px; border: 0; border-radius: 12px; padding: 0 16px; background: linear-gradient(135deg,#245fbe,#173f70); color: #fff; cursor: pointer; font-size: 15px; font-weight: 850; }
 

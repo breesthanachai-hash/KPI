@@ -409,7 +409,7 @@ test("login admission is atomic, the sixth ID failure is cheap, and unknown user
   assert.match(authService, /request\.headers\.get\("x-forwarded-for"\)[\s\S]*?"local-development"/);
 });
 
-test("password and access mutations revoke sessions, reject self-admin edits, and close stale credential races", async () => {
+test("password and access mutations revoke sessions, delete accounts safely, and close stale credential races", async () => {
   const [accessControl, authService, dashboardRoute, initialize, migration, page] = await Promise.all([
     source("lib/access-control.ts"),
     source("lib/auth-service.ts"),
@@ -425,6 +425,15 @@ test("password and access mutations revoke sessions, reject self-admin edits, an
   assert.match(changePassword, /await revokeAllSessionsForAccount\(currentUser\.id, "password-changed"\)/);
   assert.match(changePassword, /await createSession\(request, currentUser, nextCredentialVersion\)/);
   assert.match(accessControl, /credential\.credentialVersion !== session\.credentialVersion/);
+
+  const deleteAccountBlock = dashboardRoute.match(/if \(payload\.action === "deleteUserAccount"\) \{[\s\S]*?(?=\n    if \(payload\.action === "saveUserAccount"\))/)?.[0] ?? "";
+  assert.match(dashboardRoute, /adminOnlyActions = new Set\(\[[\s\S]*?"deleteUserAccount"/);
+  assertBefore(deleteAccountBlock, /accountId === currentUser\.id/, /db\.select\(\)\.from\(userAccounts\)/, "self-account deletion");
+  assertBefore(deleteAccountBlock, /accountId === "user-owner"/, /db\.select\(\)\.from\(userAccounts\)/, "system-owner deletion");
+  assert.match(deleteAccountBlock, /activeAdmins\.length <= 1[\s\S]*?status: 409/);
+  assert.match(deleteAccountBlock, /await db\.batch\(\[[\s\S]*?eventType: "account_deleted"[\s\S]*?detail: `target:\$\{accountId\};actor:\$\{currentUser\.id\}`[\s\S]*?db\.delete\(userAccounts\)\.where\(eq\(userAccounts\.id, accountId\)\)/);
+  assert.doesNotMatch(deleteAccountBlock, /db\.delete\(employees\)/, "deleting login access must preserve the employee profile and work history");
+  assert.match(deleteAccountBlock, /deletedUserAccountId: accountId/);
 
   const accountBlock = dashboardRoute.match(/if \(payload\.action === "saveUserAccount"\) \{[\s\S]*?(?=\n    if \(payload\.action === "createEmployee"\))/)?.[0] ?? "";
   assert.match(accountBlock, /if \(suppliedAccountId === currentUser\.id\) \{[\s\S]*?status: 409/);
@@ -444,6 +453,10 @@ test("password and access mutations revoke sessions, reject self-admin edits, an
   assert.match(accountBlock, /activeAdmins\.length <= 1[\s\S]*?status: 409/);
   assert.match(page, /disabled=\{isSaving \|\| account\.id === currentUser\?\.id\}/);
   assert.match(page, /เปลี่ยนรหัสผ่านจากเมนูโปรไฟล์/);
+  assert.match(page, /const deleteUserAccount = async \(account: PublicUserAccount\)/);
+  assert.match(page, /window\.confirm\([\s\S]*?บัญชี รหัสผ่าน และเซสชันจะถูกลบถาวร แต่โปรไฟล์พนักงานและประวัติงานจะยังอยู่/);
+  assert.match(page, /action: "deleteUserAccount", accountId: account\.id/);
+  assert.match(page, /className="delete-account"[\s\S]*?disabled=\{isSaving \|\| account\.id === currentUser\?\.id \|\| account\.id === "user-owner"\}/);
 });
 
 test("public DTOs and the client bundle contain no authentication secrets or legacy identity bridge", async () => {
