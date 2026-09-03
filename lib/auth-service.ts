@@ -15,6 +15,7 @@ import {
 } from "./password-crypto";
 import {
   createSession,
+  prepareSession,
   recordAuthEvent,
   revokeAllSessionsForAccount,
   type CurrentUser,
@@ -63,10 +64,11 @@ export async function authenticateLogin(request: Request, loginIdInput: unknown,
   ]);
   const nowDate = new Date();
   const now = nowDate.toISOString();
-  const [loginBucket, sourceBucket] = await Promise.all([
-    getRateBucket(loginKeyHash),
-    getRateBucket(sourceKeyHash),
-  ]);
+  const rateBuckets = await getDb().select().from(authRateLimits)
+    .where(inArray(authRateLimits.keyHash, [loginKeyHash, sourceKeyHash]));
+  const rateBucketByKey = new Map(rateBuckets.map((bucket) => [bucket.keyHash, bucket]));
+  const loginBucket = rateBucketByKey.get(loginKeyHash);
+  const sourceBucket = rateBucketByKey.get(sourceKeyHash);
   const blockedUntil = latestFutureTimestamp(now, loginBucket?.blockedUntil, sourceBucket?.blockedUntil);
   if (blockedUntil) {
     return { ok: false, status: 429, retryAfterSeconds: Math.max(1, Math.ceil((Date.parse(blockedUntil) - nowDate.getTime()) / 1000)) };
@@ -92,12 +94,21 @@ export async function authenticateLogin(request: Request, loginIdInput: unknown,
   }
 
   const db = getDb();
-  const [credential] = loginIdCanonical
-    ? await db.select().from(authCredentials).where(eq(authCredentials.loginIdCanonical, loginIdCanonical)).limit(1)
+  const [loginContext] = loginIdCanonical
+    ? await db.select({
+      credential: authCredentials,
+      account: userAccounts,
+      employee: {
+        status: employees.status,
+      },
+    }).from(authCredentials)
+      .innerJoin(userAccounts, eq(userAccounts.id, authCredentials.userAccountId))
+      .leftJoin(employees, eq(employees.id, userAccounts.employeeId))
+      .where(eq(authCredentials.loginIdCanonical, loginIdCanonical))
+      .limit(1)
     : [];
-  const [account] = credential
-    ? await db.select().from(userAccounts).where(eq(userAccounts.id, credential.userAccountId)).limit(1)
-    : [];
+  const credential = loginContext?.credential;
+  const account = loginContext?.account;
   const locked = Boolean(credential?.lockedUntil && credential.lockedUntil > now);
   const passwordWithinLimit = passwordInputIsWithinLimit(password);
   let passwordMatches = false;
@@ -107,26 +118,48 @@ export async function authenticateLogin(request: Request, loginIdInput: unknown,
     await dummyVerifyPassword(passwordWithinLimit ? password : "invalid-login-password");
   }
 
-  const accountCanSignIn = await accountIsEligible(account ?? null);
+  const accountCanSignIn = accountIsEligible(account ?? null, loginContext?.employee ?? null);
   if (!loginIdCanonical || !passwordMatches || !accountCanSignIn || locked) {
-    if (credential && !locked) await recordCredentialFailure(credential, nowDate);
-    await recordAuthEvent("login_failed", account?.id ?? null, sourceHash, "generic-credential-failure");
+    const failureEventQuery = db.insert(authEvents).values({
+      id: `auth-event-${crypto.randomUUID()}`,
+      userAccountId: account?.id ?? null,
+      eventType: "login_failed",
+      sourceHash,
+      detail: "generic-credential-failure",
+      createdAt: now,
+    });
+    if (credential && !locked) await db.batch([credentialFailureQuery(credential, nowDate), failureEventQuery]);
+    else await failureEventQuery;
     return { ok: false, status: 401 };
   }
 
-  await Promise.all([
-    db.update(authCredentials).set({ failedAttempts: 0, lockedUntil: null, updatedAt: now }).where(eq(authCredentials.userAccountId, credential.userAccountId)),
-    db.delete(authRateLimits).where(eq(authRateLimits.keyHash, loginKeyHash)),
-    releaseRateReservation(sourceKeyHash, now),
-    db.update(userAccounts).set({ lastLoginAt: now, updatedAt: now }).where(eq(userAccounts.id, account.id)),
-    cleanupExpiredAuthRecords(nowDate),
-  ]);
   const refreshedAccount = { ...account, lastLoginAt: now, updatedAt: now };
-  const session = await createSession(request, refreshedAccount, credential.credentialVersion);
-  await recordAuthEvent("login_succeeded", account.id, sourceHash, "password");
+  const preparedSession = await prepareSession(request, refreshedAccount, credential.credentialVersion);
+  const cleanupQueries = cleanupExpiredAuthRecordQueries(nowDate);
+  await db.batch([
+    db.update(authCredentials).set({ failedAttempts: 0, lockedUntil: null, updatedAt: now }).where(and(
+      eq(authCredentials.userAccountId, credential.userAccountId),
+      eq(authCredentials.credentialVersion, credential.credentialVersion),
+    )),
+    db.delete(authRateLimits).where(eq(authRateLimits.keyHash, loginKeyHash)),
+    releaseRateReservationQuery(sourceKeyHash, now),
+    db.update(userAccounts).set({ lastLoginAt: now, updatedAt: now }).where(eq(userAccounts.id, account.id)),
+    cleanupQueries.rateLimits,
+    cleanupQueries.events,
+    cleanupQueries.sessions,
+    db.insert(authSessions).values(preparedSession.values),
+    db.insert(authEvents).values({
+      id: `auth-event-${crypto.randomUUID()}`,
+      userAccountId: account.id,
+      eventType: "login_succeeded",
+      sourceHash,
+      detail: "password",
+      createdAt: now,
+    }),
+  ]);
   return {
     ok: true,
-    session,
+    session: preparedSession.creation,
     currentUser: {
       ...refreshedAccount,
       authenticatedName: refreshedAccount.displayName,
@@ -264,12 +297,14 @@ function credentialVerifier(credential: AuthCredential): PasswordVerifier {
   };
 }
 
-async function accountIsEligible(account: UserAccountRecord | null) {
+function accountIsEligible(
+  account: UserAccountRecord | null,
+  linkedEmployee: { status: string } | null,
+) {
   if (!account || account.status !== "active") return false;
   if (account.role === "admin") return true;
   if (!account.employeeId) return false;
-  const [employee] = await getDb().select({ status: employees.status }).from(employees).where(eq(employees.id, account.employeeId)).limit(1);
-  return employee?.status === "active";
+  return linkedEmployee?.status === "active";
 }
 
 function requestSource(request: Request) {
@@ -280,11 +315,6 @@ function requestSource(request: Request) {
     return request.headers.get("x-forwarded-for")?.split(",")[0]?.trim().slice(0, 80) || "local-development";
   }
   return "cloudflare-address-unavailable";
-}
-
-async function getRateBucket(keyHash: string) {
-  const [bucket] = await getDb().select().from(authRateLimits).where(eq(authRateLimits.keyHash, keyHash)).limit(1);
-  return bucket ?? null;
 }
 
 function rateReservationQuery(keyHash: string, bucketType: "login_id" | "source", limit: number, nowDate: Date) {
@@ -311,8 +341,8 @@ function rateReservationQuery(keyHash: string, bucketType: "login_id" | "source"
   }).returning({ attemptCount: authRateLimits.attemptCount, blockedUntil: authRateLimits.blockedUntil, windowStartedAt: authRateLimits.windowStartedAt });
 }
 
-async function releaseRateReservation(keyHash: string, now: string) {
-  await getDb().update(authRateLimits).set({
+function releaseRateReservationQuery(keyHash: string, now: string) {
+  return getDb().update(authRateLimits).set({
     attemptCount: sql`CASE WHEN ${authRateLimits.attemptCount} > 0 THEN ${authRateLimits.attemptCount} - 1 ELSE 0 END`,
     updatedAt: now,
   }).where(and(eq(authRateLimits.keyHash, keyHash), isNull(authRateLimits.blockedUntil)));
@@ -329,7 +359,7 @@ async function recordRateLimitTransition(bucketType: "login_id" | "source", keyH
   }).onConflictDoNothing();
 }
 
-async function cleanupExpiredAuthRecords(nowDate: Date) {
+function cleanupExpiredAuthRecordQueries(nowDate: Date) {
   const rateLimitCutoff = new Date(nowDate.getTime() - 24 * 60 * 60 * 1000).toISOString();
   const eventCutoff = new Date(nowDate.getTime() - 180 * 24 * 60 * 60 * 1000).toISOString();
   const sessionCutoff = new Date(nowDate.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
@@ -337,19 +367,24 @@ async function cleanupExpiredAuthRecords(nowDate: Date) {
   const expiredRateKeys = db.select({ keyHash: authRateLimits.keyHash }).from(authRateLimits).where(lt(authRateLimits.updatedAt, rateLimitCutoff)).limit(100);
   const expiredEventIds = db.select({ id: authEvents.id }).from(authEvents).where(and(lt(authEvents.createdAt, eventCutoff), sql`${authEvents.id} NOT LIKE 'credential-mutation:%'`)).limit(100);
   const expiredSessionIds = db.select({ id: authSessions.id }).from(authSessions).where(lt(authSessions.idleExpiresAt, sessionCutoff)).limit(100);
-  await db.batch([
-    db.delete(authRateLimits).where(inArray(authRateLimits.keyHash, expiredRateKeys)),
-    db.delete(authEvents).where(inArray(authEvents.id, expiredEventIds)),
-    db.delete(authSessions).where(inArray(authSessions.id, expiredSessionIds)),
-  ]);
+  return {
+    rateLimits: db.delete(authRateLimits).where(inArray(authRateLimits.keyHash, expiredRateKeys)),
+    events: db.delete(authEvents).where(inArray(authEvents.id, expiredEventIds)),
+    sessions: db.delete(authSessions).where(inArray(authSessions.id, expiredSessionIds)),
+  };
 }
 
-async function recordCredentialFailure(credential: AuthCredential, nowDate: Date) {
+function credentialFailureQuery(credential: AuthCredential, nowDate: Date) {
   const now = nowDate.toISOString();
-  const nextAttempts = credential.failedAttempts + 1;
-  const lockedUntil = nextAttempts >= ACCOUNT_FAILURE_LIMIT ? new Date(nowDate.getTime() + RATE_BLOCK_MS).toISOString() : null;
-  await getDb().update(authCredentials).set({ failedAttempts: nextAttempts, lockedUntil, updatedAt: now }).where(and(eq(authCredentials.userAccountId, credential.userAccountId), eq(authCredentials.failedAttempts, credential.failedAttempts)));
-  return lockedUntil;
+  const lockedUntil = new Date(nowDate.getTime() + RATE_BLOCK_MS).toISOString();
+  return getDb().update(authCredentials).set({
+    failedAttempts: sql`${authCredentials.failedAttempts} + 1`,
+    lockedUntil: sql`CASE WHEN ${authCredentials.failedAttempts} + 1 >= ${ACCOUNT_FAILURE_LIMIT} THEN ${lockedUntil} ELSE ${authCredentials.lockedUntil} END`,
+    updatedAt: now,
+  }).where(and(
+    eq(authCredentials.userAccountId, credential.userAccountId),
+    eq(authCredentials.credentialVersion, credential.credentialVersion),
+  ));
 }
 
 function latestFutureTimestamp(now: string, ...timestamps: Array<string | null | undefined>) {

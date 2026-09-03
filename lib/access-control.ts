@@ -3,7 +3,14 @@ import { getDb } from "../db";
 import { ensureDatabase } from "../db/initialize";
 import { authCredentials, authEvents, authSessions, employees, userAccounts } from "../db/schema";
 import { getRole, type UserAccountRecord } from "./kpi-data";
-import { hashOpaqueToken, parsePasswordVerifier, randomToken, validateLoginId } from "./password-crypto";
+import {
+  LEGACY_PASSWORD_ITERATIONS,
+  PASSWORD_ITERATIONS,
+  hashOpaqueToken,
+  parsePasswordVerifier,
+  randomToken,
+  validateLoginId,
+} from "./password-crypto";
 
 export type CurrentUser = UserAccountRecord & {
   authenticatedName: string;
@@ -17,6 +24,16 @@ export type SessionCreation = {
   idleExpiresAt: string;
 };
 
+export type AuthenticatedSessionContext = {
+  currentUser: CurrentUser;
+  sessionId: string;
+};
+
+type PreparedSession = {
+  creation: SessionCreation;
+  values: typeof authSessions.$inferInsert;
+};
+
 const accountRoles = new Set(["admin", "manager", "employee"]);
 const accountStatuses = new Set(["active", "inactive"]);
 const HTTPS_SESSION_COOKIE = "__Host-pp_session";
@@ -25,6 +42,7 @@ const SESSION_TOKEN_BYTES = 32;
 const SESSION_IDLE_MS = 8 * 60 * 60 * 1000;
 const SESSION_ABSOLUTE_MS = 24 * 60 * 60 * 1000;
 const SESSION_TOUCH_MS = 5 * 60 * 1000;
+let bootstrapInitialization: Promise<void> | null = null;
 
 export const privateNoStoreHeaders = {
   "cache-control": "private, no-store, max-age=0",
@@ -50,7 +68,16 @@ export async function authenticatedRequestGate(
   return { currentUser };
 }
 
-export async function ensureBootstrapAccounts() {
+export function ensureBootstrapAccounts() {
+  if (bootstrapInitialization) return bootstrapInitialization;
+  bootstrapInitialization = initializeBootstrapAccounts().catch((error) => {
+    bootstrapInitialization = null;
+    throw error;
+  });
+  return bootstrapInitialization;
+}
+
+async function initializeBootstrapAccounts() {
   const configuredLoginId = process.env.PEOPLE_PULSE_BOOTSTRAP_LOGIN_ID?.trim() ?? "";
   const configuredVerifier = process.env.PEOPLE_PULSE_BOOTSTRAP_PASSWORD_HASH?.trim() ?? "";
   const configuredEmail = process.env.PEOPLE_PULSE_BOOTSTRAP_ADMIN_EMAIL?.trim().toLowerCase() ?? "";
@@ -66,7 +93,15 @@ export async function ensureBootstrapAccounts() {
 
   const db = getDb();
   const now = new Date().toISOString();
-  const [existingOwner] = await db.select().from(userAccounts).where(eq(userAccounts.id, "user-owner")).limit(1);
+  const [ownerRows, credentialRows] = await db.batch([
+    db.select().from(userAccounts).where(eq(userAccounts.id, "user-owner")).limit(1),
+    db.select().from(authCredentials).where(eq(authCredentials.userAccountId, "user-owner")).limit(1),
+  ]);
+  const existingOwner = ownerRows[0];
+  const existingCredential = credentialRows[0];
+  if (!existingCredential && verifier.passwordIterations !== PASSWORD_ITERATIONS) {
+    throw new Error("A new bootstrap credential must use the current password work factor.");
+  }
   if (!existingOwner) {
     await db.insert(userAccounts).values({
       id: "user-owner",
@@ -86,7 +121,6 @@ export async function ensureBootstrapAccounts() {
     throw new Error("Bootstrap owner exists but is not an active administrator.");
   }
 
-  const [existingCredential] = await db.select().from(authCredentials).where(eq(authCredentials.userAccountId, "user-owner")).limit(1);
   if (existingCredential) {
     const originalPasswordChangedAt = existingCredential.passwordChangedAt;
     const pristineBootstrapOwner = existingOwner
@@ -106,7 +140,8 @@ export async function ensureBootstrapAccounts() {
       && (pristineBootstrapOwner || legacyOaiOwner)
       && existingCredential.loginIdCanonical === loginIdCanonical
       && existingCredential.passwordAlgorithm === "pbkdf2-sha256"
-      && existingCredential.passwordIterations > 100_000
+      && verifier.passwordIterations === LEGACY_PASSWORD_ITERATIONS
+      && existingCredential.passwordIterations > LEGACY_PASSWORD_ITERATIONS
       && existingCredential.pepperVersion === verifier.pepperVersion
       && existingCredential.credentialVersion === 1
       && existingCredential.mustChangePassword
@@ -132,7 +167,7 @@ export async function ensureBootstrapAccounts() {
       eq(authCredentials.passwordHash, existingCredential.passwordHash),
       eq(authCredentials.passwordSalt, existingCredential.passwordSalt),
       eq(authCredentials.passwordIterations, existingCredential.passwordIterations),
-      gt(authCredentials.passwordIterations, 100_000),
+      gt(authCredentials.passwordIterations, LEGACY_PASSWORD_ITERATIONS),
       eq(authCredentials.pepperVersion, existingCredential.pepperVersion),
       eq(authCredentials.credentialVersion, 1),
       eq(authCredentials.mustChangePassword, true),
@@ -216,14 +251,26 @@ export async function authenticateRequest(request: Request): Promise<CurrentUser
   return sessionContext?.currentUser ?? null;
 }
 
+export async function authenticatedRequestSession(request: Request): Promise<AuthenticatedSessionContext | null> {
+  const sessionContext = await authenticatedSession(request);
+  if (!sessionContext) return null;
+  return { currentUser: sessionContext.currentUser, sessionId: sessionContext.session.id };
+}
+
 export async function createSession(request: Request, account: UserAccountRecord, credentialVersion: number): Promise<SessionCreation> {
+  const prepared = await prepareSession(request, account, credentialVersion);
+  await getDb().insert(authSessions).values(prepared.values);
+  return prepared.creation;
+}
+
+export async function prepareSession(request: Request, account: UserAccountRecord, credentialVersion: number): Promise<PreparedSession> {
   const token = randomToken(SESSION_TOKEN_BYTES);
   const tokenHash = await hashOpaqueToken(token);
   const nowDate = new Date();
   const absoluteExpiresAt = new Date(nowDate.getTime() + SESSION_ABSOLUTE_MS).toISOString();
   const idleExpiresAt = new Date(Math.min(nowDate.getTime() + SESSION_IDLE_MS, Date.parse(absoluteExpiresAt))).toISOString();
   const now = nowDate.toISOString();
-  await getDb().insert(authSessions).values({
+  const values: typeof authSessions.$inferInsert = {
     id: `session-${crypto.randomUUID()}`,
     tokenHash,
     userAccountId: account.id,
@@ -235,8 +282,11 @@ export async function createSession(request: Request, account: UserAccountRecord
     absoluteExpiresAt,
     revokedAt: null,
     revokeReason: "",
-  });
-  return { cookie: sessionCookie(request, token, absoluteExpiresAt), absoluteExpiresAt, idleExpiresAt };
+  };
+  return {
+    creation: { cookie: sessionCookie(request, token, absoluteExpiresAt), absoluteExpiresAt, idleExpiresAt },
+    values,
+  };
 }
 
 export async function revokeRequestSession(request: Request, reason = "logout") {
@@ -254,6 +304,29 @@ export async function revokeAllSessionsForAccount(userAccountId: string, reason:
   const now = new Date().toISOString();
   await getDb().update(authSessions).set({ revokedAt: now, revokeReason: reason }).where(and(eq(authSessions.userAccountId, userAccountId), isNull(authSessions.revokedAt)));
   await recordAuthEvent("sessions_revoked", userAccountId, "", reason);
+}
+
+export async function completeLogout(
+  sessionId: string,
+  userAccountId: string,
+  sourceHash: string,
+  allDevices: boolean,
+) {
+  const now = new Date().toISOString();
+  const db = getDb();
+  const revokeQuery = allDevices
+    ? db.update(authSessions)
+      .set({ revokedAt: now, revokeReason: "logout-all-devices" })
+      .where(and(eq(authSessions.userAccountId, userAccountId), isNull(authSessions.revokedAt)))
+    : db.update(authSessions)
+      .set({ revokedAt: now, revokeReason: "logout" })
+      .where(and(eq(authSessions.id, sessionId), isNull(authSessions.revokedAt)));
+  const queries = [
+    revokeQuery,
+    ...(allDevices ? [db.insert(authEvents).values(authEventValues("sessions_revoked", userAccountId, "", "logout-all-devices", now))] : []),
+    db.insert(authEvents).values(authEventValues("logout", userAccountId, sourceHash, allDevices ? "all-devices" : "current-session", now)),
+  ] as const;
+  await db.batch(queries);
 }
 
 export function clearSessionCookie(request: Request) {
@@ -311,14 +384,29 @@ export async function recordAuthEvent(
   sourceHash = "",
   detail = "",
 ) {
-  await getDb().insert(authEvents).values({
+  await getDb().insert(authEvents).values(authEventValues(
+    eventType,
+    userAccountId,
+    sourceHash,
+    detail,
+  ));
+}
+
+function authEventValues(
+  eventType: typeof authEvents.$inferInsert.eventType,
+  userAccountId: string | null,
+  sourceHash = "",
+  detail = "",
+  createdAt = new Date().toISOString(),
+): typeof authEvents.$inferInsert {
+  return {
     id: `auth-event-${crypto.randomUUID()}`,
     userAccountId,
     eventType,
     sourceHash,
     detail: detail.slice(0, 240),
-    createdAt: new Date().toISOString(),
-  });
+    createdAt,
+  };
 }
 
 async function authenticatedSession(request: Request) {
@@ -326,7 +414,21 @@ async function authenticatedSession(request: Request) {
   if (!token) return null;
   const tokenHash = await hashOpaqueToken(token);
   const db = getDb();
-  const [session] = await db.select().from(authSessions).where(eq(authSessions.tokenHash, tokenHash)).limit(1);
+  const [sessionContext] = await db.select({
+    session: authSessions,
+    account: userAccounts,
+    credential: authCredentials,
+    employee: {
+      status: employees.status,
+      roleId: employees.roleId,
+    },
+  }).from(authSessions)
+    .leftJoin(userAccounts, eq(userAccounts.id, authSessions.userAccountId))
+    .leftJoin(authCredentials, eq(authCredentials.userAccountId, authSessions.userAccountId))
+    .leftJoin(employees, eq(employees.id, userAccounts.employeeId))
+    .where(eq(authSessions.tokenHash, tokenHash))
+    .limit(1);
+  const session = sessionContext?.session;
   if (!session || session.revokedAt) return null;
   const nowDate = new Date();
   const now = nowDate.toISOString();
@@ -335,10 +437,8 @@ async function authenticatedSession(request: Request) {
     return null;
   }
 
-  const [[account], [credential]] = await Promise.all([
-    db.select().from(userAccounts).where(eq(userAccounts.id, session.userAccountId)).limit(1),
-    db.select().from(authCredentials).where(eq(authCredentials.userAccountId, session.userAccountId)).limit(1),
-  ]);
+  const account = sessionContext.account;
+  const credential = sessionContext.credential;
   if (!account || !credential?.passwordHash || credential.credentialVersion !== session.credentialVersion || !accountRoles.has(account.role) || !accountStatuses.has(account.status) || account.status !== "active") {
     await db.update(authSessions).set({ revokedAt: now, revokeReason: "account-unavailable" }).where(and(eq(authSessions.id, session.id), isNull(authSessions.revokedAt)));
     return null;
@@ -350,10 +450,7 @@ async function authenticatedSession(request: Request) {
       await db.update(authSessions).set({ revokedAt: now, revokeReason: "employee-link-unavailable" }).where(and(eq(authSessions.id, session.id), isNull(authSessions.revokedAt)));
       return null;
     }
-    const [linkedEmployee] = await db.select({ status: employees.status, roleId: employees.roleId })
-      .from(employees)
-      .where(eq(employees.id, account.employeeId))
-      .limit(1);
+    const linkedEmployee = sessionContext.employee;
     if (!linkedEmployee || linkedEmployee.status !== "active") {
       await db.update(authSessions).set({ revokedAt: now, revokeReason: "employee-link-unavailable" }).where(and(eq(authSessions.id, session.id), isNull(authSessions.revokedAt)));
       return null;

@@ -134,6 +134,13 @@
       "when": 1788427787977,
       "tag": "0018_schema_v18_ready",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1788429097319,
+      "tag": "0019_auth_session_guard",
+      "breakpoints": true
     }
   ]
 }

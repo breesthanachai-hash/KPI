@@ -46,11 +46,11 @@ test("bootstrap output is compatible with the real PBKDF2 verifier and keeps ind
   assert.ok(environment.PEOPLE_PULSE_PASSWORD_PEPPER_V1.length >= 32);
   assert.ok(environment.PEOPLE_PULSE_RATE_LIMIT_SECRET.length >= 32);
   assert.notEqual(environment.PEOPLE_PULSE_PASSWORD_PEPPER_V1, environment.PEOPLE_PULSE_RATE_LIMIT_SECRET);
-  assert.match(environment.PEOPLE_PULSE_BOOTSTRAP_PASSWORD_HASH, /^pbkdf2-sha256\$100000\$1\$[A-Za-z0-9_-]+\$[A-Za-z0-9_-]+$/);
+  assert.match(environment.PEOPLE_PULSE_BOOTSTRAP_PASSWORD_HASH, /^pbkdf2-sha256\$600000\$1\$[A-Za-z0-9_-]+\$[A-Za-z0-9_-]+$/);
   assert.doesNotMatch(bootstrapScript, /argument\(["']--password["']\)/);
   assert.match(bootstrapScript, /จะไม่รับรหัสผ่านผ่าน command line/);
 
-  const repaired = spawnSync(process.execPath, [
+  const refusedRepair = spawnSync(process.execPath, [
     fileURLToPath(new URL("../scripts/generate-auth-bootstrap.mjs", import.meta.url)),
     "--repair-existing",
     "--login-id", "Owner.Admin",
@@ -65,47 +65,15 @@ test("bootstrap output is compatible with the real PBKDF2 verifier and keeps ind
       PEOPLE_PULSE_PASSWORD_PEPPER_V1: environment.PEOPLE_PULSE_PASSWORD_PEPPER_V1,
     },
   });
-  assert.equal(repaired.status, 0, repaired.stderr || "repair generator must reuse the existing pepper");
-  const repairOutput = JSON.parse(repaired.stdout);
-  const repairEnvironment = Object.fromEntries(repairOutput.environment.map(({ key, value }) => [key, value]));
-  assert.equal(repairOutput.mode, "repair-existing");
-  assert.match(repairEnvironment.PEOPLE_PULSE_BOOTSTRAP_PASSWORD_HASH, /^pbkdf2-sha256\$100000\$1\$[A-Za-z0-9_-]+\$[A-Za-z0-9_-]+$/);
-  assert.equal(repairEnvironment.PEOPLE_PULSE_PASSWORD_PEPPER_VERSION, "1");
-  assert.equal("PEOPLE_PULSE_PASSWORD_PEPPER_V1" in repairEnvironment, false, "repair mode must not rotate or emit the existing pepper");
-  assert.equal("PEOPLE_PULSE_RATE_LIMIT_SECRET" in repairEnvironment, false, "repair mode must not rotate or emit the rate-limit secret");
-
-  const refusedRepair = spawnSync(process.execPath, [
-    fileURLToPath(new URL("../scripts/generate-auth-bootstrap.mjs", import.meta.url)),
-    "--repair-existing", "--login-id", "owner.admin", "--email", "owner@example.com",
-  ], {
-    encoding: "utf8",
-    env: {
-      ...process.env,
-      PEOPLE_PULSE_PASSWORD_PEPPER_VERSION: "1",
-      PEOPLE_PULSE_PASSWORD_PEPPER_V1: "",
-    },
-  });
   assert.notEqual(refusedRepair.status, 0);
-  assert.match(refusedRepair.stderr, /ต้องมี PEOPLE_PULSE_PASSWORD_PEPPER_V1 เดิม/);
-
-  const refusedWrongVersion = spawnSync(process.execPath, [
-    fileURLToPath(new URL("../scripts/generate-auth-bootstrap.mjs", import.meta.url)),
-    "--repair-existing", "--login-id", "owner.admin", "--email", "owner@example.com",
-  ], {
-    encoding: "utf8",
-    env: {
-      ...process.env,
-      PEOPLE_PULSE_PASSWORD_PEPPER_VERSION: "2",
-      PEOPLE_PULSE_PASSWORD_PEPPER_V1: environment.PEOPLE_PULSE_PASSWORD_PEPPER_V1,
-    },
-  });
-  assert.notEqual(refusedWrongVersion.status, 0);
-  assert.match(refusedWrongVersion.stderr, /รองรับ credential เดิมที่ใช้ pepper version 1 เท่านั้น/);
+  assert.equal(refusedRepair.stdout, "", "retired repair mode must not emit a replacement verifier or secrets");
+  assert.match(refusedRepair.stderr, /ยกเลิก --repair-existing[ๆ\s\S]*?รหัสชั่วคราวเดิม[ๆ\s\S]*?บังคับเปลี่ยนรหัส/);
 
   const cryptoModule = new URL("../lib/password-crypto.ts", import.meta.url).href;
   const verificationScript = `
     import {
       AuthConfigurationError,
+      LEGACY_PASSWORD_ITERATIONS,
       MAX_PASSWORD_ITERATIONS,
       PASSWORD_ITERATIONS,
       canonicalizeLoginId,
@@ -120,14 +88,13 @@ test("bootstrap output is compatible with the real PBKDF2 verifier and keeps ind
 
     const password = process.env.AUTH_TEST_PASSWORD;
     const serialized = process.env.AUTH_TEST_VERIFIER;
-    const repairPassword = process.env.AUTH_TEST_REPAIR_PASSWORD;
-    const repairSerialized = process.env.AUTH_TEST_REPAIR_VERIFIER;
     const parsed = parsePasswordVerifier(serialized);
-    const repairParsed = parsePasswordVerifier(repairSerialized);
     const correct = parsed ? await verifyPassword(password, parsed) : false;
     const wrong = parsed ? await verifyPassword(password + "x", parsed) : true;
-    const repairCorrect = repairParsed ? await verifyPassword(repairPassword, repairParsed) : false;
-    const overLimitParsed = parsePasswordVerifier(serialized.replace("$100000$", "$100001$"));
+    const legacyParsed = parsePasswordVerifier(process.env.AUTH_TEST_LEGACY_VERIFIER);
+    const unsupportedIterationsRejected = [99999, 100001, 599999, 600001].every((iterations) => (
+      parsePasswordVerifier(serialized.replace("$600000$", \`$\${iterations}$\`)) === null
+    ));
     const runtimeVerifier = await hashPassword(password);
     const runtimeRoundTrip = parsePasswordVerifier(serializePasswordVerifier(runtimeVerifier));
     const runtimeCorrect = runtimeRoundTrip ? await verifyPassword(password, runtimeRoundTrip) : false;
@@ -148,9 +115,8 @@ test("bootstrap output is compatible with the real PBKDF2 verifier and keeps ind
       parsed: Boolean(parsed),
       correct,
       wrong,
-      repairParsed: Boolean(repairParsed),
-      repairCorrect,
-      overLimitRejected: overLimitParsed === null,
+      legacyParsed: Boolean(legacyParsed),
+      unsupportedIterationsRejected,
       runtimeCorrect,
       iterations: runtimeVerifier.passwordIterations,
       saltBytes: Buffer.from(runtimeVerifier.passwordSalt, "base64url").byteLength,
@@ -164,6 +130,7 @@ test("bootstrap output is compatible with the real PBKDF2 verifier and keeps ind
       missingRateSecret,
       missingPasswordPepper,
       expectedIterations: PASSWORD_ITERATIONS,
+      legacyIterations: LEGACY_PASSWORD_ITERATIONS,
       maximumIterations: MAX_PASSWORD_ITERATIONS,
     }));
   `;
@@ -174,8 +141,7 @@ test("bootstrap output is compatible with the real PBKDF2 verifier and keeps ind
       ...process.env,
       AUTH_TEST_PASSWORD: output.login.temporaryPassword,
       AUTH_TEST_VERIFIER: environment.PEOPLE_PULSE_BOOTSTRAP_PASSWORD_HASH,
-      AUTH_TEST_REPAIR_PASSWORD: repairOutput.login.temporaryPassword,
-      AUTH_TEST_REPAIR_VERIFIER: repairEnvironment.PEOPLE_PULSE_BOOTSTRAP_PASSWORD_HASH,
+      AUTH_TEST_LEGACY_VERIFIER: "pbkdf2-sha256$100000$1$AAECAwQFBgcICQoLDA0ODw$me-DHdEkZqHOISG6329gWohf7sLJ3JtlHj5z-fLc11E",
       PEOPLE_PULSE_PASSWORD_PEPPER_VERSION: environment.PEOPLE_PULSE_PASSWORD_PEPPER_VERSION,
       PEOPLE_PULSE_PASSWORD_PEPPER_V1: environment.PEOPLE_PULSE_PASSWORD_PEPPER_V1,
       PEOPLE_PULSE_RATE_LIMIT_SECRET: environment.PEOPLE_PULSE_RATE_LIMIT_SECRET,
@@ -186,11 +152,10 @@ test("bootstrap output is compatible with the real PBKDF2 verifier and keeps ind
     parsed: true,
     correct: true,
     wrong: false,
-    repairParsed: true,
-    repairCorrect: true,
-    overLimitRejected: true,
+    legacyParsed: true,
+    unsupportedIterationsRejected: true,
     runtimeCorrect: true,
-    iterations: 100_000,
+    iterations: 600_000,
     saltBytes: 16,
     hashBytes: 32,
     distinctSalt: true,
@@ -201,12 +166,13 @@ test("bootstrap output is compatible with the real PBKDF2 verifier and keeps ind
     canonicalLogin: "owner.admin",
     missingRateSecret: true,
     missingPasswordPepper: true,
-    expectedIterations: 100_000,
-    maximumIterations: 100_000,
+    expectedIterations: 600_000,
+    legacyIterations: 100_000,
+    maximumIterations: 600_000,
   });
 });
 
-test("the runtime uses async native PBKDF2 with fixed-vector parity and rejects unsupported work before the KDF", async () => {
+test("the runtime accepts exact legacy/current PBKDF2 costs, uses current cost for new work, and rejects gaps before the KDF", async () => {
   const [passwordCrypto, generator, viteConfig, schema, initialize, migration, snapshot] = await Promise.all([
     source("lib/password-crypto.ts"),
     source("scripts/generate-auth-bootstrap.mjs"),
@@ -217,16 +183,18 @@ test("the runtime uses async native PBKDF2 with fixed-vector parity and rejects 
     source("drizzle/meta/0016_snapshot.json").then(JSON.parse),
   ]);
 
-  assert.match(passwordCrypto, /export const PASSWORD_ITERATIONS = 100_000/);
-  assert.match(passwordCrypto, /export const MAX_PASSWORD_ITERATIONS = 100_000/);
-  assert.match(passwordCrypto, /verifier\.passwordIterations < PASSWORD_ITERATIONS \|\| verifier\.passwordIterations > MAX_PASSWORD_ITERATIONS/);
-  assert.match(passwordCrypto, /passwordIterations < PASSWORD_ITERATIONS \|\| passwordIterations > MAX_PASSWORD_ITERATIONS/);
+  assert.match(passwordCrypto, /export const LEGACY_PASSWORD_ITERATIONS = 100_000/);
+  assert.match(passwordCrypto, /export const PASSWORD_ITERATIONS = 600_000/);
+  assert.match(passwordCrypto, /export const MAX_PASSWORD_ITERATIONS = PASSWORD_ITERATIONS/);
+  assert.match(passwordCrypto, /function passwordIterationsAreSupported\(iterations: number\)[\s\S]*?Number\.isInteger\(iterations\)[\s\S]*?iterations === LEGACY_PASSWORD_ITERATIONS \|\| iterations === PASSWORD_ITERATIONS/);
+  assert.match(passwordCrypto, /verifier\.passwordAlgorithm !== PASSWORD_ALGORITHM \|\| !passwordIterationsAreSupported\(verifier\.passwordIterations\)/);
+  assert.match(passwordCrypto, /passwordAlgorithm !== PASSWORD_ALGORITHM \|\| !passwordIterationsAreSupported\(passwordIterations\)/);
   const deriveBlock = passwordCrypto.match(/async function derivePasswordHash[\s\S]*?(?=\nfunction currentPepperVersion)/)?.[0] ?? "";
   assertBefore(
     deriveBlock,
-    /iterations > MAX_PASSWORD_ITERATIONS/,
+    /!passwordIterationsAreSupported\(iterations\)/,
     /derivePbkdf2WithNodeCrypto\(/,
-    "PBKDF2 platform ceiling",
+    "PBKDF2 supported-cost guard",
   );
   assert.match(deriveBlock, /Password iteration count is unsupported on this platform/);
   assert.match(passwordCrypto, /import \{ pbkdf2 \} from "node:crypto"/);
@@ -234,38 +202,59 @@ test("the runtime uses async native PBKDF2 with fixed-vector parity and rejects 
   assert.match(deriveBlock, /crypto\.subtle\.sign\("HMAC", pepperKey, encoder\.encode\(password\.normalize\("NFC"\)\)\)/);
   assert.match(deriveBlock, /return new Promise<Uint8Array>\(\(resolve, reject\) => \{[\s\S]*?pbkdf2\(password, salt, iterations, PASSWORD_HASH_BYTES, "sha256", \(error, derivedKey\) =>/);
   assert.doesNotMatch(passwordCrypto, /pbkdf2Sync|crypto\.subtle\.deriveBits|name: "PBKDF2"/);
+  assert.match(passwordCrypto, /hashPassword[\s\S]*?derivePasswordHash\(password, passwordSalt, PASSWORD_ITERATIONS, pepperVersion\)/);
+  assert.match(passwordCrypto, /dummyVerifyPassword[\s\S]*?derivePasswordHash\(password, dummySalt, PASSWORD_ITERATIONS, currentPepperVersion\(\)\)/);
   assert.match(viteConfig, /compatibility_flags: \["nodejs_compat"\]/);
-  assert.match(generator, /const PASSWORD_ITERATIONS = 100_000/);
+  assert.match(generator, /const PASSWORD_ITERATIONS = 600_000/);
   assert.match(generator, /createHmac\("sha256", pepper\)[\s\S]*?password\.normalize\("NFC"\)/);
   assert.match(generator, /pbkdf2Sync\(pepperedPassword, salt, PASSWORD_ITERATIONS, 32, "sha256"\)/);
   assert.match(schema, /passwordIterations: integer\("password_iterations"\)\.notNull\(\)\.default\(100000\)/);
   assert.match(initialize, /password_iterations INTEGER NOT NULL DEFAULT 100000/);
   assert.match(migration, /`password_iterations` integer DEFAULT 100000 NOT NULL/);
   assert.equal(snapshot.tables.auth_credentials.columns.password_iterations.default, 100000);
-  assert.doesNotMatch(`${passwordCrypto}\n${generator}\n${schema}`, /600_000|600000/);
 
   const fixedPassword = "People Pulse fixed vector – รหัสผ่าน";
-  const fixedVerifier = "pbkdf2-sha256$100000$1$AAECAwQFBgcICQoLDA0ODw$me-DHdEkZqHOISG6329gWohf7sLJ3JtlHj5z-fLc11E";
+  const legacyFixedVerifier = "pbkdf2-sha256$100000$1$AAECAwQFBgcICQoLDA0ODw$me-DHdEkZqHOISG6329gWohf7sLJ3JtlHj5z-fLc11E";
+  const currentFixedVerifier = "pbkdf2-sha256$600000$1$AAECAwQFBgcICQoLDA0ODw$YKbBH5Ppt-VO3cp7V3Ualsr6hSTbOL1XcERp74GOL7M";
   const cryptoModule = new URL("../lib/password-crypto.ts", import.meta.url).href;
   const fixedVectorScript = `
     import { parsePasswordVerifier, verifyPassword } from ${JSON.stringify(cryptoModule)};
-    const verifier = parsePasswordVerifier(process.env.AUTH_FIXED_VERIFIER);
-    const correct = verifier ? await verifyPassword(process.env.AUTH_FIXED_PASSWORD, verifier) : false;
-    const wrong = verifier ? await verifyPassword(process.env.AUTH_FIXED_PASSWORD + "x", verifier) : true;
-    process.stdout.write(JSON.stringify({ parsed: Boolean(verifier), correct, wrong }));
+    const legacy = parsePasswordVerifier(process.env.AUTH_LEGACY_FIXED_VERIFIER);
+    const current = parsePasswordVerifier(process.env.AUTH_CURRENT_FIXED_VERIFIER);
+    const unsupported = [99999, 100001, 599999, 600001].map((iterations) => (
+      parsePasswordVerifier(process.env.AUTH_CURRENT_FIXED_VERIFIER.replace("$600000$", "$" + iterations + "$")) === null
+    ));
+    process.stdout.write(JSON.stringify({
+      legacyParsed: Boolean(legacy),
+      legacyCorrect: legacy ? await verifyPassword(process.env.AUTH_FIXED_PASSWORD, legacy) : false,
+      legacyWrong: legacy ? await verifyPassword(process.env.AUTH_FIXED_PASSWORD + "x", legacy) : true,
+      currentParsed: Boolean(current),
+      currentCorrect: current ? await verifyPassword(process.env.AUTH_FIXED_PASSWORD, current) : false,
+      currentWrong: current ? await verifyPassword(process.env.AUTH_FIXED_PASSWORD + "x", current) : true,
+      unsupported,
+    }));
   `;
   const fixedVectorResult = spawnSync(process.execPath, ["--experimental-strip-types", "--input-type=module", "--eval", fixedVectorScript], {
     encoding: "utf8",
     env: {
       ...process.env,
       AUTH_FIXED_PASSWORD: fixedPassword,
-      AUTH_FIXED_VERIFIER: fixedVerifier,
+      AUTH_LEGACY_FIXED_VERIFIER: legacyFixedVerifier,
+      AUTH_CURRENT_FIXED_VERIFIER: currentFixedVerifier,
       PEOPLE_PULSE_PASSWORD_PEPPER_VERSION: "1",
       PEOPLE_PULSE_PASSWORD_PEPPER_V1: "0123456789abcdef0123456789abcdef0123456789abcdef",
     },
   });
   assert.equal(fixedVectorResult.status, 0, fixedVectorResult.stderr || "native PBKDF2 fixed vector must execute");
-  assert.deepEqual(JSON.parse(fixedVectorResult.stdout), { parsed: true, correct: true, wrong: false });
+  assert.deepEqual(JSON.parse(fixedVectorResult.stdout), {
+    legacyParsed: true,
+    legacyCorrect: true,
+    legacyWrong: false,
+    currentParsed: true,
+    currentCorrect: true,
+    currentWrong: false,
+    unsupported: [true, true, true, true],
+  });
 });
 
 test("every unsafe API checks the centralized same-origin gate before reading a body", async () => {
@@ -306,7 +295,7 @@ test("every unsafe API checks the centralized same-origin gate before reading a 
   }
 
   const accessControl = await source("lib/access-control.ts");
-  const centralGate = accessControl.match(/export async function authenticatedRequestGate[\s\S]*?(?=\nexport async function ensureBootstrapAccounts)/)?.[0] ?? "";
+  const centralGate = accessControl.match(/export async function authenticatedRequestGate[\s\S]*?(?=\nexport function ensureBootstrapAccounts)/)?.[0] ?? "";
   assertBefore(centralGate, /unsafeRequestIsSameOrigin\(request\)/, /ensureDatabase\(\)/, "central authentication gate");
   assert.match(accessControl, /if \(!origin \|\| \(origin !== requestUrl\.origin && origin !== configuredOrigin\)\) return false/);
   assert.match(accessControl, /if \(fetchSite === "same-origin"\) return true/);
@@ -337,7 +326,13 @@ test("first-party routes expose 401, forced-change 428, rate-limit 429 and no-st
   assert.match(sessionRoute, /if \(!currentUser\) return authRequiredResponse\(\)/);
   assert.match(sessionRoute, /if \(currentUser\.mustChangePassword\) return passwordChangeRequiredResponse\(currentUser\)/);
   assert.match(changeRoute, /headers\.append\("set-cookie", session\.cookie\)/);
-  assert.match(logoutRoute, /if \(!currentUser\)[\s\S]*?clearSessionCookie\(request\)[\s\S]*?loggedOut: true/);
+  assert.match(logoutRoute, /const sessionContext = await authenticatedRequestSession\(request\)/);
+  assert.match(logoutRoute, /if \(!sessionContext\)[\s\S]*?clearSessionCookie\(request\)[\s\S]*?loggedOut: true/);
+  assert.match(logoutRoute, /await completeLogout\([\s\S]*?sessionContext\.sessionId,[\s\S]*?sessionContext\.currentUser\.id,[\s\S]*?payload\.allDevices === true/);
+  assert.doesNotMatch(logoutRoute, /ensureBootstrapAccounts|revokeRequestSession|revokeAllSessionsForAccount|recordAuthEvent/);
+  const logoutBatch = accessControl.match(/export async function completeLogout[\s\S]*?(?=\nexport function clearSessionCookie)/)?.[0] ?? "";
+  assert.match(logoutBatch, /const revokeQuery = allDevices[\s\S]*?eq\(authSessions\.userAccountId, userAccountId\)[\s\S]*?: db\.update\(authSessions\)[\s\S]*?eq\(authSessions\.id, sessionId\)/);
+  assert.match(logoutBatch, /const queries = \[[\s\S]*?revokeQuery,[\s\S]*?sessions_revoked[\s\S]*?authEventValues\("logout"[\s\S]*?\] as const;\s*await db\.batch\(queries\)/);
   assert.match(dashboardRoute, /accessDenied: true \}, \{ status: 403 \}/);
   assert.match(authService, /status: 401 \| 429/);
 });
@@ -347,14 +342,17 @@ test("sessions use a 256-bit opaque cookie, persist only its hash, and validate 
     source("lib/access-control.ts"),
     source("db/schema.ts"),
   ]);
-  const createSession = accessControl.match(/export async function createSession[\s\S]*?(?=\nexport async function revokeRequestSession)/)?.[0] ?? "";
+  const sessionCreation = accessControl.match(/export async function createSession[\s\S]*?(?=\nexport async function revokeRequestSession)/)?.[0] ?? "";
+  const liveSessionLookup = accessControl.match(/async function authenticatedSession[\s\S]*?(?=\nfunction sessionToken)/)?.[0] ?? "";
 
   assert.match(accessControl, /const HTTPS_SESSION_COOKIE = "__Host-pp_session"/);
   assert.match(accessControl, /const HTTP_DEV_SESSION_COOKIE = "pp_session_dev"/);
   assert.match(accessControl, /const SESSION_TOKEN_BYTES = 32/);
-  assert.match(createSession, /const token = randomToken\(SESSION_TOKEN_BYTES\)/);
-  assert.match(createSession, /const tokenHash = await hashOpaqueToken\(token\)/);
-  assert.match(createSession, /insert\(authSessions\)\.values\(\{[\s\S]*?tokenHash,[\s\S]*?credentialVersion/);
+  assert.match(sessionCreation, /export async function createSession[\s\S]*?const prepared = await prepareSession\(request, account, credentialVersion\)[\s\S]*?insert\(authSessions\)\.values\(prepared\.values\)[\s\S]*?return prepared\.creation/);
+  assert.match(sessionCreation, /export async function prepareSession[\s\S]*?const token = randomToken\(SESSION_TOKEN_BYTES\)/);
+  assert.match(sessionCreation, /const tokenHash = await hashOpaqueToken\(token\)/);
+  assert.match(sessionCreation, /const values: typeof authSessions\.\$inferInsert = \{[\s\S]*?tokenHash,[\s\S]*?credentialVersion,[\s\S]*?revokedAt: null/);
+  assert.match(sessionCreation, /creation: \{ cookie: sessionCookie\(request, token, absoluteExpiresAt\)[\s\S]*?values/);
   assert.doesNotMatch(schema.match(/export const authSessions[\s\S]*?\n\]\);/)?.[0] ?? "", /\btoken:\s*text/);
   assert.match(accessControl, /`\$\{sessionCookieName\(request\)\}=\$\{token\}; Path=\/; HttpOnly; SameSite=Strict; Max-Age=\$\{maxAge\}\$\{secure \? "; Secure" : ""\}`/);
   assert.match(accessControl, /\^\[A-Za-z0-9_-\]\{43\}\$/);
@@ -364,6 +362,9 @@ test("sessions use a 256-bit opaque cookie, persist only its hash, and validate 
   assert.match(accessControl, /const liveDepartmentId = getRole\(linkedEmployee\.roleId\)\.departmentId/);
   assert.match(accessControl, /revokeReason: "account-unavailable"/);
   assert.match(accessControl, /revokeReason: "employee-link-unavailable"/);
+  assert.match(liveSessionLookup, /\.from\(authSessions\)[\s\S]*?\.leftJoin\(userAccounts,[\s\S]*?\.leftJoin\(authCredentials,[\s\S]*?\.leftJoin\(employees,[\s\S]*?\.where\(eq\(authSessions\.tokenHash, tokenHash\)\)[\s\S]*?\.limit\(1\)/);
+  assert.equal((liveSessionLookup.match(/\.from\(/g) ?? []).length, 1, "session authentication must fetch session, account, credential and employee in one joined lookup");
+  assert.doesNotMatch(liveSessionLookup, /Promise\.all\(|db\.select\([\s\S]*?db\.select\(/);
 });
 
 test("login admission is atomic, the sixth ID failure is cheap, and unknown users still run a dummy KDF", async () => {
@@ -381,6 +382,14 @@ test("login admission is atomic, the sixth ID failure is cheap, and unknown user
   assert.ok(reservationIndex >= 0 && reservationIndex < credentialLookupIndex, "the admission reservation must happen before credential lookup");
   assert.ok(credentialLookupIndex >= 0 && credentialLookupIndex < dummyIndex, "unknown or rejected credentials must take the dummy KDF path after admission");
   assert.match(loginBlock, /await getDb\(\)\.batch\(\[[\s\S]*?rateReservationQuery\(loginKeyHash, "login_id", LOGIN_ID_FAILURE_LIMIT/);
+  assert.match(loginBlock, /select\(\)\.from\(authRateLimits\)[\s\S]*?inArray\(authRateLimits\.keyHash, \[loginKeyHash, sourceKeyHash\]\)/);
+  assert.doesNotMatch(loginBlock, /getRateBucket\(/, "both rate buckets must be loaded by one IN query");
+  assert.match(loginBlock, /\.from\(authCredentials\)[\s\S]*?\.innerJoin\(userAccounts,[\s\S]*?\.leftJoin\(employees,[\s\S]*?\.where\(eq\(authCredentials\.loginIdCanonical, loginIdCanonical\)\)/);
+  assert.match(loginBlock, /const accountCanSignIn = accountIsEligible\(account \?\? null, loginContext\?\.employee \?\? null\)/);
+  assert.match(loginBlock, /if \(credential && !locked\) await db\.batch\(\[credentialFailureQuery\(credential, nowDate\), failureEventQuery\]\)/);
+  assert.match(loginBlock, /const preparedSession = await prepareSession\(request, refreshedAccount, credential\.credentialVersion\)[\s\S]*?await db\.batch\(\[[\s\S]*?eq\(authCredentials\.credentialVersion, credential\.credentialVersion\)[\s\S]*?releaseRateReservationQuery\(sourceKeyHash, now\)[\s\S]*?cleanupQueries\.sessions,[\s\S]*?db\.insert\(authSessions\)\.values\(preparedSession\.values\),[\s\S]*?eventType: "login_succeeded"/);
+  assert.match(loginBlock, /session: preparedSession\.creation/);
+  assert.doesNotMatch(loginBlock, /await createSession\(|await Promise\.all\(\[[\s\S]*?cleanupExpiredAuthRecords/, "successful login writes must remain in the transactional batch");
   assert.match(authService, /attemptCount: sql`CASE[\s\S]*?\$\{authRateLimits\.attemptCount\} \+ 1 > \$\{limit\} THEN \$\{blockedUntil\}/);
   assert.match(authService, /id: `auth-rate-limit:\$\{bucketType\}:\$\{keyHash\}:\$\{windowStartedAt\}`[\s\S]*?onConflictDoNothing\(\)/);
   assert.match(loginBlock, /if \(credential && !locked && passwordWithinLimit\)[\s\S]*?else \{\s*await dummyVerifyPassword/);
@@ -468,7 +477,14 @@ test("bootstrap repairs only a pristine or pre-first-party legacy owner through 
     source("drizzle/0017_legacy_bootstrap_repair.sql"),
     source("db/schema.ts"),
   ]);
-  const bootstrap = accessControl.match(/export async function ensureBootstrapAccounts[\s\S]*?(?=\nexport async function authenticateRequest)/)?.[0] ?? "";
+  const bootstrapCache = accessControl.match(/export function ensureBootstrapAccounts[\s\S]*?(?=\nasync function initializeBootstrapAccounts)/)?.[0] ?? "";
+  const bootstrap = accessControl.match(/async function initializeBootstrapAccounts[\s\S]*?(?=\nexport async function authenticateRequest)/)?.[0] ?? "";
+
+  assert.match(accessControl, /let bootstrapInitialization: Promise<void> \| null = null/);
+  assert.match(bootstrapCache, /if \(bootstrapInitialization\) return bootstrapInitialization/);
+  assert.match(bootstrapCache, /bootstrapInitialization = initializeBootstrapAccounts\(\)\.catch\(\(error\) => \{\s*bootstrapInitialization = null;\s*throw error/);
+  assert.match(bootstrap, /const \[ownerRows, credentialRows\] = await db\.batch\(\[[\s\S]*?from\(userAccounts\)[\s\S]*?from\(authCredentials\)[\s\S]*?\]\)/);
+  assert.match(bootstrap, /const existingOwner = ownerRows\[0\][\s\S]*?const existingCredential = credentialRows\[0\]/);
 
   for (const variable of [
     "PEOPLE_PULSE_BOOTSTRAP_LOGIN_ID",
@@ -480,6 +496,65 @@ test("bootstrap repairs only a pristine or pre-first-party legacy owner through 
   assert.match(bootstrap, /if \(!hasAnyBootstrapConfig\) return/);
   assert.match(bootstrap, /if \(!loginIdCanonical \|\| !verifier \|\| !\/\^\[/);
   assert.match(bootstrap, /configuration is incomplete or invalid/);
+  const currentCostGuard = /if \(!existingCredential && verifier\.passwordIterations !== PASSWORD_ITERATIONS\)/;
+  assert.match(bootstrap, currentCostGuard);
+  assertBefore(bootstrap, currentCostGuard, /db\.insert\(userAccounts\)/, "empty-database bootstrap work factor");
+  assertBefore(bootstrap, currentCostGuard, /db\.insert\(authCredentials\)/, "empty-database bootstrap credential");
+
+  const executableBootstrap = `
+    const PASSWORD_ITERATIONS = 600000;
+    const LEGACY_PASSWORD_ITERATIONS = 100000;
+    const userAccounts = { id: "id" };
+    const authCredentials = { userAccountId: "userAccountId" };
+    const authSessions = {};
+    const authEvents = {};
+    const eq = (...values) => values;
+    const gt = (...values) => values;
+    const isNull = (...values) => values;
+    const and = (...values) => values;
+    const sql = () => true;
+    const validateLoginId = (value) => value.toLowerCase();
+    const parsePasswordVerifier = () => ({
+      passwordAlgorithm: "pbkdf2-sha256",
+      passwordIterations: LEGACY_PASSWORD_ITERATIONS,
+      pepperVersion: 1,
+      passwordSalt: "AAECAwQFBgcICQoLDA0ODw",
+      passwordHash: "me-DHdEkZqHOISG6329gWohf7sLJ3JtlHj5z-fLc11E",
+    });
+    let writes = 0;
+    const readQuery = () => ({ from() { return this; }, where() { return this; }, limit() { return this; } });
+    const db = {
+      select: readQuery,
+      batch: async () => [[], []],
+      insert: () => { writes += 1; throw new Error("unexpected bootstrap write"); },
+    };
+    const getDb = () => db;
+    const recordAuthEvent = async () => { writes += 1; };
+    ${bootstrap.replace("async function initializeBootstrapAccounts", "export async function initializeBootstrapAccounts")}
+    export const writeCount = () => writes;
+  `;
+  const previousBootstrapEnvironment = {
+    loginId: process.env.PEOPLE_PULSE_BOOTSTRAP_LOGIN_ID,
+    verifier: process.env.PEOPLE_PULSE_BOOTSTRAP_PASSWORD_HASH,
+    email: process.env.PEOPLE_PULSE_BOOTSTRAP_ADMIN_EMAIL,
+  };
+  try {
+    process.env.PEOPLE_PULSE_BOOTSTRAP_LOGIN_ID = "owner.admin";
+    process.env.PEOPLE_PULSE_BOOTSTRAP_PASSWORD_HASH = "pbkdf2-sha256$100000$1$AAECAwQFBgcICQoLDA0ODw$me-DHdEkZqHOISG6329gWohf7sLJ3JtlHj5z-fLc11E";
+    process.env.PEOPLE_PULSE_BOOTSTRAP_ADMIN_EMAIL = "owner@example.com";
+    const bootstrapModule = await import(`data:text/javascript;base64,${Buffer.from(executableBootstrap).toString("base64")}`);
+    await assert.rejects(bootstrapModule.initializeBootstrapAccounts(), /current password work factor/);
+    assert.equal(bootstrapModule.writeCount(), 0, "a legacy verifier on an empty database must fail before account, credential, or event writes");
+  } finally {
+    for (const [key, value] of Object.entries({
+      PEOPLE_PULSE_BOOTSTRAP_LOGIN_ID: previousBootstrapEnvironment.loginId,
+      PEOPLE_PULSE_BOOTSTRAP_PASSWORD_HASH: previousBootstrapEnvironment.verifier,
+      PEOPLE_PULSE_BOOTSTRAP_ADMIN_EMAIL: previousBootstrapEnvironment.email,
+    })) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
 
   const existingStart = bootstrap.indexOf("if (existingCredential) {");
   const initialInsertStart = bootstrap.indexOf("const insertedCredentials");
@@ -495,7 +570,8 @@ test("bootstrap repairs only a pristine or pre-first-party legacy owner through 
     "(pristineBootstrapOwner || legacyOaiOwner)",
     "existingCredential.loginIdCanonical === loginIdCanonical",
     'existingCredential.passwordAlgorithm === "pbkdf2-sha256"',
-    "existingCredential.passwordIterations > 100_000",
+    "verifier.passwordIterations === LEGACY_PASSWORD_ITERATIONS",
+    "existingCredential.passwordIterations > LEGACY_PASSWORD_ITERATIONS",
     "existingCredential.pepperVersion === verifier.pepperVersion",
     "existingCredential.credentialVersion === 1",
     "existingCredential.mustChangePassword",
@@ -513,7 +589,7 @@ test("bootstrap repairs only a pristine or pre-first-party legacy owner through 
     "eq(authCredentials.passwordHash, existingCredential.passwordHash)",
     "eq(authCredentials.passwordSalt, existingCredential.passwordSalt)",
     "eq(authCredentials.passwordIterations, existingCredential.passwordIterations)",
-    "gt(authCredentials.passwordIterations, 100_000)",
+    "gt(authCredentials.passwordIterations, LEGACY_PASSWORD_ITERATIONS)",
     "eq(authCredentials.pepperVersion, existingCredential.pepperVersion)",
     "eq(authCredentials.credentialVersion, 1)",
     "eq(authCredentials.mustChangePassword, true)",
@@ -679,9 +755,114 @@ test("migration 0017 upgrades the old trigger, accepts one failed-login drift, a
   collisionDb.close();
 });
 
-test("ensureDatabase shares one probe, skips bulk work on the v18 marker, and retries a failed fallback", async () => {
+test("migration 0019 permits only sessions backed by live access and rolls a rejected batch back", async () => {
+  const sessionGuardMigration = await source("drizzle/0019_auth_session_guard.sql");
+  const db = new DatabaseSync(":memory:");
+  try {
+    db.exec(`
+      CREATE TABLE employees (
+        id TEXT PRIMARY KEY,
+        status TEXT NOT NULL
+      );
+      CREATE TABLE user_accounts (
+        id TEXT PRIMARY KEY,
+        role TEXT NOT NULL,
+        status TEXT NOT NULL,
+        employee_id TEXT
+      );
+      CREATE TABLE auth_credentials (
+        user_account_id TEXT PRIMARY KEY,
+        password_hash TEXT NOT NULL,
+        credential_version INTEGER NOT NULL
+      );
+      CREATE TABLE auth_sessions (
+        id TEXT PRIMARY KEY,
+        token_hash TEXT NOT NULL UNIQUE,
+        user_account_id TEXT NOT NULL,
+        credential_version INTEGER NOT NULL
+      );
+      CREATE TABLE batch_effects (
+        id TEXT PRIMARY KEY,
+        detail TEXT NOT NULL
+      );
+    `);
+    db.exec(sessionGuardMigration);
+
+    assert.equal(db.prepare("SELECT COUNT(*) AS total FROM sqlite_master WHERE type = 'trigger' AND name = 'auth_sessions_validate_insert'").get().total, 1);
+    assert.equal(db.prepare("SELECT COUNT(*) AS total FROM sqlite_master WHERE type = 'table' AND name = 'people_pulse_schema_v19_ready'").get().total, 1);
+
+    const insertEmployee = db.prepare("INSERT INTO employees (id, status) VALUES (?, ?)");
+    insertEmployee.run("employee-active-manager", "active");
+    insertEmployee.run("employee-active-staff", "active");
+    insertEmployee.run("employee-inactive", "inactive");
+
+    const insertAccount = db.prepare("INSERT INTO user_accounts (id, role, status, employee_id) VALUES (?, ?, ?, ?)");
+    insertAccount.run("admin-active", "admin", "active", null);
+    insertAccount.run("manager-active", "manager", "active", "employee-active-manager");
+    insertAccount.run("employee-active", "employee", "active", "employee-active-staff");
+    insertAccount.run("admin-inactive", "admin", "inactive", null);
+    insertAccount.run("role-unknown", "auditor", "active", "employee-active-staff");
+    insertAccount.run("employee-missing", "manager", "active", "employee-not-found");
+    insertAccount.run("employee-inactive-link", "employee", "active", "employee-inactive");
+    insertAccount.run("empty-password-hash", "admin", "active", null);
+
+    const insertCredential = db.prepare("INSERT INTO auth_credentials (user_account_id, password_hash, credential_version) VALUES (?, ?, ?)");
+    for (const [accountId, hash, version] of [
+      ["admin-active", "admin-hash", 7],
+      ["manager-active", "manager-hash", 3],
+      ["employee-active", "employee-hash", 4],
+      ["admin-inactive", "inactive-hash", 1],
+      ["role-unknown", "unknown-role-hash", 1],
+      ["employee-missing", "missing-link-hash", 1],
+      ["employee-inactive-link", "inactive-link-hash", 1],
+      ["empty-password-hash", "", 1],
+    ]) insertCredential.run(accountId, hash, version);
+
+    const insertSession = db.prepare("INSERT INTO auth_sessions (id, token_hash, user_account_id, credential_version) VALUES (?, ?, ?, ?)");
+    for (const [id, accountId, credentialVersion] of [
+      ["valid-admin", "admin-active", 7],
+      ["valid-manager", "manager-active", 3],
+      ["valid-employee", "employee-active", 4],
+    ]) insertSession.run(id, `token-${id}`, accountId, credentialVersion);
+    assert.equal(db.prepare("SELECT COUNT(*) AS total FROM auth_sessions").get().total, 3);
+
+    for (const [reason, accountId, credentialVersion] of [
+      ["stale credential", "admin-active", 6],
+      ["inactive account", "admin-inactive", 1],
+      ["unknown role", "role-unknown", 1],
+      ["missing employee", "employee-missing", 1],
+      ["inactive employee", "employee-inactive-link", 1],
+      ["empty password hash", "empty-password-hash", 1],
+      ["missing account", "account-not-found", 1],
+    ]) {
+      assert.throws(
+        () => insertSession.run(`invalid-${reason}`, `token-invalid-${reason}`, accountId, credentialVersion),
+        /AUTH_SESSION_ACCOUNT_UNAVAILABLE/,
+        reason,
+      );
+    }
+
+    assert.throws(() => {
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        db.prepare("INSERT INTO batch_effects (id, detail) VALUES (?, ?)").run("must-roll-back", "written before guarded session");
+        insertSession.run("invalid-transaction", "token-invalid-transaction", "admin-active", 999);
+        db.exec("COMMIT");
+      } catch (error) {
+        db.exec("ROLLBACK");
+        throw error;
+      }
+    }, /AUTH_SESSION_ACCOUNT_UNAVAILABLE/);
+    assert.equal(db.prepare("SELECT COUNT(*) AS total FROM batch_effects").get().total, 0, "a rejected guarded insert must roll back earlier writes in the same transactional batch");
+    assert.equal(db.prepare("SELECT COUNT(*) AS total FROM auth_sessions").get().total, 3);
+  } finally {
+    db.close();
+  }
+});
+
+test("ensureDatabase shares one probe, skips bulk work on the v19 marker, and retries a failed fallback", async () => {
   const initializeSource = await source("db/initialize.ts");
-  assert.match(initializeSource, /const LATEST_SCHEMA_MARKER = "people_pulse_schema_v18_ready"/);
+  assert.match(initializeSource, /const LATEST_SCHEMA_MARKER = "people_pulse_schema_v19_ready"/);
   assert.match(initializeSource, /SELECT 1 AS ready FROM sqlite_master WHERE type = 'table' AND name = \? LIMIT 1/);
   assert.match(initializeSource, /if \(initialization\) return initialization/);
   assert.match(initializeSource, /initialization = \(async \(\) => \{\s*if \(await latestSchemaIsReady\(d1\)\) return/);
@@ -749,7 +930,7 @@ test("ensureDatabase shares one probe, skips bulk work on the v18 marker, and re
     assert.strictEqual(fastConcurrent, fastFirst, "concurrent callers must share the once-per-isolate promise");
     assert.equal(fast.calls.prepared.length, 1, "the ready fast path must prepare only its sentinel lookup");
     assert.equal(fast.calls.first, 1);
-    assert.deepEqual(fast.calls.binds, ["people_pulse_schema_v18_ready"]);
+    assert.deepEqual(fast.calls.binds, ["people_pulse_schema_v19_ready"]);
     assert.equal(fast.calls.batches.length, 0);
     assert.equal(fast.calls.all, 0);
     assert.equal(fast.calls.run, 0);
@@ -789,8 +970,10 @@ test("ensureDatabase shares one probe, skips bulk work on the v18 marker, and re
     const successfulSql = fallback.calls.batches.slice(1).flat();
     assert.ok(successfulSql.some((sql) => sql.includes("DROP TRIGGER IF EXISTS auth_credentials_audit_bootstrap_iteration_repair")));
     assert.ok(successfulSql.some((sql) => sql.includes("CREATE TRIGGER IF NOT EXISTS auth_credentials_audit_bootstrap_legacy_iteration_repair")));
+    assert.ok(successfulSql.some((sql) => sql.includes("DROP TRIGGER IF EXISTS auth_sessions_validate_insert")));
+    assert.ok(successfulSql.some((sql) => sql.includes("CREATE TRIGGER auth_sessions_validate_insert")));
     assert.match(successfulSql.at(-2), /^PRAGMA optimize$/);
-    assert.match(successfulSql.at(-1), /CREATE TABLE IF NOT EXISTS people_pulse_schema_v18_ready/);
+    assert.match(successfulSql.at(-1), /CREATE TABLE IF NOT EXISTS people_pulse_schema_v19_ready/);
     assert.strictEqual(fallbackInitializer.ensureDatabase(), retry);
   } finally {
     delete globalThis.__PEOPLE_PULSE_TEST_D1;
@@ -798,7 +981,24 @@ test("ensureDatabase shares one probe, skips bulk work on the v18 marker, and re
 });
 
 test("auth schema, forward trigger and sentinel migrations, journal and built Sites bundle stay in parity", async () => {
-  const [schema, initialize, migration, packagedMigration, snapshot, legacyMigration, packagedLegacyMigration, legacySnapshot, markerMigration, packagedMarkerMigration, markerSnapshot, journal, packageJson] = await Promise.all([
+  const [
+    schema,
+    initialize,
+    migration,
+    packagedMigration,
+    snapshot,
+    legacyMigration,
+    packagedLegacyMigration,
+    legacySnapshot,
+    markerMigration,
+    packagedMarkerMigration,
+    markerSnapshot,
+    sessionGuardMigration,
+    packagedSessionGuardMigration,
+    sessionGuardSnapshot,
+    journal,
+    packageJson,
+  ] = await Promise.all([
     source("db/schema.ts"),
     source("db/initialize.ts"),
     source("drizzle/0016_jittery_lily_hollister.sql"),
@@ -810,6 +1010,9 @@ test("auth schema, forward trigger and sentinel migrations, journal and built Si
     source("drizzle/0018_schema_v18_ready.sql"),
     source("dist/.openai/drizzle/0018_schema_v18_ready.sql"),
     source("drizzle/meta/0018_snapshot.json").then(JSON.parse),
+    source("drizzle/0019_auth_session_guard.sql"),
+    source("dist/.openai/drizzle/0019_auth_session_guard.sql"),
+    source("drizzle/meta/0019_snapshot.json").then(JSON.parse),
     source("drizzle/meta/_journal.json").then(JSON.parse),
     source("package.json").then(JSON.parse),
   ]);
@@ -817,11 +1020,14 @@ test("auth schema, forward trigger and sentinel migrations, journal and built Si
   assert.equal(packagedMigration, migration, "Sites build must package auth migration 0016 verbatim");
   assert.equal(packagedLegacyMigration, legacyMigration, "Sites build must package forward repair migration 0017 verbatim");
   assert.equal(packagedMarkerMigration, markerMigration, "Sites build must package schema marker migration 0018 verbatim");
-  assert.equal(journal.entries.at(-3)?.tag, "0016_jittery_lily_hollister");
-  assert.equal(journal.entries.at(-2)?.tag, "0017_legacy_bootstrap_repair");
-  assert.equal(journal.entries.at(-1)?.tag, "0018_schema_v18_ready");
+  assert.equal(packagedSessionGuardMigration, sessionGuardMigration, "Sites build must package session guard migration 0019 verbatim");
+  assert.equal(journal.entries.at(-4)?.tag, "0016_jittery_lily_hollister");
+  assert.equal(journal.entries.at(-3)?.tag, "0017_legacy_bootstrap_repair");
+  assert.equal(journal.entries.at(-2)?.tag, "0018_schema_v18_ready");
+  assert.equal(journal.entries.at(-1)?.tag, "0019_auth_session_guard");
   assert.equal(legacySnapshot.prevId, snapshot.id, "0017 snapshot must be the direct forward successor to 0016");
   assert.equal(markerSnapshot.prevId, legacySnapshot.id, "0018 snapshot must be the direct forward successor to 0017");
+  assert.equal(sessionGuardSnapshot.prevId, markerSnapshot.id, "0019 snapshot must be the direct forward successor to 0018");
   assert.equal(packageJson.scripts["auth:bootstrap"], "node scripts/generate-auth-bootstrap.mjs");
   for (const [exportName, tableName] of [
     ["authCredentials", "auth_credentials"],
@@ -845,6 +1051,7 @@ test("auth schema, forward trigger and sentinel migrations, journal and built Si
   assert.equal(snapshot.tables.auth_credentials.columns.password_iterations.default, 100000);
   assert.equal(legacySnapshot.tables.auth_credentials.columns.password_iterations.default, 100000);
   assert.equal(markerSnapshot.tables.auth_credentials.columns.password_iterations.default, 100000);
+  assert.equal(sessionGuardSnapshot.tables.auth_credentials.columns.password_iterations.default, 100000);
 
   const migrationDrop = legacyMigration.indexOf("DROP TRIGGER IF EXISTS `auth_credentials_audit_bootstrap_iteration_repair`");
   const migrationCreate = legacyMigration.indexOf("CREATE TRIGGER `auth_credentials_audit_bootstrap_legacy_iteration_repair`");
@@ -855,9 +1062,21 @@ test("auth schema, forward trigger and sentinel migrations, journal and built Si
   assert.doesNotMatch(legacyMigration, /UPDATE [`]?auth_credentials[`]?/, "0017 must not repair any credential without the guarded runtime bootstrap flow");
   assert.match(markerMigration, /^CREATE TABLE `people_pulse_schema_v18_ready` \{?[\s\S]*?`schema_version` integer PRIMARY KEY NOT NULL CHECK \(`schema_version` = 18\)[\s\S]*?\);?\s*$/);
   assert.doesNotMatch(markerMigration, /(?:DROP|ALTER|UPDATE|DELETE|INSERT)\s/i, "0018 must only add the readiness marker after 0017");
-  const freshMarker = initialize.indexOf("CREATE TABLE IF NOT EXISTS people_pulse_schema_v18_ready");
+  const guardDrop = sessionGuardMigration.indexOf("DROP TRIGGER IF EXISTS `auth_sessions_validate_insert`");
+  const guardCreate = sessionGuardMigration.indexOf("CREATE TRIGGER `auth_sessions_validate_insert`");
+  const guardMarker = sessionGuardMigration.indexOf("CREATE TABLE `people_pulse_schema_v19_ready`");
+  assert.ok(guardDrop >= 0 && guardDrop < guardCreate && guardCreate < guardMarker, "0019 must replace the session guard before publishing its readiness marker");
+  for (const guardSource of [initialize, sessionGuardMigration]) {
+    const normalizedGuardSource = guardSource.replaceAll("`", "");
+    assert.match(normalizedGuardSource, /auth_sessions_validate_insert[\s\S]*?account\.status = 'active'[\s\S]*?account\.role IN \('admin', 'manager', 'employee'\)[\s\S]*?credential\.password_hash <> ''[\s\S]*?credential\.credential_version = NEW\.credential_version/);
+    assert.match(normalizedGuardSource, /account\.role = 'admin'[\s\S]*?account\.employee_id IS NOT NULL[\s\S]*?employee\.status = 'active'[\s\S]*?AUTH_SESSION_ACCOUNT_UNAVAILABLE/);
+  }
+  assert.doesNotMatch(sessionGuardMigration, /(?:ALTER TABLE|UPDATE\s+[`"\w]|DELETE FROM|INSERT INTO)/i, "0019 must install only the insert guard and its readiness marker");
+  const freshGuard = initialize.indexOf("CREATE TRIGGER auth_sessions_validate_insert");
+  const freshMarker = initialize.indexOf("CREATE TABLE IF NOT EXISTS people_pulse_schema_v19_ready");
   const finalOptimize = initialize.indexOf('d1.prepare("PRAGMA optimize")');
-  assert.ok(freshMarker > initCreate && freshMarker > finalOptimize, "fresh initialization must create the marker only after all tables and final triggers");
+  assert.ok(freshGuard > initCreate, "fresh initialization must retain the legacy bootstrap trigger and then install the session guard");
+  assert.ok(freshMarker > freshGuard && freshMarker > finalOptimize, "fresh initialization must create the v19 marker only after all tables and final triggers");
 });
 
 test("local auth secrets are ignored by Git and excluded from the Sites bundle", async () => {
@@ -883,21 +1102,27 @@ test("README defines ID/password onboarding and keeps public access behind a tes
     "PEOPLE_PULSE_RATE_LIMIT_SECRET",
     "PEOPLE_PULSE_CANONICAL_ORIGIN",
     "PBKDF2-SHA-256",
+    "node:crypto",
     "100,000 รอบ",
+    "600,000 รอบ",
     "--repair-existing",
+    "ถูกยกเลิก",
     "0017_legacy_bootstrap_repair.sql",
     "0018_schema_v18_ready.sql",
+    "0019_auth_session_guard.sql",
     "legacy OAI",
-    "login_succeeded",
-    "generic-credential-failure",
-    "session **0 แถว**",
-    "WHERE password_iterations > 100000",
-    "AND user_account_id <> 'user-owner'",
-    "ต้องคืน 0 แถว",
+    "credential.password_iterations <> 600000",
+    "credential.user_account_id = 'user-owner'",
+    "credential.must_change_password <> 0",
+    "คืน 0 แถว",
     "รหัสผู้ใช้ + รหัสผ่านชั่วคราว + บทบาท + โปรไฟล์พนักงาน",
     "public cutover gate",
     "เปลี่ยน access policy กลับเป็น `custom/private`",
   ]) assert.ok(readme.includes(copy), `README must include: ${copy}`);
+  assert.doesNotMatch(readme, /npm run auth:bootstrap -- --repair-existing/, "retired repair mode must not remain an operator instruction");
+  assert.doesNotMatch(readme, /password_iterations > 100000/, "the public gate must not reject current 600k credentials");
+  assert.match(readme, /บัญชี active ทุกบัญชีใช้ 600,000 รอบ/);
+  assert.match(readme, /เจ้าของ(?:ระบบ)?เปลี่ยนรหัสชั่วคราวเสร็จ/);
   assert.match(readme, /deploy[\s\S]*?ทดสอบ[\s\S]*?อนุมัติ[\s\S]*?public/i);
   assert.match(readme, /ห้าม[\s\S]*?commit[\s\S]*?PEOPLE_PULSE_PASSWORD_PEPPER_V1/);
 });

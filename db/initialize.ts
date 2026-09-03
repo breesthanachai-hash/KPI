@@ -1,9 +1,9 @@
 import { getD1 } from ".";
 
 let initialization: Promise<unknown> | null = null;
-// Migration 0018 creates this object only after every preceding schema change.
+// Migration 0019 creates this object only after every preceding schema change.
 // Future schema migrations must use a new marker name and place it last too.
-const LATEST_SCHEMA_MARKER = "people_pulse_schema_v18_ready";
+const LATEST_SCHEMA_MARKER = "people_pulse_schema_v19_ready";
 
 async function latestSchemaIsReady(d1: ReturnType<typeof getD1>) {
   const marker = await d1.prepare(
@@ -225,6 +225,32 @@ export function ensureDatabase() {
             'iterations:' || OLD.password_iterations || '->100000',
             NEW.updated_at
           );
+      END`),
+    d1.prepare("DROP TRIGGER IF EXISTS auth_sessions_validate_insert"),
+    d1.prepare(`CREATE TRIGGER auth_sessions_validate_insert
+      BEFORE INSERT ON auth_sessions
+      WHEN NOT EXISTS (
+        SELECT 1
+        FROM user_accounts AS account
+        INNER JOIN auth_credentials AS credential
+          ON credential.user_account_id = account.id
+        LEFT JOIN employees AS employee
+          ON employee.id = account.employee_id
+        WHERE account.id = NEW.user_account_id
+          AND account.status = 'active'
+          AND account.role IN ('admin', 'manager', 'employee')
+          AND credential.password_hash <> ''
+          AND credential.credential_version = NEW.credential_version
+          AND (
+            account.role = 'admin'
+            OR (
+              account.employee_id IS NOT NULL
+              AND employee.status = 'active'
+            )
+          )
+      )
+      BEGIN
+        SELECT RAISE(ABORT, 'AUTH_SESSION_ACCOUNT_UNAVAILABLE');
       END`),
     d1.prepare(`CREATE TABLE IF NOT EXISTS notification_reads (
       id TEXT PRIMARY KEY NOT NULL,
@@ -867,8 +893,8 @@ export function ensureDatabase() {
           SELECT RAISE(ABORT, 'EMPLOYEE_RECOGNITION_STALE_REVISION');
         END`),
       d1.prepare("PRAGMA optimize"),
-      d1.prepare(`CREATE TABLE IF NOT EXISTS people_pulse_schema_v18_ready (
-        schema_version INTEGER PRIMARY KEY NOT NULL CHECK (schema_version = 18)
+      d1.prepare(`CREATE TABLE IF NOT EXISTS people_pulse_schema_v19_ready (
+        schema_version INTEGER PRIMARY KEY NOT NULL CHECK (schema_version = 19)
       )`),
     ]);
   })().catch((error) => {

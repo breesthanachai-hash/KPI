@@ -1,12 +1,9 @@
 import { ensureDatabase } from "../../../../db/initialize";
 import {
-  authenticateRequest,
+  authenticatedRequestSession,
   clearSessionCookie,
-  ensureBootstrapAccounts,
+  completeLogout,
   privateNoStoreHeaders,
-  recordAuthEvent,
-  revokeAllSessionsForAccount,
-  revokeRequestSession,
   sameOriginRequiredResponse,
   unsafeRequestIsSameOrigin,
 } from "../../../../lib/access-control";
@@ -19,9 +16,8 @@ export async function POST(request: Request) {
   if (!unsafeRequestIsSameOrigin(request)) return sameOriginRequiredResponse();
   try {
     await ensureDatabase();
-    await ensureBootstrapAccounts();
-    const currentUser = await authenticateRequest(request);
-    if (!currentUser) {
+    const sessionContext = await authenticatedRequestSession(request);
+    if (!sessionContext) {
       const headers = new Headers(privateNoStoreHeaders);
       headers.append("set-cookie", clearSessionCookie(request));
       return Response.json({ loggedOut: true }, { headers });
@@ -29,9 +25,12 @@ export async function POST(request: Request) {
     const contentLength = Number(request.headers.get("content-length") ?? 0);
     if (Number.isFinite(contentLength) && contentLength > 2048) return Response.json({ error: "ข้อมูลคำขอไม่ถูกต้อง" }, { status: 400, headers: privateNoStoreHeaders });
     const payload = await request.json().catch(() => ({})) as { allDevices?: unknown };
-    if (payload.allDevices === true) await revokeAllSessionsForAccount(currentUser.id, "logout-all-devices");
-    else await revokeRequestSession(request, "logout");
-    await recordAuthEvent("logout", currentUser.id, await requestSourceHash(request), payload.allDevices === true ? "all-devices" : "current-session");
+    await completeLogout(
+      sessionContext.sessionId,
+      sessionContext.currentUser.id,
+      await requestSourceHash(request),
+      payload.allDevices === true,
+    );
     const headers = new Headers(privateNoStoreHeaders);
     headers.append("set-cookie", clearSessionCookie(request));
     return Response.json({ loggedOut: true }, { headers });
