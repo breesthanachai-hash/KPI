@@ -170,7 +170,8 @@ Migration ล่าสุดที่เกี่ยวข้อง:
 - `0013_bangkok_reward_month.sql` เป็น migration marker สำหรับการเปลี่ยนตัวตรวจเดือนรางวัลเป็นเวลาไทย
 - `0014_crazy_doctor_spectrum.sql` เพิ่มผู้สร้างงานสำหรับระบบงานประสานระหว่างพนักงาน
 - `0015_parallel_the_hood.sql` เพิ่มคลังเอกสารองค์กร ประวัติใบเตือนพร้อมเหตุการณ์ และเกียรติบัตร/รางวัลในแฟ้มพนักงาน
-- `0016_jittery_lily_hollister.sql` เพิ่มระบบเข้าใช้ด้วย ID + รหัสผ่าน, session/rate-limit/audit tables, ค่า PBKDF2 100,000 รอบ และ trigger ป้องกันการปิดหรือลบ Admin คนสุดท้าย การแก้ credential ชนกัน และการซ่อม bootstrap รุ่นทดลองแบบจำกัดกรณี
+- `0016_jittery_lily_hollister.sql` เพิ่มระบบเข้าใช้ด้วย ID + รหัสผ่าน, session/rate-limit/audit tables, ค่า PBKDF2 100,000 รอบ และ trigger ป้องกันการปิดหรือลบ Admin คนสุดท้ายกับการแก้ credential ชนกัน
+- `0017_legacy_bootstrap_repair.sql` เปลี่ยน trigger ซ่อม bootstrap ให้รองรับ `user-owner` ที่เคยผูก legacy OAI identity ก่อนเริ่มระบบรหัสผ่าน โดยยังปฏิเสธบัญชีที่มีหลักฐานใช้หรือแก้ credential แบบ first-party แล้ว
 - `db/initialize.ts` สร้างตาราง ดัชนี และ trigger ป้องกัน race condition ตอนเริ่มระบบ ส่วนฐานข้อมูลเดิมอัปเกรดตามลำดับใน `drizzle/`; trigger แบบ `BEGIN/END` ใน migration ถูกคั่นด้วย statement marker เพื่อให้ตัวรันของ Sites/D1 ประมวลผลทั้ง trigger เป็นคำสั่งเดียว
 
 ไฟล์ `lib/kpi-data.ts` เป็นแหล่งเทมเพลตตำแหน่ง KPI สมรรถนะ AI Mastery กติกา Points นโยบายเริ่มต้น และรางวัลเริ่มต้น ส่วน `drizzle/` และ `drizzle/meta/` เก็บ migration กับ snapshot ของสคีมา
@@ -240,7 +241,7 @@ npm run auth:bootstrap -- --login-id admin --email owner@example.com --name "ช
 
 #### ข้อยกเว้นชั่วคราว: ซ่อม bootstrap รุ่นทดลองเดิม
 
-ใช้ขั้นตอนนี้เฉพาะ installation ที่เคยสร้าง `user-owner` ด้วยรุ่นทดลอง 600,000 รอบก่อนเปลี่ยนมาใช้เพดาน Cloudflare และบัญชีนั้นยังไม่เคยเข้าใช้หรือถูกแก้ไข ห้ามใช้เป็นเครื่องมือ reset รหัสหรือ migration ผู้ใช้ทั่วไป และให้คง Sites access เป็น `custom/private` จนกว่าจะซ่อมและทดสอบเสร็จ
+ใช้ขั้นตอนนี้เฉพาะ installation ที่เคยสร้าง `user-owner` ด้วยรุ่นทดลอง 600,000 รอบก่อนเปลี่ยนมาใช้เพดาน Cloudflare และยังไม่มีการเข้าใช้สำเร็จหรือแก้รหัสผ่านผ่านระบบ ID + รหัสผ่าน ห้ามใช้เป็นเครื่องมือ reset รหัสหรือ migration ผู้ใช้ทั่วไป และให้คง Sites access เป็น `custom/private` จนกว่าจะติดตั้ง migration `0017_legacy_bootstrap_repair.sql`, ซ่อม และทดสอบเสร็จ ประวัติ legacy OAI identity กับเวลาเข้าใช้เก่าก่อนสร้าง credential ไม่ถือเป็นการเข้าใช้ first-party
 
 ใน environment ที่มี `PEOPLE_PULSE_PASSWORD_PEPPER_V1` เดิมอยู่แล้ว ให้รัน:
 
@@ -250,7 +251,11 @@ npm run auth:bootstrap -- --repair-existing --login-id admin --email owner@examp
 
 โหมด `--repair-existing` ต้องใช้ pepper V1 เดิม สร้าง verifier ใหม่ 100,000 รอบ และจะไม่แสดงหรือสร้าง `PEOPLE_PULSE_PASSWORD_PEPPER_V1` กับ `PEOPLE_PULSE_RATE_LIMIT_SECRET` ใหม่ ให้นำไปแทนเฉพาะ bootstrap hash/ข้อมูลบัญชีที่ต้องตรงกับเจ้าของเดิม เก็บรหัสชั่วคราวใหม่ใน password manager และ **ห้ามเปลี่ยน password pepper หรือ rate-limit secret เดิม**
 
-แอปจะซ่อมเฉพาะ `user-owner` ที่ยังเป็น Admin active ซึ่งสร้างโดยระบบเริ่มต้น, login ID/อีเมลตรงกับค่า bootstrap, ไม่เคย login, metadata และเวลาสร้าง/แก้ไขยังไม่เปลี่ยน, credential version 1 ยังบังคับเปลี่ยนรหัส มี 0 ครั้งล้มเหลว ไม่ถูกล็อก ใช้ pepper version เดียวกัน และมีจำนวนรอบเกิน 100,000 เท่านั้น การอัปเดตใช้ exact compare-and-swap; ถ้าเงื่อนไขใดไม่ตรงจะไม่แก้ข้อมูล เมื่อสำเร็จจะเป็น credential version 2 พร้อมถอน session เดิมและเขียน audit `bootstrap_credential_repaired` ครั้งเดียวใน transaction เดียวกัน
+แอปจะซ่อมเฉพาะ `user-owner` ที่ยังเป็น Admin active ซึ่งสร้างโดยระบบเริ่มต้นและ login ID/อีเมลตรงกับค่า bootstrap รูปแบบบัญชีต้องเป็นบัญชี bootstrap ที่ยังสะอาด หรือบัญชี legacy OAI ที่มี `auth_user_id` เดิมและลำดับเวลา `สร้างบัญชี < legacy last login < สร้าง credential` เท่านั้น credential ต้องเป็น version 1, ยังบังคับเปลี่ยนรหัส, ใช้ pepper version เดียวกัน, `password_changed_at` ยังเท่ากับเวลาสร้าง, ไม่ถูกล็อก และมีจำนวนรอบเกิน 100,000
+
+หลักฐาน first-party ต้องมี session **0 แถว**, มี audit `credential_created` แบบ `bootstrap-prehashed` หลังสร้าง credential เพียง 1 แถว และอาจมีเพิ่มได้เฉพาะ `login_failed` แบบ `generic-credential-failure` หลังจากนั้นไม่เกิน 1 แถว โดยจำนวนต้องตรงกับ `failed_attempts` ความล้มเหลวครั้งนี้อาจทำให้ `failed_attempts` กับ `updated_at` เปลี่ยนได้และระบบจะรีเซ็ตกลับเป็น 0/เวลาซ่อมเมื่อซ่อมสำเร็จ หากพบ session ใด ๆ, `login_succeeded`, `password_changed`, `credential_reset`, `credential_updated`, audit อื่น หรือจำนวนหลักฐานไม่ตรง ระบบจะไม่ซ่อม
+
+การอัปเดตใช้ exact compare-and-swap; ถ้า hash, salt, version, timestamp, ข้อมูลบัญชี หรือหลักฐานเปลี่ยนระหว่างตรวจจะไม่แก้ข้อมูล เมื่อสำเร็จจะเป็น credential version 2 และเขียน audit `bootstrap_credential_repaired` ด้วย ID คงที่ใน transaction เดียวกัน หากเขียน audit ไม่ได้ การเปลี่ยน credential ต้อง rollback ทั้งรายการ
 
 ก่อนซ่อม ตรวจว่าบัญชีอื่นไม่มี verifier เกินเพดาน คำสั่งนี้ **ต้องคืน 0 แถว**:
 
@@ -301,7 +306,7 @@ Preflight จะหยุดทันทีเมื่อ Node ต่ำกว�
 
 1. ใช้ commit ที่ clean และผ่าน `npm run release:verify`
 2. ตรวจว่า archive ที่จะบันทึกเป็น Sites version มาจาก commit เดียวกัน และมี `dist/server/index.js`, `dist/client`, `dist/.openai/hosting.json` และ `dist/.openai/drizzle`
-3. คง access policy ของ Sites เป็น `custom/private` ระหว่างติดตั้ง migration `0016`, ตั้ง Auth secrets และ deploy เวอร์ชันใหม่ หากเคยใช้ bootstrap รุ่นทดลองให้รัน ops gate ด้านบนและยืนยันว่า `password_iterations > 100000` ไม่เหลือสักแถว ห้ามเปิด public ก่อนผ่านการทดสอบระบบเข้าใช้
+3. คง access policy ของ Sites เป็น `custom/private` ระหว่างติดตั้ง migration `0016` และ `0017`, ตั้ง Auth secrets และ deploy เวอร์ชันใหม่ หากเคยใช้ bootstrap รุ่นทดลองให้รัน ops gate ด้านบนและยืนยันว่า `password_iterations > 100000` ไม่เหลือสักแถว ห้ามเปิด public ก่อนผ่านการทดสอบระบบเข้าใช้
 4. ทดสอบผ่าน custom domain ว่าไม่มีเซสชันได้ 401, รหัสชั่วคราวได้ 428 และบังคับเปลี่ยนรหัส, ครั้งที่ 6 ของการลองรหัสผิดได้ 429 พร้อม `Retry-After`, ออกจากระบบแล้วเซสชันเดิมใช้ไม่ได้ และบัญชีต่างบทบาทเข้าข้อมูลข้ามขอบเขตได้ 403
 5. สร้างบัญชี pilot ด้วยรหัสผู้ใช้ + รหัสผ่านชั่วคราว + บทบาท + โปรไฟล์พนักงาน และทดสอบ HR, หัวหน้า และพนักงานจริงอย่างน้อยบทบาทละหนึ่งบัญชี: เข้าระบบ → เปลี่ยนรหัส → มอบหมายงาน → ส่งหลักฐาน R2 → ตรวจงาน → ได้ Points หนึ่งครั้ง → แลกรางวัล
 6. ทดสอบเอกสารส่วนตัวข้ามบัญชีให้ได้ 403, ดาวน์โหลดแม่แบบ DOCX ทั้ง 5 ฉบับ และตรวจว่า `/favicon.ico` เปลี่ยนไปใช้ `/favicon.svg` โดยไม่เป็น 404

@@ -89,25 +89,32 @@ export async function ensureBootstrapAccounts() {
   const [existingCredential] = await db.select().from(authCredentials).where(eq(authCredentials.userAccountId, "user-owner")).limit(1);
   if (existingCredential) {
     const originalPasswordChangedAt = existingCredential.passwordChangedAt;
-    const untouchedBootstrapCredential = existingOwner
+    const pristineBootstrapOwner = existingOwner
       && existingOwner.authUserId === ""
+      && existingOwner.lastLoginAt === null
+      && existingOwner.createdAt === existingOwner.updatedAt;
+    const legacyOaiOwner = existingOwner
+      && existingOwner.authUserId !== ""
+      && existingOwner.lastLoginAt !== null
+      && existingOwner.createdAt < existingOwner.lastLoginAt
+      && existingOwner.lastLoginAt < existingCredential.createdAt;
+    const untouchedBootstrapCredential = existingOwner
       && existingOwner.email === configuredEmail
       && existingOwner.role === "admin"
       && existingOwner.status === "active"
-      && existingOwner.lastLoginAt === null
       && existingOwner.createdBy === "ระบบเริ่มต้น"
-      && existingOwner.createdAt === existingOwner.updatedAt
+      && (pristineBootstrapOwner || legacyOaiOwner)
       && existingCredential.loginIdCanonical === loginIdCanonical
       && existingCredential.passwordAlgorithm === "pbkdf2-sha256"
       && existingCredential.passwordIterations > 100_000
       && existingCredential.pepperVersion === verifier.pepperVersion
       && existingCredential.credentialVersion === 1
       && existingCredential.mustChangePassword
-      && existingCredential.failedAttempts === 0
+      && existingCredential.failedAttempts >= 0
+      && existingCredential.failedAttempts <= 1
       && existingCredential.lockedUntil === null
       && originalPasswordChangedAt !== null
-      && originalPasswordChangedAt === existingCredential.createdAt
-      && existingCredential.createdAt === existingCredential.updatedAt;
+      && originalPasswordChangedAt === existingCredential.createdAt;
     if (!untouchedBootstrapCredential || !originalPasswordChangedAt) return;
     const repairedAt = new Date().toISOString();
     const [repairedCredential] = await db.update(authCredentials).set({
@@ -129,7 +136,7 @@ export async function ensureBootstrapAccounts() {
       eq(authCredentials.pepperVersion, existingCredential.pepperVersion),
       eq(authCredentials.credentialVersion, 1),
       eq(authCredentials.mustChangePassword, true),
-      eq(authCredentials.failedAttempts, 0),
+      eq(authCredentials.failedAttempts, existingCredential.failedAttempts),
       isNull(authCredentials.lockedUntil),
       eq(authCredentials.passwordChangedAt, originalPasswordChangedAt),
       eq(authCredentials.createdAt, existingCredential.createdAt),
@@ -137,14 +144,52 @@ export async function ensureBootstrapAccounts() {
       sql`EXISTS (
         SELECT 1 FROM ${userAccounts}
         WHERE ${userAccounts.id} = 'user-owner'
-          AND ${userAccounts.authUserId} = ''
           AND ${userAccounts.email} = ${configuredEmail}
           AND ${userAccounts.role} = 'admin'
           AND ${userAccounts.status} = 'active'
-          AND ${userAccounts.lastLoginAt} IS NULL
           AND ${userAccounts.createdBy} = 'ระบบเริ่มต้น'
-          AND ${userAccounts.createdAt} = ${userAccounts.updatedAt}
+          AND (
+            (
+              ${userAccounts.authUserId} = ''
+              AND ${userAccounts.lastLoginAt} IS NULL
+              AND ${userAccounts.createdAt} = ${userAccounts.updatedAt}
+            )
+            OR
+            (
+              ${userAccounts.authUserId} != ''
+              AND ${userAccounts.lastLoginAt} IS NOT NULL
+              AND ${userAccounts.createdAt} < ${userAccounts.lastLoginAt}
+              AND ${userAccounts.lastLoginAt} < ${existingCredential.createdAt}
+            )
+          )
       )`,
+      sql`NOT EXISTS (
+        SELECT 1 FROM ${authSessions}
+        WHERE ${authSessions.userAccountId} = 'user-owner'
+      )`,
+      sql`(
+        SELECT COUNT(*) FROM ${authEvents}
+        WHERE ${authEvents.userAccountId} = 'user-owner'
+          AND ${authEvents.eventType} = 'credential_created'
+          AND ${authEvents.sourceHash} = ''
+          AND ${authEvents.detail} = 'bootstrap-prehashed'
+          AND ${authEvents.createdAt} >= ${existingCredential.createdAt}
+      ) = 1`,
+      sql`NOT EXISTS (
+        SELECT 1 FROM ${authEvents}
+        WHERE ${authEvents.userAccountId} = 'user-owner'
+          AND NOT (
+            (${authEvents.eventType} = 'credential_created' AND ${authEvents.sourceHash} = '' AND ${authEvents.detail} = 'bootstrap-prehashed' AND ${authEvents.createdAt} >= ${existingCredential.createdAt})
+            OR (${authEvents.eventType} = 'login_failed' AND ${authEvents.detail} = 'generic-credential-failure' AND ${authEvents.createdAt} >= ${existingCredential.createdAt})
+          )
+      )`,
+      sql`(
+        SELECT COUNT(*) FROM ${authEvents}
+        WHERE ${authEvents.userAccountId} = 'user-owner'
+          AND ${authEvents.eventType} = 'login_failed'
+          AND ${authEvents.detail} = 'generic-credential-failure'
+          AND ${authEvents.createdAt} >= ${existingCredential.createdAt}
+      ) = ${existingCredential.failedAttempts}`,
     )).returning({ userAccountId: authCredentials.userAccountId });
     // The database trigger revokes version-1 sessions and records the repair in
     // the same transaction as this successful CAS update.

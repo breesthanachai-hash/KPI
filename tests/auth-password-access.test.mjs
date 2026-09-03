@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { access, readFile, readdir } from "node:fs/promises";
+import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
@@ -428,11 +429,11 @@ test("public DTOs and the client bundle contain no authentication secrets or leg
   assert.doesNotMatch(`${accessControl}\n${dashboardRoute}`, /oai-authenticated-user-id|authenticatedIdentity\(|chatgpt-auth|isLocalRequest/i);
 });
 
-test("bootstrap is all-or-none and repairs only the untouched aborted-pilot owner through an exact CAS", async () => {
-  const [accessControl, initialize, migration, schema] = await Promise.all([
+test("bootstrap repairs only a pristine or pre-first-party legacy owner through an evidence-bound exact CAS", async () => {
+  const [accessControl, initialize, legacyMigration, schema] = await Promise.all([
     source("lib/access-control.ts"),
     source("db/initialize.ts"),
-    source("drizzle/0016_jittery_lily_hollister.sql"),
+    source("drizzle/0017_legacy_bootstrap_repair.sql"),
     source("db/schema.ts"),
   ]);
   const bootstrap = accessControl.match(/export async function ensureBootstrapAccounts[\s\S]*?(?=\nexport async function authenticateRequest)/)?.[0] ?? "";
@@ -452,27 +453,27 @@ test("bootstrap is all-or-none and repairs only the untouched aborted-pilot owne
   const initialInsertStart = bootstrap.indexOf("const insertedCredentials");
   assert.ok(existingStart >= 0 && initialInsertStart > existingStart, "expected a bounded legacy-repair branch before initial insertion");
   const repairBranch = bootstrap.slice(existingStart, initialInsertStart);
+  assert.match(repairBranch, /const pristineBootstrapOwner = existingOwner[\s\S]*?existingOwner\.authUserId === ""[\s\S]*?existingOwner\.lastLoginAt === null[\s\S]*?existingOwner\.createdAt === existingOwner\.updatedAt/);
+  assert.match(repairBranch, /const legacyOaiOwner = existingOwner[\s\S]*?existingOwner\.authUserId !== ""[\s\S]*?existingOwner\.lastLoginAt !== null[\s\S]*?existingOwner\.createdAt < existingOwner\.lastLoginAt[\s\S]*?existingOwner\.lastLoginAt < existingCredential\.createdAt/);
   for (const condition of [
-    'existingOwner.authUserId === ""',
     "existingOwner.email === configuredEmail",
     'existingOwner.role === "admin"',
     'existingOwner.status === "active"',
-    "existingOwner.lastLoginAt === null",
     'existingOwner.createdBy === "ระบบเริ่มต้น"',
-    "existingOwner.createdAt === existingOwner.updatedAt",
+    "(pristineBootstrapOwner || legacyOaiOwner)",
     "existingCredential.loginIdCanonical === loginIdCanonical",
     'existingCredential.passwordAlgorithm === "pbkdf2-sha256"',
     "existingCredential.passwordIterations > 100_000",
     "existingCredential.pepperVersion === verifier.pepperVersion",
     "existingCredential.credentialVersion === 1",
     "existingCredential.mustChangePassword",
-    "existingCredential.failedAttempts === 0",
+    "existingCredential.failedAttempts >= 0",
+    "existingCredential.failedAttempts <= 1",
     "existingCredential.lockedUntil === null",
     "originalPasswordChangedAt === existingCredential.createdAt",
-    "existingCredential.createdAt === existingCredential.updatedAt",
   ]) assert.ok(repairBranch.includes(condition), `legacy repair must require: ${condition}`);
   assert.match(repairBranch, /if \(!untouchedBootstrapCredential \|\| !originalPasswordChangedAt\) return/);
-  assert.match(repairBranch, /\.set\(\{[\s\S]*?\.\.\.verifier,[\s\S]*?credentialVersion: 2,[\s\S]*?mustChangePassword: true/);
+  assert.match(repairBranch, /\.set\(\{[\s\S]*?\.\.\.verifier,[\s\S]*?credentialVersion: 2,[\s\S]*?mustChangePassword: true,[\s\S]*?failedAttempts: 0,[\s\S]*?lockedUntil: null/);
   for (const casCondition of [
     'eq(authCredentials.userAccountId, "user-owner")',
     "eq(authCredentials.loginIdCanonical, existingCredential.loginIdCanonical)",
@@ -484,7 +485,7 @@ test("bootstrap is all-or-none and repairs only the untouched aborted-pilot owne
     "eq(authCredentials.pepperVersion, existingCredential.pepperVersion)",
     "eq(authCredentials.credentialVersion, 1)",
     "eq(authCredentials.mustChangePassword, true)",
-    "eq(authCredentials.failedAttempts, 0)",
+    "eq(authCredentials.failedAttempts, existingCredential.failedAttempts)",
     "isNull(authCredentials.lockedUntil)",
     "eq(authCredentials.passwordChangedAt, originalPasswordChangedAt)",
     "eq(authCredentials.createdAt, existingCredential.createdAt)",
@@ -492,14 +493,26 @@ test("bootstrap is all-or-none and repairs only the untouched aborted-pilot owne
   ]) assert.ok(repairBranch.includes(casCondition), `legacy repair CAS must include: ${casCondition}`);
   for (const ownerCondition of [
     "${userAccounts.id} = 'user-owner'",
-    "${userAccounts.authUserId} = ''",
     "${userAccounts.email} = ${configuredEmail}",
     "${userAccounts.role} = 'admin'",
     "${userAccounts.status} = 'active'",
-    "${userAccounts.lastLoginAt} IS NULL",
     "${userAccounts.createdBy} = 'ระบบเริ่มต้น'",
+    "${userAccounts.authUserId} = ''",
+    "${userAccounts.lastLoginAt} IS NULL",
     "${userAccounts.createdAt} = ${userAccounts.updatedAt}",
+    "${userAccounts.authUserId} != ''",
+    "${userAccounts.lastLoginAt} IS NOT NULL",
+    "${userAccounts.createdAt} < ${userAccounts.lastLoginAt}",
+    "${userAccounts.lastLoginAt} < ${existingCredential.createdAt}",
   ]) assert.ok(repairBranch.includes(ownerCondition), `legacy repair database claim must require: ${ownerCondition}`);
+  assert.match(repairBranch, /sql`NOT EXISTS \([\s\S]*?FROM \$\{authSessions\}[\s\S]*?userAccountId\} = 'user-owner'[\s\S]*?\)`/);
+  assert.match(repairBranch, /SELECT COUNT\(\*\) FROM \$\{authEvents\}[\s\S]*?eventType\} = 'credential_created'[\s\S]*?sourceHash\} = ''[\s\S]*?detail\} = 'bootstrap-prehashed'[\s\S]*?createdAt\} >= \$\{existingCredential\.createdAt\}[\s\S]*?\) = 1/);
+  assert.match(repairBranch, /sql`NOT EXISTS \([\s\S]*?FROM \$\{authEvents\}[\s\S]*?AND NOT \([\s\S]*?credential_created[\s\S]*?bootstrap-prehashed[\s\S]*?OR \([\s\S]*?login_failed[\s\S]*?generic-credential-failure[\s\S]*?\)[\s\S]*?\)`/);
+  assert.match(repairBranch, /SELECT COUNT\(\*\) FROM \$\{authEvents\}[\s\S]*?eventType\} = 'login_failed'[\s\S]*?detail\} = 'generic-credential-failure'[\s\S]*?createdAt\} >= \$\{existingCredential\.createdAt\}[\s\S]*?\) = \$\{existingCredential\.failedAttempts\}/);
+  assert.equal((repairBranch.match(/\$\{authEvents\.createdAt\} >= \$\{existingCredential\.createdAt\}/g) ?? []).length, 4);
+  for (const unsafeEvent of ["login_succeeded", "password_changed", "credential_reset", "credential_updated", "bootstrap_credential_repaired"]) {
+    assert.doesNotMatch(repairBranch, new RegExp(`eventType\\} = '${unsafeEvent}'`), `${unsafeEvent} must remain outside the repair evidence allowlist`);
+  }
   assert.match(repairBranch, /\.returning\(\{ userAccountId: authCredentials\.userAccountId \}\)/);
   assert.match(repairBranch, /void repairedCredential;\s*return/);
   assert.doesNotMatch(repairBranch, /recordAuthEvent\(/, "the database trigger must own the atomic repair audit");
@@ -509,31 +522,150 @@ test("bootstrap is all-or-none and repairs only the untouched aborted-pilot owne
   assert.match(bootstrap, /if \(insertedCredentials\.length\) await recordAuthEvent\("credential_created"/);
   assert.doesNotMatch(bootstrap, /hashPassword\(|temporaryPassword|defaultPassword/i);
 
-  for (const triggerSource of [initialize, migration]) {
-    assert.match(triggerSource, /auth_credentials_audit_bootstrap_iteration_repair/);
+  for (const triggerSource of [initialize, legacyMigration]) {
+    assert.match(triggerSource, /auth_credentials_audit_bootstrap_legacy_iteration_repair/);
     assert.match(triggerSource, /OLD\.user_account_id = 'user-owner'[\s\S]*?OLD\.password_algorithm = 'pbkdf2-sha256'[\s\S]*?OLD\.password_iterations > 100000/);
-    assert.match(triggerSource, /OLD\.credential_version = 1[\s\S]*?OLD\.must_change_password = 1[\s\S]*?OLD\.failed_attempts = 0[\s\S]*?OLD\.locked_until IS NULL/);
-    assert.match(triggerSource, /OLD\.password_changed_at = OLD\.created_at[\s\S]*?OLD\.created_at = OLD\.updated_at/);
-    assert.match(triggerSource, /NEW\.password_algorithm = 'pbkdf2-sha256'[\s\S]*?NEW\.password_iterations = 100000[\s\S]*?NEW\.credential_version = 2[\s\S]*?NEW\.must_change_password = 1/);
+    assert.match(triggerSource, /OLD\.credential_version = 1[\s\S]*?OLD\.must_change_password = 1[\s\S]*?OLD\.failed_attempts BETWEEN 0 AND 1[\s\S]*?OLD\.locked_until IS NULL/);
+    assert.match(triggerSource, /OLD\.password_changed_at = OLD\.created_at/);
+    assert.doesNotMatch(triggerSource, /OLD\.created_at = OLD\.updated_at/);
+    assert.match(triggerSource, /NEW\.password_algorithm = 'pbkdf2-sha256'[\s\S]*?NEW\.password_iterations = 100000[\s\S]*?NEW\.pepper_version = OLD\.pepper_version[\s\S]*?NEW\.credential_version = 2[\s\S]*?NEW\.must_change_password = 1[\s\S]*?NEW\.failed_attempts = 0[\s\S]*?NEW\.locked_until IS NULL/);
+    assert.match(triggerSource, /auth_user_id = ''[\s\S]*?last_login_at IS NULL[\s\S]*?created_at = updated_at[\s\S]*?OR[\s\S]*?auth_user_id != ''[\s\S]*?last_login_at IS NOT NULL[\s\S]*?created_at < last_login_at[\s\S]*?last_login_at < OLD\.created_at/);
+    assert.match(triggerSource, /NOT EXISTS \([\s\S]*?FROM [`]?auth_sessions[`]?[\s\S]*?user_account_id = OLD\.user_account_id/);
+    assert.match(triggerSource, /event_type = 'credential_created'[\s\S]*?source_hash = ''[\s\S]*?detail = 'bootstrap-prehashed'[\s\S]*?created_at >= OLD\.created_at[\s\S]*?\) = 1/);
+    assert.match(triggerSource, /AND NOT \([\s\S]*?credential_created[\s\S]*?bootstrap-prehashed[\s\S]*?OR \(event_type = 'login_failed'[\s\S]*?generic-credential-failure[\s\S]*?\)/);
+    assert.match(triggerSource, /event_type = 'login_failed'[\s\S]*?detail = 'generic-credential-failure'[\s\S]*?created_at >= OLD\.created_at[\s\S]*?\) = OLD\.failed_attempts/);
     assert.match(triggerSource, /UPDATE [`]?auth_sessions[`]?[\s\S]*?revoke_reason = 'bootstrap-iteration-repair'[\s\S]*?revoked_at IS NULL/);
-    assert.match(triggerSource, /INSERT OR IGNORE INTO [`]?auth_events[`]?[\s\S]*?'bootstrap-credential-repaired:user-owner:1'[\s\S]*?'bootstrap_credential_repaired'/);
+    assert.match(triggerSource, /INSERT INTO [`]?auth_events[`]?[\s\S]*?'bootstrap-legacy-credential-repaired:user-owner:1'[\s\S]*?'bootstrap_credential_repaired'/);
   }
   assert.match(schema, /"bootstrap_credential_repaired"/);
 });
 
-test("auth schema, runtime initialization, migration journal and built Sites bundle stay in parity", async () => {
-  const [schema, initialize, migration, packagedMigration, snapshot, journal, packageJson] = await Promise.all([
+test("migration 0017 upgrades the old trigger, accepts one failed-login drift, and rolls back on audit collision", async () => {
+  const [authMigration, legacyRepairMigration] = await Promise.all([
+    source("drizzle/0016_jittery_lily_hollister.sql"),
+    source("drizzle/0017_legacy_bootstrap_repair.sql"),
+  ]);
+  const oldTrigger = authMigration.match(/CREATE TRIGGER `auth_credentials_audit_bootstrap_iteration_repair`[\s\S]*?\nEND;/)?.[0] ?? "";
+  assert.ok(oldTrigger, "migration 0016 must expose the trigger that 0017 upgrades");
+
+  function upgradedDatabase() {
+    const db = new DatabaseSync(":memory:");
+    db.exec(`
+      CREATE TABLE user_accounts (
+        id TEXT PRIMARY KEY, auth_user_id TEXT NOT NULL, email TEXT NOT NULL,
+        role TEXT NOT NULL, status TEXT NOT NULL, created_by TEXT NOT NULL,
+        last_login_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+      );
+      CREATE TABLE auth_credentials (
+        user_account_id TEXT PRIMARY KEY, login_id_canonical TEXT NOT NULL,
+        password_hash TEXT NOT NULL, password_salt TEXT NOT NULL,
+        password_algorithm TEXT NOT NULL, password_iterations INTEGER NOT NULL,
+        pepper_version INTEGER NOT NULL, credential_version INTEGER NOT NULL,
+        must_change_password INTEGER NOT NULL, failed_attempts INTEGER NOT NULL,
+        locked_until TEXT, password_changed_at TEXT, created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE auth_sessions (
+        id TEXT PRIMARY KEY, user_account_id TEXT NOT NULL,
+        revoked_at TEXT, revoke_reason TEXT NOT NULL DEFAULT ''
+      );
+      CREATE TABLE auth_events (
+        id TEXT PRIMARY KEY, user_account_id TEXT, event_type TEXT NOT NULL,
+        source_hash TEXT NOT NULL, detail TEXT NOT NULL, created_at TEXT NOT NULL
+      );
+    `);
+    db.exec(oldTrigger);
+    assert.equal(db.prepare("SELECT COUNT(*) AS total FROM sqlite_master WHERE type = 'trigger' AND name = 'auth_credentials_audit_bootstrap_iteration_repair'").get().total, 1);
+    db.exec(legacyRepairMigration);
+    assert.equal(db.prepare("SELECT COUNT(*) AS total FROM sqlite_master WHERE type = 'trigger' AND name = 'auth_credentials_audit_bootstrap_iteration_repair'").get().total, 0);
+    assert.equal(db.prepare("SELECT COUNT(*) AS total FROM sqlite_master WHERE type = 'trigger' AND name = 'auth_credentials_audit_bootstrap_legacy_iteration_repair'").get().total, 1);
+    return db;
+  }
+
+  const accountCreatedAt = "2026-08-01T00:00:00.000Z";
+  const legacyOaiLoginAt = "2026-08-20T00:00:00.000Z";
+  const credentialCreatedAt = "2026-09-01T00:00:00.000Z";
+  const failedLoginAt = "2026-09-02T00:00:00.000Z";
+  const repairedAt = "2026-09-03T00:00:00.000Z";
+
+  function seedAllowedLegacyHistory(db, { collideAudit = false } = {}) {
+    db.prepare("INSERT INTO user_accounts VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").run(
+      "user-owner", "legacy-oai-owner-id", "owner@example.com", "admin", "active",
+      "ระบบเริ่มต้น", legacyOaiLoginAt, accountCreatedAt, legacyOaiLoginAt,
+    );
+    db.prepare("INSERT INTO auth_credentials VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(
+      "user-owner", "owner.admin", "legacy-600k-hash", "legacy-salt", "pbkdf2-sha256",
+      600000, 1, 1, 1, 1, null, credentialCreatedAt, credentialCreatedAt, failedLoginAt,
+    );
+    db.prepare("INSERT INTO auth_events VALUES (?, ?, ?, ?, ?, ?)").run(
+      "credential-created", "user-owner", "credential_created", "", "bootstrap-prehashed", credentialCreatedAt,
+    );
+    db.prepare("INSERT INTO auth_events VALUES (?, ?, ?, ?, ?, ?)").run(
+      "failed-login", "user-owner", "login_failed", "source-hash", "generic-credential-failure", failedLoginAt,
+    );
+    if (collideAudit) {
+      db.prepare("INSERT INTO auth_events VALUES (?, ?, ?, ?, ?, ?)").run(
+        "bootstrap-legacy-credential-repaired:user-owner:1", null, "bootstrap_credential_repaired", "", "collision", failedLoginAt,
+      );
+    }
+  }
+
+  function runRepairUpdate(db) {
+    db.prepare(`UPDATE auth_credentials SET
+      password_hash = 'new-100k-hash', password_salt = 'new-salt', password_iterations = 100000,
+      pepper_version = 1, credential_version = 2, must_change_password = 1,
+      failed_attempts = 0, locked_until = NULL, password_changed_at = ?, updated_at = ?
+      WHERE user_account_id = 'user-owner'`).run(repairedAt, repairedAt);
+  }
+
+  const allowedDb = upgradedDatabase();
+  seedAllowedLegacyHistory(allowedDb);
+  runRepairUpdate(allowedDb);
+  const repairedCredential = allowedDb.prepare("SELECT password_iterations, credential_version, must_change_password, failed_attempts, locked_until, password_changed_at, updated_at FROM auth_credentials WHERE user_account_id = 'user-owner'").get();
+  assert.equal(repairedCredential.password_iterations, 100000);
+  assert.equal(repairedCredential.credential_version, 2);
+  assert.equal(repairedCredential.must_change_password, 1);
+  assert.equal(repairedCredential.failed_attempts, 0, "the single failed-login counter must be reset");
+  assert.equal(repairedCredential.locked_until, null);
+  assert.equal(repairedCredential.password_changed_at, repairedAt);
+  assert.equal(repairedCredential.updated_at, repairedAt, "failed-login timestamp drift must be replaced by the repair timestamp");
+  const repairAudit = allowedDb.prepare("SELECT id, event_type, detail FROM auth_events WHERE event_type = 'bootstrap_credential_repaired'").get();
+  assert.equal(repairAudit.id, "bootstrap-legacy-credential-repaired:user-owner:1");
+  assert.equal(repairAudit.event_type, "bootstrap_credential_repaired");
+  assert.equal(repairAudit.detail, "iterations:600000->100000");
+  allowedDb.close();
+
+  const collisionDb = upgradedDatabase();
+  seedAllowedLegacyHistory(collisionDb, { collideAudit: true });
+  assert.throws(() => runRepairUpdate(collisionDb), /UNIQUE constraint failed: auth_events\.id/);
+  const rolledBackCredential = collisionDb.prepare("SELECT password_hash, password_iterations, credential_version, failed_attempts, updated_at FROM auth_credentials WHERE user_account_id = 'user-owner'").get();
+  assert.equal(rolledBackCredential.password_hash, "legacy-600k-hash");
+  assert.equal(rolledBackCredential.password_iterations, 600000);
+  assert.equal(rolledBackCredential.credential_version, 1);
+  assert.equal(rolledBackCredential.failed_attempts, 1);
+  assert.equal(rolledBackCredential.updated_at, failedLoginAt);
+  collisionDb.close();
+});
+
+test("auth schema, forward trigger upgrade, migration journal and built Sites bundle stay in parity", async () => {
+  const [schema, initialize, migration, packagedMigration, snapshot, legacyMigration, packagedLegacyMigration, legacySnapshot, journal, packageJson] = await Promise.all([
     source("db/schema.ts"),
     source("db/initialize.ts"),
     source("drizzle/0016_jittery_lily_hollister.sql"),
     source("dist/.openai/drizzle/0016_jittery_lily_hollister.sql"),
     source("drizzle/meta/0016_snapshot.json").then(JSON.parse),
+    source("drizzle/0017_legacy_bootstrap_repair.sql"),
+    source("dist/.openai/drizzle/0017_legacy_bootstrap_repair.sql"),
+    source("drizzle/meta/0017_snapshot.json").then(JSON.parse),
     source("drizzle/meta/_journal.json").then(JSON.parse),
     source("package.json").then(JSON.parse),
   ]);
 
   assert.equal(packagedMigration, migration, "Sites build must package auth migration 0016 verbatim");
-  assert.equal(journal.entries.at(-1)?.tag, "0016_jittery_lily_hollister");
+  assert.equal(packagedLegacyMigration, legacyMigration, "Sites build must package forward repair migration 0017 verbatim");
+  assert.equal(journal.entries.at(-2)?.tag, "0016_jittery_lily_hollister");
+  assert.equal(journal.entries.at(-1)?.tag, "0017_legacy_bootstrap_repair");
+  assert.equal(legacySnapshot.prevId, snapshot.id, "0017 snapshot must be the direct forward successor to 0016");
   assert.equal(packageJson.scripts["auth:bootstrap"], "node scripts/generate-auth-bootstrap.mjs");
   for (const [exportName, tableName] of [
     ["authCredentials", "auth_credentials"],
@@ -555,6 +687,15 @@ test("auth schema, runtime initialization, migration journal and built Sites bun
   assert.match(initialize, /password_iterations INTEGER NOT NULL DEFAULT 100000/);
   assert.match(migration, /`password_iterations` integer DEFAULT 100000 NOT NULL/);
   assert.equal(snapshot.tables.auth_credentials.columns.password_iterations.default, 100000);
+  assert.equal(legacySnapshot.tables.auth_credentials.columns.password_iterations.default, 100000);
+
+  const migrationDrop = legacyMigration.indexOf("DROP TRIGGER IF EXISTS `auth_credentials_audit_bootstrap_iteration_repair`");
+  const migrationCreate = legacyMigration.indexOf("CREATE TRIGGER `auth_credentials_audit_bootstrap_legacy_iteration_repair`");
+  assert.ok(migrationDrop >= 0 && migrationDrop < migrationCreate, "0017 must replace the restrictive 0016 trigger in forward order");
+  const initDrop = initialize.indexOf("DROP TRIGGER IF EXISTS auth_credentials_audit_bootstrap_iteration_repair");
+  const initCreate = initialize.indexOf("CREATE TRIGGER IF NOT EXISTS auth_credentials_audit_bootstrap_legacy_iteration_repair");
+  assert.ok(initDrop >= 0 && initDrop < initCreate, "fresh initialization must install the same final trigger as the upgrade path");
+  assert.doesNotMatch(legacyMigration, /UPDATE [`]?auth_credentials[`]?/, "0017 must not repair any credential without the guarded runtime bootstrap flow");
 });
 
 test("local auth secrets are ignored by Git and excluded from the Sites bundle", async () => {
@@ -582,6 +723,11 @@ test("README defines ID/password onboarding and keeps public access behind a tes
     "PBKDF2-SHA-256",
     "100,000 รอบ",
     "--repair-existing",
+    "0017_legacy_bootstrap_repair.sql",
+    "legacy OAI",
+    "login_succeeded",
+    "generic-credential-failure",
+    "session **0 แถว**",
     "WHERE password_iterations > 100000",
     "AND user_account_id <> 'user-owner'",
     "ต้องคืน 0 แถว",

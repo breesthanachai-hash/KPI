@@ -120,6 +120,13 @@
       "when": 1788420463169,
       "tag": "0016_jittery_lily_hollister",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1788425658755,
+      "tag": "0017_legacy_bootstrap_repair",
+      "breakpoints": true
     }
   ]
 }
