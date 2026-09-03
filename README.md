@@ -175,9 +175,10 @@ Migration ล่าสุดที่เกี่ยวข้อง:
 - `0017_legacy_bootstrap_repair.sql` เปลี่ยน trigger ซ่อม bootstrap ให้รองรับ `user-owner` ที่เคยผูก legacy OAI identity ก่อนเริ่มระบบรหัสผ่าน โดยยังปฏิเสธบัญชีที่มีหลักฐานใช้หรือแก้ credential แบบ first-party แล้ว
 - `0018_schema_v18_ready.sql` เพิ่ม schema readiness marker หลัง migration ก่อนหน้าครบ เพื่อให้ Worker isolate ใหม่ตรวจเพียง query เดียวและข้ามชุด DDL/PRAGMA ขนาดใหญ่ได้อย่างปลอดภัย; หากไม่พบ marker ระบบจะกลับไปตรวจและสร้าง schema แบบเต็ม
 - `0019_auth_session_guard.sql` เพิ่ม trigger ที่ยอมสร้าง session เฉพาะบัญชีที่ยัง active, มี credential version ตรงกัน และผูกกับพนักงาน active สำหรับบทบาทที่ไม่ใช่ Admin พร้อมเปลี่ยน readiness marker เป็น v19
+- `0020_silly_mockingbird.sql` เพิ่มแบบประเมินตนเองของพนักงานแยกจากผลประเมินทางการและ Points พร้อมเปลี่ยน readiness marker เป็น v20
 - `db/initialize.ts` สร้างตาราง ดัชนี และ trigger ป้องกัน race condition ตอนเริ่มระบบ ส่วนฐานข้อมูลเดิมอัปเกรดตามลำดับใน `drizzle/`; trigger แบบ `BEGIN/END` ใน migration ถูกคั่นด้วย statement marker เพื่อให้ตัวรันของ Sites/D1 ประมวลผลทั้ง trigger เป็นคำสั่งเดียว
 
-> **Migration-first:** ก่อน deploy โค้ดรุ่นนี้ต้องติดตั้ง migration ถึง `0019_auth_session_guard.sql` ให้ครบก่อน เพราะ login และ logout ใช้ transaction/batch และอาศัย session guard ในฐานข้อมูล ห้าม deploy โค้ดใหม่ก่อน migration และให้คง access policy เป็น `custom/private` จนกว่า smoke test จะผ่าน
+> **Migration-first:** ก่อน deploy โค้ดรุ่นนี้ต้องติดตั้ง migration ถึง `0020_silly_mockingbird.sql` ให้ครบก่อน เพราะระบบเข้าใช้และแบบประเมินตนเองอาศัยโครงสร้างฐานข้อมูลล่าสุด ห้าม deploy โค้ดใหม่ก่อน migration และให้คง access policy เป็น `custom/private` จนกว่า smoke test จะผ่าน
 
 ไฟล์ `lib/kpi-data.ts` เป็นแหล่งเทมเพลตตำแหน่ง KPI สมรรถนะ AI Mastery กติกา Points นโยบายเริ่มต้น และรางวัลเริ่มต้น ส่วน `drizzle/` และ `drizzle/meta/` เก็บ migration กับ snapshot ของสคีมา
 
@@ -301,7 +302,7 @@ Preflight จะหยุดทันทีเมื่อ Node ต่ำกว�
 
 1. ใช้ commit ที่ clean และผ่าน `npm run release:verify`
 2. ตรวจว่า archive ที่จะบันทึกเป็น Sites version มาจาก commit เดียวกัน และมี `dist/server/index.js`, `dist/client`, `dist/.openai/hosting.json` และ `dist/.openai/drizzle`
-3. คง access policy ของ Sites เป็น `custom/private` ระหว่างติดตั้ง migration `0016`–`0019`, ตั้ง Auth secrets และ deploy เวอร์ชันใหม่ตามลำดับ migration-first จากนั้นรัน public gate ด้านบนให้บัญชี active ทุกบัญชีใช้ 600,000 รอบ และให้เจ้าของเปลี่ยนรหัสชั่วคราวเสร็จก่อน ห้ามเปิด public ก่อนผ่านการทดสอบระบบเข้าใช้
+3. คง access policy ของ Sites เป็น `custom/private` ระหว่างติดตั้ง migration `0016`–`0020`, ตั้ง Auth secrets และ deploy เวอร์ชันใหม่ตามลำดับ migration-first จากนั้นรัน public gate ด้านบนให้บัญชี active ทุกบัญชีใช้ 600,000 รอบ และให้เจ้าของเปลี่ยนรหัสชั่วคราวเสร็จก่อน ห้ามเปิด public ก่อนผ่านการทดสอบระบบเข้าใช้
 4. ทดสอบผ่าน custom domain ว่าไม่มีเซสชันได้ 401, รหัสชั่วคราวได้ 428 และบังคับเปลี่ยนรหัส, ครั้งที่ 6 ของการลองรหัสผิดได้ 429 พร้อม `Retry-After`, ออกจากระบบแล้วเซสชันเดิมใช้ไม่ได้ และบัญชีต่างบทบาทเข้าข้อมูลข้ามขอบเขตได้ 403
 5. สร้างบัญชี pilot ด้วยรหัสผู้ใช้ + รหัสผ่านชั่วคราว + บทบาท + โปรไฟล์พนักงาน และทดสอบ HR, หัวหน้า และพนักงานจริงอย่างน้อยบทบาทละหนึ่งบัญชี: เข้าระบบ → เปลี่ยนรหัส → มอบหมายงาน → ส่งหลักฐาน R2 → ตรวจงาน → ได้ Points หนึ่งครั้ง → แลกรางวัล
 6. ทดสอบเอกสารส่วนตัวข้ามบัญชีให้ได้ 403, ดาวน์โหลดแม่แบบ DOCX ทั้ง 5 ฉบับ และตรวจว่า `/favicon.ico` เปลี่ยนไปใช้ `/favicon.svg` โดยไม่เป็น 404

@@ -923,9 +923,9 @@ test("migration 0019 permits only sessions backed by live access and rolls a rej
   }
 });
 
-test("ensureDatabase shares one probe, skips bulk work on the v19 marker, and retries a failed fallback", async () => {
+test("ensureDatabase shares one probe, skips bulk work on the v20 marker, and retries a failed fallback", async () => {
   const initializeSource = await source("db/initialize.ts");
-  assert.match(initializeSource, /const LATEST_SCHEMA_MARKER = "people_pulse_schema_v19_ready"/);
+  assert.match(initializeSource, /const LATEST_SCHEMA_MARKER = "people_pulse_schema_v20_ready"/);
   assert.match(initializeSource, /SELECT 1 AS ready FROM sqlite_master WHERE type = 'table' AND name = \? LIMIT 1/);
   assert.match(initializeSource, /if \(initialization\) return initialization/);
   assert.match(initializeSource, /initialization = \(async \(\) => \{\s*if \(await latestSchemaIsReady\(d1\)\) return/);
@@ -993,7 +993,7 @@ test("ensureDatabase shares one probe, skips bulk work on the v19 marker, and re
     assert.strictEqual(fastConcurrent, fastFirst, "concurrent callers must share the once-per-isolate promise");
     assert.equal(fast.calls.prepared.length, 1, "the ready fast path must prepare only its sentinel lookup");
     assert.equal(fast.calls.first, 1);
-    assert.deepEqual(fast.calls.binds, ["people_pulse_schema_v19_ready"]);
+    assert.deepEqual(fast.calls.binds, ["people_pulse_schema_v20_ready"]);
     assert.equal(fast.calls.batches.length, 0);
     assert.equal(fast.calls.all, 0);
     assert.equal(fast.calls.run, 0);
@@ -1036,7 +1036,7 @@ test("ensureDatabase shares one probe, skips bulk work on the v19 marker, and re
     assert.ok(successfulSql.some((sql) => sql.includes("DROP TRIGGER IF EXISTS auth_sessions_validate_insert")));
     assert.ok(successfulSql.some((sql) => sql.includes("CREATE TRIGGER auth_sessions_validate_insert")));
     assert.match(successfulSql.at(-2), /^PRAGMA optimize$/);
-    assert.match(successfulSql.at(-1), /CREATE TABLE IF NOT EXISTS people_pulse_schema_v19_ready/);
+    assert.match(successfulSql.at(-1), /CREATE TABLE IF NOT EXISTS people_pulse_schema_v20_ready/);
     assert.strictEqual(fallbackInitializer.ensureDatabase(), retry);
   } finally {
     delete globalThis.__PEOPLE_PULSE_TEST_D1;
@@ -1059,6 +1059,9 @@ test("auth schema, forward trigger and sentinel migrations, journal and built Si
     sessionGuardMigration,
     packagedSessionGuardMigration,
     sessionGuardSnapshot,
+    selfAssessmentMigration,
+    packagedSelfAssessmentMigration,
+    selfAssessmentSnapshot,
     journal,
     packageJson,
   ] = await Promise.all([
@@ -1076,6 +1079,9 @@ test("auth schema, forward trigger and sentinel migrations, journal and built Si
     source("drizzle/0019_auth_session_guard.sql"),
     source("dist/.openai/drizzle/0019_auth_session_guard.sql"),
     source("drizzle/meta/0019_snapshot.json").then(JSON.parse),
+    source("drizzle/0020_silly_mockingbird.sql"),
+    source("dist/.openai/drizzle/0020_silly_mockingbird.sql"),
+    source("drizzle/meta/0020_snapshot.json").then(JSON.parse),
     source("drizzle/meta/_journal.json").then(JSON.parse),
     source("package.json").then(JSON.parse),
   ]);
@@ -1084,13 +1090,16 @@ test("auth schema, forward trigger and sentinel migrations, journal and built Si
   assert.equal(packagedLegacyMigration, legacyMigration, "Sites build must package forward repair migration 0017 verbatim");
   assert.equal(packagedMarkerMigration, markerMigration, "Sites build must package schema marker migration 0018 verbatim");
   assert.equal(packagedSessionGuardMigration, sessionGuardMigration, "Sites build must package session guard migration 0019 verbatim");
-  assert.equal(journal.entries.at(-4)?.tag, "0016_jittery_lily_hollister");
-  assert.equal(journal.entries.at(-3)?.tag, "0017_legacy_bootstrap_repair");
-  assert.equal(journal.entries.at(-2)?.tag, "0018_schema_v18_ready");
-  assert.equal(journal.entries.at(-1)?.tag, "0019_auth_session_guard");
+  assert.equal(packagedSelfAssessmentMigration, selfAssessmentMigration, "Sites build must package self-assessment migration 0020 verbatim");
+  assert.equal(journal.entries.at(-5)?.tag, "0016_jittery_lily_hollister");
+  assert.equal(journal.entries.at(-4)?.tag, "0017_legacy_bootstrap_repair");
+  assert.equal(journal.entries.at(-3)?.tag, "0018_schema_v18_ready");
+  assert.equal(journal.entries.at(-2)?.tag, "0019_auth_session_guard");
+  assert.equal(journal.entries.at(-1)?.tag, "0020_silly_mockingbird");
   assert.equal(legacySnapshot.prevId, snapshot.id, "0017 snapshot must be the direct forward successor to 0016");
   assert.equal(markerSnapshot.prevId, legacySnapshot.id, "0018 snapshot must be the direct forward successor to 0017");
   assert.equal(sessionGuardSnapshot.prevId, markerSnapshot.id, "0019 snapshot must be the direct forward successor to 0018");
+  assert.equal(selfAssessmentSnapshot.prevId, sessionGuardSnapshot.id, "0020 snapshot must be the direct forward successor to 0019");
   assert.equal(packageJson.scripts["auth:bootstrap"], "node scripts/generate-auth-bootstrap.mjs");
   for (const [exportName, tableName] of [
     ["authCredentials", "auth_credentials"],
@@ -1115,6 +1124,7 @@ test("auth schema, forward trigger and sentinel migrations, journal and built Si
   assert.equal(legacySnapshot.tables.auth_credentials.columns.password_iterations.default, 100000);
   assert.equal(markerSnapshot.tables.auth_credentials.columns.password_iterations.default, 100000);
   assert.equal(sessionGuardSnapshot.tables.auth_credentials.columns.password_iterations.default, 100000);
+  assert.equal(selfAssessmentSnapshot.tables.auth_credentials.columns.password_iterations.default, 100000);
 
   const migrationDrop = legacyMigration.indexOf("DROP TRIGGER IF EXISTS `auth_credentials_audit_bootstrap_iteration_repair`");
   const migrationCreate = legacyMigration.indexOf("CREATE TRIGGER `auth_credentials_audit_bootstrap_legacy_iteration_repair`");
@@ -1136,10 +1146,12 @@ test("auth schema, forward trigger and sentinel migrations, journal and built Si
   }
   assert.doesNotMatch(sessionGuardMigration, /(?:ALTER TABLE|UPDATE\s+[`"\w]|DELETE FROM|INSERT INTO)/i, "0019 must install only the insert guard and its readiness marker");
   const freshGuard = initialize.indexOf("CREATE TRIGGER auth_sessions_validate_insert");
-  const freshMarker = initialize.indexOf("CREATE TABLE IF NOT EXISTS people_pulse_schema_v19_ready");
+  const freshMarker = initialize.indexOf("CREATE TABLE IF NOT EXISTS people_pulse_schema_v20_ready");
   const finalOptimize = initialize.indexOf('d1.prepare("PRAGMA optimize")');
   assert.ok(freshGuard > initCreate, "fresh initialization must retain the legacy bootstrap trigger and then install the session guard");
-  assert.ok(freshMarker > freshGuard && freshMarker > finalOptimize, "fresh initialization must create the v19 marker only after all tables and final triggers");
+  assert.ok(freshMarker > freshGuard && freshMarker > finalOptimize, "fresh initialization must create the v20 marker only after all tables and final triggers");
+  assert.match(selfAssessmentMigration, /CREATE TABLE `employee_self_assessments`[\s\S]*?CREATE UNIQUE INDEX `employee_self_assessments_employee_period_unique`[\s\S]*?CREATE TABLE `people_pulse_schema_v20_ready`/);
+  assert.match(initialize, /CREATE TABLE IF NOT EXISTS employee_self_assessments[\s\S]*?employee_self_assessments_employee_period_unique/);
 });
 
 test("local auth secrets are ignored by Git and excluded from the Sites bundle", async () => {
@@ -1173,6 +1185,7 @@ test("README defines ID/password onboarding and keeps public access behind a tes
     "0017_legacy_bootstrap_repair.sql",
     "0018_schema_v18_ready.sql",
     "0019_auth_session_guard.sql",
+    "0020_silly_mockingbird.sql",
     "legacy OAI",
     "credential.password_iterations <> 600000",
     "credential.user_account_id = 'user-owner'",

@@ -536,7 +536,7 @@ test("ships a private employee portal with safe team overview and self-only acti
   assert.match(dashboardRoute, /id: `team-load:/);
   assert.match(dashboardRoute, /dueDate: item\.dueDate < teamOverviewDate \? "2000-01-01"/);
   assert.match(dashboardRoute, /currentUser\.role === "admin" \|\| currentUser\.role === "employee" \? hrProfileRows/);
-  assert.match(dashboardRoute, /const employeePortalActions = new Set\(\["markNotificationsRead", "saveWorkItem", "redeemReward", "acknowledgeOrganizationPolicy", "signContract"\]\)/);
+  assert.match(dashboardRoute, /const employeePortalActions = new Set\(\["markNotificationsRead", "saveWorkItem", "saveSelfAssessment", "redeemReward", "acknowledgeOrganizationPolicy", "signContract"\]\)/);
   assert.match(dashboardRoute, /งานที่ส่งตรวจหรือปิดแล้วไม่สามารถแก้ความคืบหน้าได้/);
   assert.match(workSubmissionRoute, /งานนี้ส่งตรวจหรือปิดแล้ว/);
   assert.match(workSubmissionRoute, /งานนี้มีหลักฐานรอตรวจอยู่แล้ว/);
@@ -695,7 +695,7 @@ test("ships balanced point governance and version-specific organization policy a
   assert.match(adminOnlyActionBlock, /"saveOrganizationPolicy"/);
   assert.match(adminOnlyActionBlock, /"publishOrganizationPolicy"/);
   assert.match(adminOnlyActionBlock, /"updateRewardRedemption"/);
-  assert.match(dashboardRoute, /employeePortalActions = new Set\(\["markNotificationsRead", "saveWorkItem", "redeemReward", "acknowledgeOrganizationPolicy", "signContract"\]\)/);
+  assert.match(dashboardRoute, /employeePortalActions = new Set\(\["markNotificationsRead", "saveWorkItem", "saveSelfAssessment", "redeemReward", "acknowledgeOrganizationPolicy", "signContract"\]\)/);
   assert.match(page, /panel\.id !== "adjust" \|\| permissions\.canReviewWork/);
   assert.match(page, /isAdmin \? <form className="organization-policy-editor"/);
   assert.match(page, /พนักงานจะเห็นเฉพาะฉบับที่ประกาศแล้ว/);

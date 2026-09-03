@@ -641,6 +641,20 @@ export type EvaluationRecord = {
   evaluatedAt: string;
 };
 
+export type EmployeeSelfAssessmentRecord = {
+  id: string;
+  employeeId: string;
+  period: string;
+  kpiScores: Record<string, number>;
+  skillScores: Record<string, number>;
+  kpiScore: number;
+  skillScore: number;
+  totalScore: number;
+  note: string;
+  submittedAt: string;
+  updatedAt: string;
+};
+
 export const periods = [
   "ไตรมาส 3 · ปี 2569",
   "ไตรมาส 2 · ปี 2569",

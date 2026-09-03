@@ -1,9 +1,9 @@
 import { getD1 } from ".";
 
 let initialization: Promise<unknown> | null = null;
-// Migration 0019 creates this object only after every preceding schema change.
+// Migration 0020 creates this object only after every preceding schema change.
 // Future schema migrations must use a new marker name and place it last too.
-const LATEST_SCHEMA_MARKER = "people_pulse_schema_v19_ready";
+const LATEST_SCHEMA_MARKER = "people_pulse_schema_v20_ready";
 
 async function latestSchemaIsReady(d1: ReturnType<typeof getD1>) {
   const marker = await d1.prepare(
@@ -328,6 +328,21 @@ export function ensureDatabase() {
     )`),
     d1.prepare("CREATE UNIQUE INDEX IF NOT EXISTS evaluations_employee_period_unique ON evaluations (employee_id, period)"),
     d1.prepare("CREATE INDEX IF NOT EXISTS evaluations_period_idx ON evaluations (period)"),
+    d1.prepare(`CREATE TABLE IF NOT EXISTS employee_self_assessments (
+      id TEXT PRIMARY KEY NOT NULL,
+      employee_id TEXT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+      period TEXT NOT NULL,
+      kpi_scores TEXT NOT NULL,
+      skill_scores TEXT NOT NULL,
+      kpi_score REAL NOT NULL,
+      skill_score REAL NOT NULL,
+      total_score REAL NOT NULL,
+      note TEXT NOT NULL DEFAULT '',
+      submitted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`),
+    d1.prepare("CREATE UNIQUE INDEX IF NOT EXISTS employee_self_assessments_employee_period_unique ON employee_self_assessments (employee_id, period)"),
+    d1.prepare("CREATE INDEX IF NOT EXISTS employee_self_assessments_period_idx ON employee_self_assessments (period)"),
     d1.prepare(`CREATE TABLE IF NOT EXISTS hr_profiles (
       employee_id TEXT PRIMARY KEY NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
       current_salary REAL NOT NULL DEFAULT 0,
@@ -893,8 +908,8 @@ export function ensureDatabase() {
           SELECT RAISE(ABORT, 'EMPLOYEE_RECOGNITION_STALE_REVISION');
         END`),
       d1.prepare("PRAGMA optimize"),
-      d1.prepare(`CREATE TABLE IF NOT EXISTS people_pulse_schema_v19_ready (
-        schema_version INTEGER PRIMARY KEY NOT NULL CHECK (schema_version = 19)
+      d1.prepare(`CREATE TABLE IF NOT EXISTS people_pulse_schema_v20_ready (
+        schema_version INTEGER PRIMARY KEY NOT NULL CHECK (schema_version = 20)
       )`),
     ]);
   })().catch((error) => {

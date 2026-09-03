@@ -12,6 +12,7 @@ import {
   type EmployeeRecord,
   type EmployeeProfileRecord,
   type EmployeeRecognitionDto,
+  type EmployeeSelfAssessmentRecord,
   type EmploymentContractRecord,
   type EmployeeWarningDto,
   type EvaluationRecord,
@@ -570,7 +571,9 @@ const blankOrganizationPolicyDraft = (): OrganizationPolicyDraft => ({
 
 const emptyTalentProfile = (): Record<TalentDimensionId, number> => ({ analysis: 0, communication: 0, problemSolving: 0, leadership: 0, execution: 0 });
 
-function buildTalentProfile(roleId: string, evaluation: EvaluationRecord | null) {
+type SkillScoreSource = Pick<EvaluationRecord, "skillScores">;
+
+function buildTalentProfile(roleId: string, evaluation: SkillScoreSource | null) {
   const profile = emptyTalentProfile();
   if (!evaluation) return profile;
   const weightTotals = emptyTalentProfile();
@@ -594,7 +597,7 @@ function buildTalentProfile(roleId: string, evaluation: EvaluationRecord | null)
   return profile;
 }
 
-function skillCategorySummary(role: ReturnType<typeof getRole>, evaluation: EvaluationRecord | null, categoryId: SkillCategoryId) {
+function skillCategorySummary(role: ReturnType<typeof getRole>, evaluation: SkillScoreSource | null, categoryId: SkillCategoryId) {
   const skills = role.skills.filter((skill) => (skill.category ?? "role") === categoryId);
   const recorded = skills.filter((skill) => {
     const level = evaluation?.skillScores[skill.id];
@@ -606,7 +609,7 @@ function skillCategorySummary(role: ReturnType<typeof getRole>, evaluation: Eval
   return { skills, recorded: recorded.length, average };
 }
 
-function hasCompleteSkillAssessment(role: ReturnType<typeof getRole>, evaluation: EvaluationRecord | null) {
+function hasCompleteSkillAssessment(role: ReturnType<typeof getRole>, evaluation: SkillScoreSource | null) {
   return Boolean(evaluation && role.skills.every((skill) => {
     const level = evaluation.skillScores[skill.id];
     return typeof level === "number" && level >= 1 && level <= 5;
@@ -873,6 +876,7 @@ export default function Home() {
   const [period, setPeriod] = useState(periods[0]);
   const [employees, setEmployees] = useState<EmployeeRecord[]>([]);
   const [evaluations, setEvaluations] = useState<EvaluationRecord[]>([]);
+  const [selfAssessments, setSelfAssessments] = useState<EmployeeSelfAssessmentRecord[]>([]);
   const [hrProfiles, setHrProfiles] = useState<HrProfileRecord[]>([]);
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
   const [skillAchievements, setSkillAchievements] = useState<SkillAchievementRecord[]>([]);
@@ -999,7 +1003,7 @@ export default function Home() {
     if (previewEmployeeId) dashboardParams.set("previewEmployeeId", previewEmployeeId);
     fetch(`/api/dashboard?${dashboardParams.toString()}`, { signal: controller.signal })
       .then(async (response) => {
-        const body = await response.json().catch(() => ({})) as { currentUser?: CurrentUser; employeePreview?: EmployeePreview | null; permissions?: AppPermissions; teamOverview?: EmployeeTeamOverview; launchReadiness?: LaunchReadiness; userAccounts?: PublicUserAccount[]; notificationReads?: NotificationReadRecord[]; employees?: EmployeeRecord[]; evaluations?: EvaluationRecord[]; hrProfiles?: HrProfileRecord[]; attendanceRecords?: AttendanceRecord[]; skillAchievements?: SkillAchievementRecord[]; talentActions?: TalentActionRecord[]; projects?: ProjectRecord[]; workItems?: WorkItemRecord[]; workSubmissions?: WorkSubmissionRecord[]; rewards?: RewardRecord[]; pointLedger?: PointLedgerRecord[]; pointEvents?: PointEventRecord[]; pointPolicyRules?: PointPolicyRules; rewardRedemptions?: RewardRedemptionRecord[]; organizationPolicies?: OrganizationPolicyRecord[]; policyAcknowledgements?: PolicyAcknowledgementRecord[]; employeeProfiles?: EmployeeProfileRecord[]; applicationDocuments?: ApplicationDocumentRecord[]; employmentContracts?: EmploymentContractRecord[]; organizationDocuments?: OrganizationDocumentRecord[]; employeeWarnings?: EmployeeWarningRecord[]; employeeRecognitions?: EmployeeRecognitionRecord[]; authRequired?: boolean; passwordChangeRequired?: boolean; accessDenied?: boolean; displayName?: string; loginId?: string; error?: string };
+        const body = await response.json().catch(() => ({})) as { currentUser?: CurrentUser; employeePreview?: EmployeePreview | null; permissions?: AppPermissions; teamOverview?: EmployeeTeamOverview; launchReadiness?: LaunchReadiness; userAccounts?: PublicUserAccount[]; notificationReads?: NotificationReadRecord[]; employees?: EmployeeRecord[]; evaluations?: EvaluationRecord[]; selfAssessments?: EmployeeSelfAssessmentRecord[]; hrProfiles?: HrProfileRecord[]; attendanceRecords?: AttendanceRecord[]; skillAchievements?: SkillAchievementRecord[]; talentActions?: TalentActionRecord[]; projects?: ProjectRecord[]; workItems?: WorkItemRecord[]; workSubmissions?: WorkSubmissionRecord[]; rewards?: RewardRecord[]; pointLedger?: PointLedgerRecord[]; pointEvents?: PointEventRecord[]; pointPolicyRules?: PointPolicyRules; rewardRedemptions?: RewardRedemptionRecord[]; organizationPolicies?: OrganizationPolicyRecord[]; policyAcknowledgements?: PolicyAcknowledgementRecord[]; employeeProfiles?: EmployeeProfileRecord[]; applicationDocuments?: ApplicationDocumentRecord[]; employmentContracts?: EmploymentContractRecord[]; organizationDocuments?: OrganizationDocumentRecord[]; employeeWarnings?: EmployeeWarningRecord[]; employeeRecognitions?: EmployeeRecognitionRecord[]; authRequired?: boolean; passwordChangeRequired?: boolean; accessDenied?: boolean; displayName?: string; loginId?: string; error?: string };
         if (response.status === 401 || body.authRequired) {
           setAuthGate({ mode: "login" });
           setAccessDenied(null);
@@ -1057,6 +1061,7 @@ export default function Home() {
         setAccessDenied(null);
         setEmployees(body.employees ?? []);
         setEvaluations(body.evaluations ?? []);
+        setSelfAssessments(body.selfAssessments ?? []);
         setHrProfiles(body.hrProfiles ?? []);
         setAttendanceRecords(body.attendanceRecords ?? []);
         setSkillAchievements(body.skillAchievements ?? []);
@@ -1217,6 +1222,10 @@ export default function Home() {
   const evaluationsByEmployee = useMemo(
     () => new Map(evaluations.filter((evaluation) => evaluation.period === period).map((evaluation) => [evaluation.employeeId, evaluation])),
     [evaluations, period],
+  );
+  const selfAssessmentsByEmployee = useMemo(
+    () => new Map(selfAssessments.filter((assessment) => assessment.period === period).map((assessment) => [assessment.employeeId, assessment])),
+    [period, selfAssessments],
   );
   const teamEvaluationsByEmployee = useMemo(
     () => new Map(teamOverview.evaluations.filter((evaluation) => evaluation.period === period).map((evaluation) => [evaluation.employeeId, evaluation])),
@@ -1690,7 +1699,11 @@ export default function Home() {
 
   const selectedRole = selectedEmployee ? getRole(selectedEmployee.roleId) : null;
   const skillProfileRole = skillProfileEmployee ? getRole(skillProfileEmployee.roleId) : null;
-  const skillProfileEvaluation = skillProfileEmployee ? evaluationsByEmployee.get(skillProfileEmployee.id) ?? null : null;
+  const skillProfileEvaluation = skillProfileEmployee
+    ? (currentUser?.role === "employee" && currentUser.employeeId === skillProfileEmployee.id
+      ? selfAssessmentsByEmployee.get(skillProfileEmployee.id) ?? evaluationsByEmployee.get(skillProfileEmployee.id) ?? null
+      : evaluationsByEmployee.get(skillProfileEmployee.id) ?? null)
+    : null;
   const skillProfileAssessedCount = skillProfileRole
     ? skillProfileRole.skills.filter((skill) => {
       const level = skillProfileEvaluation?.skillScores[skill.id];
@@ -1838,8 +1851,18 @@ export default function Home() {
   };
 
   const openEvaluation = (employee: EmployeeRecord) => {
+    if (currentUser?.role === "employee" && currentUser.employeeId !== employee.id) {
+      showToast("พนักงานประเมินตนเองได้เฉพาะโปรไฟล์ของตน", "error");
+      return;
+    }
+    if (isEmployeePreview) {
+      showToast("โหมดทดลองเป็นแบบอ่านอย่างเดียว จึงบันทึกแบบประเมินไม่ได้", "error");
+      return;
+    }
     const role = getRole(employee.roleId);
-    const existing = evaluationsByEmployee.get(employee.id) ?? fallbackEvaluation(employee);
+    const existing = currentUser?.role === "employee"
+      ? selfAssessmentsByEmployee.get(employee.id) ?? null
+      : evaluationsByEmployee.get(employee.id) ?? fallbackEvaluation(employee);
     setSelectedEmployee(employee);
     setKpiScores(Object.fromEntries(role.kpis.map((kpi) => [kpi.id, existing?.kpiScores[kpi.id] ?? 80])));
     setSkillScores(Object.fromEntries(role.skills.flatMap((skill) => {
@@ -2655,12 +2678,21 @@ export default function Home() {
     }
     setIsSaving(true);
     try {
+      const isSelfAssessment = currentUser?.role === "employee";
       const response = await fetch("/api/dashboard", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "saveEvaluation", employeeId: selectedEmployee.id, period, kpiScores, skillScores, note }),
+        body: JSON.stringify({ action: isSelfAssessment ? "saveSelfAssessment" : "saveEvaluation", employeeId: selectedEmployee.id, period, kpiScores, skillScores, note }),
       });
-      const body = await response.json() as { evaluation?: EvaluationRecord; pointEntry?: PointLedgerRecord; pointEvent?: PointEventRecord; error?: string };
+      const body = await response.json() as { evaluation?: EvaluationRecord; selfAssessment?: EmployeeSelfAssessmentRecord; pointEntry?: PointLedgerRecord; pointEvent?: PointEventRecord; error?: string };
+      if (isSelfAssessment) {
+        if (!response.ok || !body.selfAssessment) throw new Error(body.error ?? "บันทึกแบบประเมินตนเองไม่สำเร็จ");
+        const savedSelfAssessment = body.selfAssessment;
+        setSelfAssessments((items) => [...items.filter((item) => !(item.employeeId === savedSelfAssessment.employeeId && item.period === savedSelfAssessment.period)), savedSelfAssessment]);
+        setSelectedEmployee(null);
+        showToast("บันทึกแบบประเมินตนเองแล้ว · ไม่เปลี่ยนผลประเมินทางการหรือ Points");
+        return;
+      }
       if (!response.ok || !body.evaluation) throw new Error(body.error ?? "บันทึกผลประเมินไม่สำเร็จ");
       const saved = body.evaluation;
       setEvaluations((items) => [...items.filter((item) => !(item.employeeId === saved.employeeId && item.period === saved.period)), saved]);
@@ -2680,7 +2712,7 @@ export default function Home() {
         ? `บันทึกผลประเมิน ${selectedEmployee.name} และมอบ ${body.pointEntry.points} Points ประจำเดือนแล้ว`
         : `บันทึกผลประเมิน ${selectedEmployee.name} แล้ว · รอประมวลผล Points ตามกติกาที่มีผลใช้`);
     } catch (error) {
-      showErrorToast(error, "บันทึกผลประเมินไม่สำเร็จ");
+      showErrorToast(error, currentUser?.role === "employee" ? "บันทึกแบบประเมินตนเองไม่สำเร็จ" : "บันทึกผลประเมินไม่สำเร็จ");
     } finally {
       setIsSaving(false);
     }
@@ -4878,7 +4910,7 @@ export default function Home() {
                     </div>
                   </div>
                 ) : (
-                  <div className="talent-empty"><span>◎</span><div><strong>ยังสร้างกราฟไม่ได้</strong><p>เริ่มประเมินระดับสกิล 1–5 เพื่อดูกราฟความถนัดและตำแหน่งที่เหมาะสม</p></div><button onClick={() => editSkillProfile(skillProfileEmployee)}>เริ่มประเมินสกิล</button></div>
+                  <div className="talent-empty"><span>◎</span><div><strong>ยังสร้างกราฟไม่ได้</strong><p>เริ่มประเมินระดับสกิล 1–5 เพื่อดูกราฟความถนัดและตำแหน่งที่เหมาะสม</p></div>{(!isEmployeeUser || currentUser?.employeeId === skillProfileEmployee.id) && <button onClick={() => editSkillProfile(skillProfileEmployee)}>{isEmployeeUser ? "ประเมินตนเอง" : "เริ่มประเมินสกิล"}</button>}</div>
                 )}
               </section>
               <div className="profile-section-heading"><div><p className="eyebrow">COMPETENCY DETAIL</p><h3>รายละเอียดสมรรถนะ 6 หมวด</h3></div><span><i />ระดับปัจจุบัน <i className="target" />เป้าหมาย</span></div>
@@ -4931,7 +4963,7 @@ export default function Home() {
               </div>
               {skillProfileEvaluation?.note && <div className="profile-note"><span>บันทึกและแผนพัฒนา</span><p>{skillProfileEvaluation.note}</p></div>}
             </div>
-            <div className="modal-actions profile-actions"><button className="secondary-button" onClick={() => setSkillProfileEmployee(null)}>ปิด</button><button className="primary-button" onClick={() => editSkillProfile(skillProfileEmployee)}>{skillProfileEvaluation ? "แก้ไขระดับสกิล" : "เริ่มประเมินสกิล"}</button></div>
+            <div className="modal-actions profile-actions"><button className="secondary-button" onClick={() => setSkillProfileEmployee(null)}>ปิด</button>{(!isEmployeeUser || currentUser?.employeeId === skillProfileEmployee.id) && <button className="primary-button" onClick={() => editSkillProfile(skillProfileEmployee)}>{isEmployeeUser ? (selfAssessmentsByEmployee.has(skillProfileEmployee.id) ? "แก้ไขแบบประเมินตนเอง" : "ประเมินตนเอง") : skillProfileEvaluation ? "แก้ไขระดับสกิล" : "เริ่มประเมินสกิล"}</button>}</div>
           </section>
         </div>
       )}
@@ -4977,17 +5009,17 @@ export default function Home() {
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setSelectedEmployee(null)}>
           <section className="evaluation-modal" role="dialog" aria-modal="true" aria-labelledby="evaluation-title">
             <div className="modal-header">
-              <div className="modal-person"><EmployeeAvatar employee={selectedEmployee} profile={employeeProfilesById.get(selectedEmployee.id)} className="avatar-modal" /><div><p className="eyebrow">แบบประเมินรายบุคคล</p><h2 id="evaluation-title">{selectedEmployee.name}</h2><small>{selectedRole.name} · {period}</small></div></div>
+              <div className="modal-person"><EmployeeAvatar employee={selectedEmployee} profile={employeeProfilesById.get(selectedEmployee.id)} className="avatar-modal" /><div><p className="eyebrow">{isEmployeeUser ? "แบบประเมินตนเอง" : "แบบประเมินรายบุคคล"}</p><h2 id="evaluation-title">{selectedEmployee.name}</h2><small>{selectedRole.name} · {period}</small></div></div>
               <button className="modal-close" onClick={() => setSelectedEmployee(null)} aria-label="ปิดหน้าต่าง">×</button>
             </div>
             <div className="modal-score-summary">
-              <div><small>คะแนนรวม</small><strong>{skillAssessmentComplete ? grandTotal.toFixed(1) : "—"}</strong><span className={skillAssessmentComplete && grandTotal < 75 ? "low" : ""}>{skillAssessmentComplete ? scoreStatus(grandTotal) : `รอประเมินอีก ${selectedRole.skills.length - ratedSkillCount} ด้าน`}</span></div>
+              <div><small>{isEmployeeUser ? "คะแนนประเมินตนเอง" : "คะแนนรวม"}</small><strong>{skillAssessmentComplete ? grandTotal.toFixed(1) : "—"}</strong><span className={skillAssessmentComplete && grandTotal < 75 ? "low" : ""}>{skillAssessmentComplete ? scoreStatus(grandTotal) : `รอประเมินอีก ${selectedRole.skills.length - ratedSkillCount} ด้าน`}</span></div>
               <div className="score-formula"><span>KPI 70% <b>{kpiTotal.toFixed(1)}</b></span><span>สมรรถนะ 30% <b>{skillAssessmentComplete ? skillTotal.toFixed(1) : "—"}</b></span></div>
               <div className="modal-progress"><i style={{ width: `${skillAssessmentComplete ? grandTotal : 0}%` }} /></div>
             </div>
             <div className="evaluation-columns">
               <div className="evaluation-section">
-                <div className="evaluation-section-title"><span>01</span><div><strong>ผลงานตาม KPI</strong><small>ให้คะแนนจากผลลัพธ์จริง 0–100</small></div></div>
+                <div className="evaluation-section-title"><span>01</span><div><strong>ผลงานตาม KPI</strong><small>{isEmployeeUser ? "ประเมินผลลัพธ์ของตนจากหลักฐานจริง 0–100" : "ให้คะแนนจากผลลัพธ์จริง 0–100"}</small></div></div>
                 <div className="kpi-editor">
                   {selectedRole.kpis.map((kpi) => (
                     <label key={kpi.id}>
@@ -5017,8 +5049,9 @@ export default function Home() {
                 <div className="skill-evaluation-note"><span>i</span><p>ให้คะแนนจากหลักฐานและพฤติกรรมที่สังเกตได้ในการทำงาน ไม่ใช้ความชอบหรือความเห็นต่อนิสัยส่วนตัว</p></div>
               </div>
             </div>
-            <label className="note-field"><span>บันทึกและแผนพัฒนา</span><textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder="ระบุผลงานเด่น จุดที่ควรพัฒนา และสิ่งที่องค์กรจะสนับสนุน..." /></label>
-            <div className="modal-actions"><button className="secondary-button" onClick={() => setSelectedEmployee(null)}>ยกเลิก</button><button className="primary-button" disabled={isSaving || !skillAssessmentComplete} onClick={saveEvaluation} title={skillAssessmentComplete ? "บันทึกผลประเมิน" : `เหลือสมรรถนะที่ต้องประเมิน ${selectedRole.skills.length - ratedSkillCount} ด้าน`}>{isSaving ? "กำลังบันทึก..." : skillAssessmentComplete ? "บันทึกผลประเมิน" : `ประเมินให้ครบอีก ${selectedRole.skills.length - ratedSkillCount} ด้าน`}</button></div>
+            {isEmployeeUser && <div className="decision-note compact"><span>i</span><p><strong>นี่คือแบบประเมินตนเอง</strong> หัวหน้าหรือ HR จะใช้ประกอบการพูดคุยเท่านั้น ไม่แทนผลประเมินทางการ ไม่สร้าง Points และคุณไม่สามารถอนุมัติคะแนนของตนเองได้</p></div>}
+            <label className="note-field"><span>{isEmployeeUser ? "ผลงานเด่นและสิ่งที่อยากพัฒนา" : "บันทึกและแผนพัฒนา"}</span><textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder={isEmployeeUser ? "ยกตัวอย่างผลงาน หลักฐาน สิ่งที่ทำได้ดี และเรื่องที่อยากให้หัวหน้าช่วยสนับสนุน..." : "ระบุผลงานเด่น จุดที่ควรพัฒนา และสิ่งที่องค์กรจะสนับสนุน..."} /></label>
+            <div className="modal-actions"><button className="secondary-button" onClick={() => setSelectedEmployee(null)}>ยกเลิก</button><button className="primary-button" disabled={isSaving || !skillAssessmentComplete} onClick={saveEvaluation} title={skillAssessmentComplete ? (isEmployeeUser ? "บันทึกแบบประเมินตนเอง" : "บันทึกผลประเมิน") : `เหลือสมรรถนะที่ต้องประเมิน ${selectedRole.skills.length - ratedSkillCount} ด้าน`}>{isSaving ? "กำลังบันทึก..." : skillAssessmentComplete ? (isEmployeeUser ? "บันทึกแบบประเมินตนเอง" : "บันทึกผลประเมิน") : `ประเมินให้ครบอีก ${selectedRole.skills.length - ratedSkillCount} ด้าน`}</button></div>
           </section>
         </div>
       )}

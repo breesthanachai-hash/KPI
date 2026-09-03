@@ -1,7 +1,7 @@
 import { and, eq, notExists, sql } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { ensureDatabase } from "../../../db/initialize";
-import { applicationDocuments, attendanceRecords, authCredentials, authEvents, employeeProfiles, employeeRecognitions, employees, employeeWarningEvents, employeeWarnings, employmentContracts, evaluations, hrProfiles, notificationReads, organizationDocuments, organizationPolicies, organizationPolicyPublishClaims, pointCapClaims, pointEvents, pointLedger, pointMutationClaims, policyAcknowledgements, projects, rewardRedemptionClaims, rewardRedemptions, rewards, skillAchievements, talentActions, userAccounts, workItems, workSubmissions } from "../../../db/schema";
+import { applicationDocuments, attendanceRecords, authCredentials, authEvents, employeeProfiles, employeeRecognitions, employeeSelfAssessments, employees, employeeWarningEvents, employeeWarnings, employmentContracts, evaluations, hrProfiles, notificationReads, organizationDocuments, organizationPolicies, organizationPolicyPublishClaims, pointCapClaims, pointEvents, pointLedger, pointMutationClaims, policyAcknowledgements, projects, rewardRedemptionClaims, rewardRedemptions, rewards, skillAchievements, talentActions, userAccounts, workItems, workSubmissions } from "../../../db/schema";
 import { authenticatedRequestGate, canAccessEmployee, ensureBootstrapAccounts, recordAuthEvent, revokeAllSessionsForAccount, type CurrentUser } from "../../../lib/access-control";
 import { AuthInputError, credentialMutationValues, getAccountCredential, publicUserAccountDto, publicUserAccountDtos, requestSourceHash } from "../../../lib/auth-service";
 import { internalApiError } from "../../../lib/api-errors";
@@ -438,9 +438,10 @@ export async function GET(request: Request) {
     const requestedPreviewEmployeeId = url.searchParams.get("previewEmployeeId")?.trim() ?? "";
     const isEmployeePreviewRequest = authenticatedUser.role === "admin" && Boolean(requestedPreviewEmployeeId);
     const db = getDb();
-    const [employeeRows, evaluationRows, hrProfileRows, attendanceRows, skillAchievementRows, talentActionRows, projectRows, workItemRows, workSubmissionRows, rewardRows, pointRows, pointEventRows, redemptionRows, employeeProfileRows, applicationDocumentRows, employmentContractRows, organizationPolicyRows, policyAcknowledgementRows, organizationDocumentRows, employeeWarningRows, employeeWarningEventRows, employeeRecognitionRows, userAccountRows, notificationReadRows] = await Promise.all([
+    const [employeeRows, evaluationRows, selfAssessmentRows, hrProfileRows, attendanceRows, skillAchievementRows, talentActionRows, projectRows, workItemRows, workSubmissionRows, rewardRows, pointRows, pointEventRows, redemptionRows, employeeProfileRows, applicationDocumentRows, employmentContractRows, organizationPolicyRows, policyAcknowledgementRows, organizationDocumentRows, employeeWarningRows, employeeWarningEventRows, employeeRecognitionRows, userAccountRows, notificationReadRows] = await Promise.all([
       db.select().from(employees),
       db.select().from(evaluations).where(eq(evaluations.period, period)),
+      db.select().from(employeeSelfAssessments).where(eq(employeeSelfAssessments.period, period)),
       db.select().from(hrProfiles),
       db.select().from(attendanceRecords),
       db.select().from(skillAchievements),
@@ -623,6 +624,9 @@ export async function GET(request: Request) {
       teamOverview: employeePortalTeamOverview,
       employees: scopedEmployees,
       evaluations: evaluationRows.filter((row) => visibleEmployeeIds.has(row.employeeId)),
+      selfAssessments: currentUser.role === "employee" && currentUser.employeeId
+        ? selfAssessmentRows.filter((row) => row.employeeId === currentUser.employeeId)
+        : [],
       hrProfiles: currentUser.role === "admin" || currentUser.role === "employee" ? hrProfileRows.filter((row) => visibleEmployeeIds.has(row.employeeId)) : [],
       attendanceRecords: currentUser.role === "admin" || currentUser.role === "employee" ? attendanceRows.filter((row) => visibleEmployeeIds.has(row.employeeId)) : [],
       skillAchievements: currentUser.role === "admin" || currentUser.role === "employee" ? skillAchievementRows.filter((row) => visibleEmployeeIds.has(row.employeeId)) : [],
@@ -669,6 +673,15 @@ type EmployeePayload = {
 
 type EvaluationPayload = {
   action: "saveEvaluation";
+  employeeId?: string;
+  period?: string;
+  kpiScores?: Record<string, number>;
+  skillScores?: Record<string, number>;
+  note?: string;
+};
+
+type SelfAssessmentPayload = {
+  action: "saveSelfAssessment";
   employeeId?: string;
   period?: string;
   kpiScores?: Record<string, number>;
@@ -886,12 +899,12 @@ export async function POST(request: Request) {
     const currentUser = authentication.currentUser;
     await ensureSeedData();
     const db = getDb();
-    const payload = await request.json() as EmployeePayload | EvaluationPayload | HrPlanPayload | CompleteTalentActionPayload | AttendancePayload | AttendanceApprovalPayload | SkillAchievementPayload | ProjectPayload | WorkItemPayload | ReviewWorkSubmissionPayload | RecordPointEventPayload | RunMonthlyPointCyclePayload | RedeemRewardPayload | UpdateRewardRedemptionPayload | EmployeeProfilePayload | DocumentStatusPayload | ContractPayload | SignContractPayload | SendContractPayload | UserAccountPayload | DeleteUserAccountPayload | MarkNotificationsReadPayload | SaveOrganizationPolicyPayload | PublishOrganizationPolicyPayload | AcknowledgeOrganizationPolicyPayload;
+    const payload = await request.json() as EmployeePayload | EvaluationPayload | SelfAssessmentPayload | HrPlanPayload | CompleteTalentActionPayload | AttendancePayload | AttendanceApprovalPayload | SkillAchievementPayload | ProjectPayload | WorkItemPayload | ReviewWorkSubmissionPayload | RecordPointEventPayload | RunMonthlyPointCyclePayload | RedeemRewardPayload | UpdateRewardRedemptionPayload | EmployeeProfilePayload | DocumentStatusPayload | ContractPayload | SignContractPayload | SendContractPayload | UserAccountPayload | DeleteUserAccountPayload | MarkNotificationsReadPayload | SaveOrganizationPolicyPayload | PublishOrganizationPolicyPayload | AcknowledgeOrganizationPolicyPayload;
     const pointPolicyRows = await db.select().from(organizationPolicies);
     const { policy: activePointPolicy, rules: activePointRules } = pointPolicyFromRows(pointPolicyRows);
     const adminOnlyActions = new Set(["createEmployee", "saveHrPlan", "verifySkillAchievement", "runMonthlyPointCycle", "saveEmployeeProfile", "updateDocumentStatus", "createContract", "sendContract", "saveUserAccount", "deleteUserAccount", "saveOrganizationPolicy", "publishOrganizationPolicy", "updateRewardRedemption"]);
     const teamActions = new Set(["saveEvaluation", "completeTalentAction", "approveAttendance", "saveProject", "reviewWorkSubmission", "recordPointEvent"]);
-    const employeePortalActions = new Set(["markNotificationsRead", "saveWorkItem", "redeemReward", "acknowledgeOrganizationPolicy", "signContract"]);
+    const employeePortalActions = new Set(["markNotificationsRead", "saveWorkItem", "saveSelfAssessment", "redeemReward", "acknowledgeOrganizationPolicy", "signContract"]);
     if (currentUser.role === "employee" && !employeePortalActions.has(payload.action)) return Response.json({ error: "สิทธิ์พนักงานใช้ได้เฉพาะงานของฉัน การแจ้งเตือน การแลกรางวัล การรับทราบกฎองค์กร และการลงนามสัญญาของตนเอง" }, { status: 403 });
     if (adminOnlyActions.has(payload.action) && currentUser.role !== "admin") return Response.json({ error: "เฉพาะ HR หรือผู้ดูแลระบบเท่านั้น" }, { status: 403 });
     if (teamActions.has(payload.action) && currentUser.role === "employee") return Response.json({ error: "รายการนี้ต้องดำเนินการโดยหัวหน้าทีมหรือ HR" }, { status: 403 });
@@ -1351,6 +1364,60 @@ export async function POST(request: Request) {
       }
 
       return Response.json({ evaluation, pointEntry: null, pointEvent: null, pointWarning: "บันทึกผลประเมินแล้ว Points จะถูกคำนวณแบบครั้งเดียวเมื่อ HR ประมวลผล Points รายเดือน" });
+    }
+
+    if (payload.action === "saveSelfAssessment") {
+      const employeeId = payload.employeeId?.trim() ?? "";
+      if (currentUser.role !== "employee" || !currentUser.employeeId || currentUser.employeeId !== employeeId) {
+        return Response.json({ error: "บันทึกแบบประเมินตนเองได้เฉพาะโปรไฟล์ของคุณ" }, { status: 403 });
+      }
+      const period = payload.period ?? periods[0];
+      const [employee] = await db.select().from(employees).where(and(eq(employees.id, employeeId), eq(employees.status, "active"))).limit(1);
+      if (!employee) return Response.json({ error: "ไม่พบโปรไฟล์พนักงานที่ใช้งานอยู่" }, { status: 404 });
+      const role = getRole(employee.roleId);
+      const hasCompleteSkillAssessment = role.skills.every((skill) => {
+        const level = payload.skillScores?.[skill.id];
+        return typeof level === "number" && Number.isFinite(level) && level >= 1 && level <= 5;
+      });
+      if (!hasCompleteSkillAssessment) return Response.json({ error: `กรุณาประเมินสมรรถนะให้ครบทั้ง ${role.skills.length} ด้านก่อนบันทึก` }, { status: 400 });
+      const kpiScores = Object.fromEntries(role.kpis.map((kpi) => [kpi.id, clampScore(payload.kpiScores?.[kpi.id])]));
+      const skillScores = Object.fromEntries(role.skills.map((skill) => [skill.id, clampSkillLevel(payload.skillScores?.[skill.id])]));
+      const kpiScore = role.kpis.reduce((sum, kpi) => sum + kpiScores[kpi.id] * kpi.weight / 100, 0);
+      const skillScore = calculateSkillScore(role, skillScores);
+      const totalScore = kpiScore * 0.7 + skillScore * 0.3;
+      const now = new Date().toISOString();
+      const selfAssessment = {
+        id: `${employeeId}:${period}`,
+        employeeId,
+        period,
+        kpiScores,
+        skillScores,
+        kpiScore: Number(kpiScore.toFixed(1)),
+        skillScore: Number(skillScore.toFixed(1)),
+        totalScore: Number(totalScore.toFixed(1)),
+        note: payload.note?.trim().slice(0, 2000) ?? "",
+        submittedAt: now,
+        updatedAt: now,
+      };
+      await db.insert(employeeSelfAssessments).values(selfAssessment).onConflictDoUpdate({
+        target: [employeeSelfAssessments.employeeId, employeeSelfAssessments.period],
+        set: {
+          kpiScores: selfAssessment.kpiScores,
+          skillScores: selfAssessment.skillScores,
+          kpiScore: selfAssessment.kpiScore,
+          skillScore: selfAssessment.skillScore,
+          totalScore: selfAssessment.totalScore,
+          note: selfAssessment.note,
+          submittedAt: selfAssessment.submittedAt,
+          updatedAt: selfAssessment.updatedAt,
+        },
+      });
+      return Response.json({
+        selfAssessment,
+        pointEntry: null,
+        pointEvent: null,
+        message: "บันทึกแบบประเมินตนเองแล้ว โดยไม่เปลี่ยนผลประเมินทางการหรือ Points",
+      });
     }
 
     if (payload.action === "saveHrPlan") {

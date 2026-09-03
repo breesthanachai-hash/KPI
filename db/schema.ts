@@ -188,6 +188,23 @@ export const evaluations = sqliteTable("evaluations", {
   index("evaluations_period_idx").on(table.period),
 ]);
 
+export const employeeSelfAssessments = sqliteTable("employee_self_assessments", {
+  id: text("id").primaryKey(),
+  employeeId: text("employee_id").notNull().references(() => employees.id, { onDelete: "cascade" }),
+  period: text("period").notNull(),
+  kpiScores: text("kpi_scores", { mode: "json" }).$type<Record<string, number>>().notNull(),
+  skillScores: text("skill_scores", { mode: "json" }).$type<Record<string, number>>().notNull(),
+  kpiScore: real("kpi_score").notNull(),
+  skillScore: real("skill_score").notNull(),
+  totalScore: real("total_score").notNull(),
+  note: text("note").notNull().default(""),
+  submittedAt: text("submitted_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("employee_self_assessments_employee_period_unique").on(table.employeeId, table.period),
+  index("employee_self_assessments_period_idx").on(table.period),
+]);
+
 export const hrProfiles = sqliteTable("hr_profiles", {
   employeeId: text("employee_id").primaryKey().references(() => employees.id, { onDelete: "cascade" }),
   currentSalary: real("current_salary").notNull().default(0),
