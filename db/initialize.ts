@@ -53,6 +53,96 @@ export function ensureDatabase() {
     d1.prepare("CREATE UNIQUE INDEX IF NOT EXISTS user_accounts_auth_user_unique ON user_accounts (auth_user_id) WHERE auth_user_id != ''"),
     d1.prepare("CREATE UNIQUE INDEX IF NOT EXISTS user_accounts_employee_unique ON user_accounts (employee_id) WHERE employee_id IS NOT NULL"),
     d1.prepare("CREATE INDEX IF NOT EXISTS user_accounts_role_status_idx ON user_accounts (role, status)"),
+    d1.prepare(`CREATE TRIGGER IF NOT EXISTS user_accounts_preserve_last_active_admin_update
+      BEFORE UPDATE OF role, status ON user_accounts
+      WHEN OLD.role = 'admin' AND OLD.status = 'active'
+        AND (NEW.role != 'admin' OR NEW.status != 'active')
+        AND NOT EXISTS (
+          SELECT 1 FROM user_accounts
+          WHERE id != OLD.id AND role = 'admin' AND status = 'active'
+        )
+      BEGIN
+        SELECT RAISE(ABORT, 'LAST_ACTIVE_ADMIN_REQUIRED');
+      END`),
+    d1.prepare(`CREATE TRIGGER IF NOT EXISTS user_accounts_preserve_last_active_admin_delete
+      BEFORE DELETE ON user_accounts
+      WHEN OLD.role = 'admin' AND OLD.status = 'active'
+        AND NOT EXISTS (
+          SELECT 1 FROM user_accounts
+          WHERE id != OLD.id AND role = 'admin' AND status = 'active'
+        )
+      BEGIN
+        SELECT RAISE(ABORT, 'LAST_ACTIVE_ADMIN_REQUIRED');
+      END`),
+    d1.prepare(`CREATE TABLE IF NOT EXISTS auth_credentials (
+      user_account_id TEXT PRIMARY KEY NOT NULL REFERENCES user_accounts(id) ON DELETE CASCADE,
+      login_id TEXT NOT NULL,
+      login_id_canonical TEXT NOT NULL,
+      password_hash TEXT NOT NULL DEFAULT '',
+      password_salt TEXT NOT NULL DEFAULT '',
+      password_algorithm TEXT NOT NULL DEFAULT 'pbkdf2-sha256',
+      password_iterations INTEGER NOT NULL DEFAULT 600000,
+      pepper_version INTEGER NOT NULL DEFAULT 1,
+      credential_version INTEGER NOT NULL DEFAULT 1,
+      must_change_password INTEGER NOT NULL DEFAULT 1,
+      failed_attempts INTEGER NOT NULL DEFAULT 0,
+      locked_until TEXT,
+      password_changed_at TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`),
+    d1.prepare("CREATE UNIQUE INDEX IF NOT EXISTS auth_credentials_login_id_canonical_unique ON auth_credentials (login_id_canonical)"),
+    d1.prepare("CREATE INDEX IF NOT EXISTS auth_credentials_locked_until_idx ON auth_credentials (locked_until)"),
+    d1.prepare(`CREATE TABLE IF NOT EXISTS auth_sessions (
+      id TEXT PRIMARY KEY NOT NULL,
+      token_hash TEXT NOT NULL,
+      user_account_id TEXT NOT NULL REFERENCES user_accounts(id) ON DELETE CASCADE,
+      credential_version INTEGER NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      authenticated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      last_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      idle_expires_at TEXT NOT NULL,
+      absolute_expires_at TEXT NOT NULL,
+      revoked_at TEXT,
+      revoke_reason TEXT NOT NULL DEFAULT ''
+    )`),
+    d1.prepare("CREATE UNIQUE INDEX IF NOT EXISTS auth_sessions_token_hash_unique ON auth_sessions (token_hash)"),
+    d1.prepare("CREATE INDEX IF NOT EXISTS auth_sessions_user_active_idx ON auth_sessions (user_account_id, revoked_at, absolute_expires_at)"),
+    d1.prepare("CREATE INDEX IF NOT EXISTS auth_sessions_expiry_idx ON auth_sessions (idle_expires_at, absolute_expires_at)"),
+    d1.prepare(`CREATE TABLE IF NOT EXISTS auth_rate_limits (
+      key_hash TEXT PRIMARY KEY NOT NULL,
+      bucket_type TEXT NOT NULL,
+      window_started_at TEXT NOT NULL,
+      attempt_count INTEGER NOT NULL DEFAULT 0,
+      blocked_until TEXT,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`),
+    d1.prepare("CREATE INDEX IF NOT EXISTS auth_rate_limits_blocked_until_idx ON auth_rate_limits (blocked_until)"),
+    d1.prepare("CREATE INDEX IF NOT EXISTS auth_rate_limits_bucket_updated_idx ON auth_rate_limits (bucket_type, updated_at)"),
+    d1.prepare(`CREATE TABLE IF NOT EXISTS auth_events (
+      id TEXT PRIMARY KEY NOT NULL,
+      user_account_id TEXT REFERENCES user_accounts(id) ON DELETE SET NULL,
+      event_type TEXT NOT NULL,
+      source_hash TEXT NOT NULL DEFAULT '',
+      detail TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`),
+    d1.prepare("CREATE INDEX IF NOT EXISTS auth_events_user_created_idx ON auth_events (user_account_id, created_at)"),
+    d1.prepare("CREATE INDEX IF NOT EXISTS auth_events_type_created_idx ON auth_events (event_type, created_at)"),
+    d1.prepare(`CREATE TRIGGER IF NOT EXISTS auth_events_validate_credential_mutation_claim
+      BEFORE INSERT ON auth_events
+      WHEN NEW.id LIKE 'credential-mutation:%'
+        AND (
+          NEW.user_account_id IS NULL
+          OR NOT EXISTS (
+            SELECT 1 FROM auth_credentials
+            WHERE user_account_id = NEW.user_account_id
+              AND credential_version = CAST(NEW.detail AS INTEGER)
+          )
+        )
+      BEGIN
+        SELECT RAISE(ABORT, 'STALE_CREDENTIAL_VERSION');
+      END`),
     d1.prepare(`CREATE TABLE IF NOT EXISTS notification_reads (
       id TEXT PRIMARY KEY NOT NULL,
       user_key TEXT NOT NULL,

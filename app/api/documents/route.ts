@@ -1,9 +1,8 @@
 import { and, eq } from "drizzle-orm";
 import { getDb, getFilesBucket } from "../../../db";
-import { ensureDatabase } from "../../../db/initialize";
 import { applicationDocuments, employees, employmentContracts } from "../../../db/schema";
 import type { ApplicationDocumentRecord } from "../../../lib/kpi-data";
-import { authenticateRequest, authenticatedIdentity, canAccessEmployee, ensureBootstrapAccounts } from "../../../lib/access-control";
+import { authenticatedRequestGate, canAccessEmployee } from "../../../lib/access-control";
 import { internalApiError } from "../../../lib/api-errors";
 
 export const dynamic = "force-dynamic";
@@ -65,19 +64,6 @@ async function validFile(file: File) {
   return false;
 }
 
-function actorName(request: Request) {
-  const encodedName = request.headers.get("oai-authenticated-user-full-name");
-  const encoding = request.headers.get("oai-authenticated-user-full-name-encoding");
-  if (encodedName && encoding === "percent-encoded-utf-8") {
-    try {
-      return decodeURIComponent(encodedName);
-    } catch {
-      // Fall back to email.
-    }
-  }
-  return request.headers.get("oai-authenticated-user-email") ?? "ฝ่ายทรัพยากรบุคคล";
-}
-
 function errorResponse(error: unknown) {
   const message = error instanceof Error ? error.message : "จัดการเอกสารไม่สำเร็จ";
   if (message.includes("R2 binding")) return Response.json({ error: "พื้นที่เก็บเอกสารยังไม่พร้อม กรุณาเผยแพร่ระบบอีกครั้ง" }, { status: 503 });
@@ -88,11 +74,9 @@ export async function POST(request: Request) {
   let uploadedStorageKey = "";
   let committed = false;
   try {
-    if (!authenticatedIdentity(request)) return Response.json({ error: "บัญชีนี้ไม่มีสิทธิ์ใช้งาน" }, { status: 403 });
-    await ensureDatabase();
-    await ensureBootstrapAccounts();
-    const currentUser = await authenticateRequest(request);
-    if (!currentUser) return Response.json({ error: "บัญชีนี้ไม่มีสิทธิ์ใช้งาน" }, { status: 403 });
+    const authentication = await authenticatedRequestGate(request);
+    if (authentication.response) return authentication.response;
+    const { currentUser } = authentication;
     if (currentUser.role !== "admin") return Response.json({ error: "เฉพาะ HR หรือผู้ดูแลระบบเท่านั้นที่จัดการเอกสารพนักงานได้" }, { status: 403 });
     const formData = await request.formData();
     const employeeId = String(formData.get("employeeId") ?? "");
@@ -130,7 +114,7 @@ export async function POST(request: Request) {
       sizeBytes: file.size,
       status: "pending" as const,
       note: "",
-      uploadedBy: actorName(request),
+      uploadedBy: currentUser.authenticatedName,
       uploadedAt: now,
       verifiedBy: null,
       verifiedAt: null,
@@ -179,11 +163,9 @@ export async function POST(request: Request) {
 
 export async function GET(request: Request) {
   try {
-    if (!authenticatedIdentity(request)) return Response.json({ error: "บัญชีนี้ไม่มีสิทธิ์ใช้งาน" }, { status: 403 });
-    await ensureDatabase();
-    await ensureBootstrapAccounts();
-    const currentUser = await authenticateRequest(request);
-    if (!currentUser) return Response.json({ error: "บัญชีนี้ไม่มีสิทธิ์ใช้งาน" }, { status: 403 });
+    const authentication = await authenticatedRequestGate(request);
+    if (authentication.response) return authentication.response;
+    const { currentUser } = authentication;
     const documentId = new URL(request.url).searchParams.get("id") ?? "";
     const db = getDb();
     const [document] = await db.select().from(applicationDocuments).where(eq(applicationDocuments.id, documentId)).limit(1);

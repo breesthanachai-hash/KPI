@@ -13,6 +13,7 @@
     "test": "npm run build && node --test tests/*.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate",
+    "auth:bootstrap": "node scripts/generate-auth-bootstrap.mjs",
     "release:preflight": "node scripts/verify-release.mjs --preflight",
     "release:verify": "npm run release:preflight && npm test && npm run lint && node scripts/verify-release.mjs --artifacts"
   },

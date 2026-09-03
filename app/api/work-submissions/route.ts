@@ -1,9 +1,8 @@
 import { and, eq } from "drizzle-orm";
 import { getDb, getFilesBucket } from "../../../db";
-import { ensureDatabase } from "../../../db/initialize";
 import { employees, workItems, workSubmissions } from "../../../db/schema";
 import type { WorkSubmissionRecord } from "../../../lib/kpi-data";
-import { authenticateRequest, authenticatedIdentity, canAccessEmployee, ensureBootstrapAccounts } from "../../../lib/access-control";
+import { authenticatedRequestGate, canAccessEmployee } from "../../../lib/access-control";
 import { internalApiError } from "../../../lib/api-errors";
 
 export const dynamic = "force-dynamic";
@@ -65,18 +64,6 @@ async function validSubmissionFile(file: File) {
   return false;
 }
 
-function actorName(request: Request) {
-  const encodedName = request.headers.get("oai-authenticated-user-full-name");
-  if (encodedName && request.headers.get("oai-authenticated-user-full-name-encoding") === "percent-encoded-utf-8") {
-    try {
-      return decodeURIComponent(encodedName);
-    } catch {
-      // Fall back to email.
-    }
-  }
-  return request.headers.get("oai-authenticated-user-email") ?? "พนักงาน People Pulse";
-}
-
 function isSafeWebUrl(value: string) {
   if (!value) return true;
   try {
@@ -103,11 +90,9 @@ export async function POST(request: Request) {
   let uploadedStorageKey = "";
   let submissionCommitted = false;
   try {
-    if (!authenticatedIdentity(request)) return Response.json({ error: "บัญชีนี้ไม่มีสิทธิ์ใช้งาน" }, { status: 403 });
-    await ensureDatabase();
-    await ensureBootstrapAccounts();
-    const currentUser = await authenticateRequest(request);
-    if (!currentUser) return Response.json({ error: "บัญชีนี้ไม่มีสิทธิ์ใช้งาน" }, { status: 403 });
+    const authentication = await authenticatedRequestGate(request);
+    if (authentication.response) return authentication.response;
+    const { currentUser } = authentication;
     const formData = await request.formData();
     const workItemId = String(formData.get("workItemId") ?? "");
     const submissionType = String(formData.get("submissionType") ?? "other") as WorkSubmissionRecord["submissionType"];
@@ -162,7 +147,7 @@ export async function POST(request: Request) {
       contentType,
       sizeBytes,
       status: "submitted",
-      submittedBy: actorName(request),
+      submittedBy: currentUser.authenticatedName,
       submittedAt: now,
       reviewedBy: null,
       reviewedAt: null,
@@ -189,11 +174,9 @@ export async function POST(request: Request) {
 
 export async function GET(request: Request) {
   try {
-    if (!authenticatedIdentity(request)) return Response.json({ error: "บัญชีนี้ไม่มีสิทธิ์ใช้งาน" }, { status: 403 });
-    await ensureDatabase();
-    await ensureBootstrapAccounts();
-    const currentUser = await authenticateRequest(request);
-    if (!currentUser) return Response.json({ error: "บัญชีนี้ไม่มีสิทธิ์ใช้งาน" }, { status: 403 });
+    const authentication = await authenticatedRequestGate(request);
+    if (authentication.response) return authentication.response;
+    const { currentUser } = authentication;
     const submissionId = new URL(request.url).searchParams.get("id") ?? "";
     const db = getDb();
     const [submission] = await db.select().from(workSubmissions).where(eq(workSubmissions.id, submissionId)).limit(1);

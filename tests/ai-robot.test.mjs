@@ -64,7 +64,7 @@ test("includes People AI in the shared focus trap, scroll lock, Escape close and
   assert.ok(overlayStart >= 0 && overlayEnd > overlayStart, "expected the shared overlay accessibility effect");
   const overlayEffect = pageSource.slice(overlayStart, overlayEnd);
 
-  assert.match(pageSource, /const hasBlockingOverlay = Boolean\([\s\S]*?showNotifications \|\| showUserMenu\)/);
+  assert.match(pageSource, /const hasBlockingOverlay = Boolean\([\s\S]*?showNotifications \|\| showUserMenu \|\| showChangePassword\)/);
   assert.match(overlayEffect, /hasBlockingOverlay \|\| showAiAssistant/);
   assert.match(overlayEffect, /lastFocusedElementRef\.current = document\.activeElement/);
   assert.match(overlayEffect, /document\.body\.style\.overflow = "hidden"/);
@@ -73,7 +73,7 @@ test("includes People AI in the shared focus trap, scroll lock, Escape close and
   assert.match(overlayEffect, /event\.key === "Escape"[\s\S]*?setShowAiAssistant\(false\)/);
   assert.match(overlayEffect, /document\.body\.style\.overflow = previousOverflow/);
   assert.match(overlayEffect, /lastFocusedElementRef\.current\?\.focus\(\)/);
-  assert.match(overlayEffect, /showNotifications, showUserMenu, showAiAssistant\]\);/);
+  assert.match(overlayEffect, /showNotifications, showUserMenu, showChangePassword, showAiAssistant\]\);/);
 });
 
 test("keeps the AI backdrop out of the tab order and exposes a focusable named dialog", () => {

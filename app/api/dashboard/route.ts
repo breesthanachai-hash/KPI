@@ -1,8 +1,9 @@
 import { and, eq, notExists, sql } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { ensureDatabase } from "../../../db/initialize";
-import { applicationDocuments, attendanceRecords, employeeProfiles, employeeRecognitions, employees, employeeWarningEvents, employeeWarnings, employmentContracts, evaluations, hrProfiles, notificationReads, organizationDocuments, organizationPolicies, organizationPolicyPublishClaims, pointCapClaims, pointEvents, pointLedger, pointMutationClaims, policyAcknowledgements, projects, rewardRedemptionClaims, rewardRedemptions, rewards, skillAchievements, talentActions, userAccounts, workItems, workSubmissions } from "../../../db/schema";
-import { authenticateRequest, authenticatedIdentity, canAccessEmployee, ensureBootstrapAccounts } from "../../../lib/access-control";
+import { applicationDocuments, attendanceRecords, authCredentials, authEvents, employeeProfiles, employeeRecognitions, employees, employeeWarningEvents, employeeWarnings, employmentContracts, evaluations, hrProfiles, notificationReads, organizationDocuments, organizationPolicies, organizationPolicyPublishClaims, pointCapClaims, pointEvents, pointLedger, pointMutationClaims, policyAcknowledgements, projects, rewardRedemptionClaims, rewardRedemptions, rewards, skillAchievements, talentActions, userAccounts, workItems, workSubmissions } from "../../../db/schema";
+import { authenticatedRequestGate, canAccessEmployee, ensureBootstrapAccounts, recordAuthEvent, revokeAllSessionsForAccount, type CurrentUser } from "../../../lib/access-control";
+import { AuthInputError, credentialMutationValues, getAccountCredential, publicUserAccountDto, publicUserAccountDtos, requestSourceHash } from "../../../lib/auth-service";
 import { internalApiError } from "../../../lib/api-errors";
 import {
   clampScore,
@@ -43,11 +44,21 @@ export const dynamic = "force-dynamic";
 
 function apiError(error: unknown) {
   const message = error instanceof Error ? error.message : "เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ";
+  if (error instanceof AuthInputError) return Response.json({ error: error.message }, { status: error.status });
   if (message.includes("no such table")) {
     return Response.json({ error: "ฐานข้อมูลยังไม่พร้อม กรุณาเผยแพร่เวอร์ชันที่มี migration ล่าสุด" }, { status: 503 });
   }
+  if (message.includes("STALE_CREDENTIAL_VERSION") || message.includes("auth_events.id")) {
+    return Response.json({ error: "ข้อมูลบัญชีถูกแก้ไขจากอีกหน้าจอ กรุณาโหลดข้อมูลล่าสุด" }, { status: 409 });
+  }
+  if (message.includes("auth_credentials.login_id_canonical")) {
+    return Response.json({ error: "รหัสผู้ใช้นี้มีผู้ใช้งานแล้ว กรุณาเลือกรหัสอื่น" }, { status: 409 });
+  }
   if (message.includes("UNIQUE constraint failed")) {
     return Response.json({ error: "อีเมลนี้มีอยู่ในระบบแล้ว" }, { status: 409 });
+  }
+  if (message.includes("LAST_ACTIVE_ADMIN_REQUIRED")) {
+    return Response.json({ error: "ต้องมีบัญชี HR / Admin ที่ใช้งานอยู่อย่างน้อย 1 บัญชี" }, { status: 409 });
   }
   return internalApiError(error, "ระบบไม่สามารถดำเนินการได้ในขณะนี้", "dashboard");
 }
@@ -369,23 +380,12 @@ async function ensureSeedData() {
   return seedInitialization;
 }
 
-function authenticatedActor(request: Request) {
-  const userId = request.headers.get("oai-authenticated-user-id") ?? "local-admin";
-  const email = request.headers.get("oai-authenticated-user-email") ?? "hr@peoplepulse.local";
-  const encodedName = request.headers.get("oai-authenticated-user-full-name");
-  const encoding = request.headers.get("oai-authenticated-user-full-name-encoding");
-  if (encodedName && encoding === "percent-encoded-utf-8") {
-    try {
-      return { userId, email, name: decodeURIComponent(encodedName) };
-    } catch {
-      // Fall back to the authenticated email when the optional name is malformed.
-    }
-  }
-  return { userId, email, name: email === "hr@peoplepulse.local" ? "ฝ่ายทรัพยากรบุคคล" : email };
+function authenticatedActor(currentUser: CurrentUser) {
+  return { userId: currentUser.id, email: currentUser.email, name: currentUser.authenticatedName };
 }
 
-function evaluatorName(request: Request) {
-  return authenticatedActor(request).name;
+function evaluatorName(currentUser: CurrentUser) {
+  return currentUser.authenticatedName;
 }
 
 function isSafeOptionalUrl(value: string) {
@@ -429,13 +429,10 @@ function previousIsoDay(day: string) {
 
 export async function GET(request: Request) {
   try {
-    const identity = authenticatedIdentity(request);
-    if (!identity) return Response.json({ error: "บัญชีนี้ยังไม่ได้รับสิทธิ์ใช้งาน", accessDenied: true, identity: null }, { status: 403 });
+    const authentication = await authenticatedRequestGate(request);
+    if (authentication.response) return authentication.response;
+    const authenticatedUser = authentication.currentUser;
     await ensureSeedData();
-    const authenticatedUser = await authenticateRequest(request);
-    if (!authenticatedUser) {
-      return Response.json({ error: "บัญชีนี้ยังไม่ได้รับสิทธิ์ใช้งาน", accessDenied: true, identity: { email: identity.email, name: identity.name } }, { status: 403 });
-    }
     const url = new URL(request.url);
     const period = url.searchParams.get("period") ?? periods[0];
     const requestedPreviewEmployeeId = url.searchParams.get("previewEmployeeId")?.trim() ?? "";
@@ -488,6 +485,8 @@ export async function GET(request: Request) {
         createdAt: previewEmployee.createdAt,
         updatedAt: previewEmployee.updatedAt,
         authenticatedName: previewEmployee.name,
+        loginId: "employee-preview",
+        mustChangePassword: false,
       };
       employeePreview = {
         employeeId: previewEmployee.id,
@@ -503,7 +502,7 @@ export async function GET(request: Request) {
     const signedInEmployee = currentUser.employeeId ? employeeRows.find((employee) => employee.id === currentUser.employeeId) ?? null : null;
     const signedInEmployeeProfile = signedInEmployee ? employeeProfileRows.find((profile) => profile.employeeId === signedInEmployee.id) ?? null : null;
     if (currentUser.role === "employee" && (!signedInEmployee || signedInEmployee.status !== "active")) {
-      return Response.json({ error: "บัญชีพนักงานยังไม่ได้ผูกกับโปรไฟล์ที่ใช้งานอยู่", accessDenied: true, identity: { email: currentUser.email, name: currentUser.displayName } }, { status: 403 });
+      return Response.json({ error: "บัญชีพนักงานยังไม่ได้ผูกกับโปรไฟล์ที่ใช้งานอยู่", accessDenied: true }, { status: 403 });
     }
     const employeeDepartmentId = currentUser.departmentId || (signedInEmployee ? getRole(signedInEmployee.roleId).departmentId : "");
     const teamOverviewEmployeeIds = new Set(employeeRows.filter((employee) => {
@@ -615,8 +614,10 @@ export async function GET(request: Request) {
           updatedAt: "",
         })),
     } : { employees: [], evaluations: [], workItems: [] };
+    const currentUserDto = { ...currentUser };
+    delete (currentUserDto as Partial<CurrentUser>).authUserId;
     return Response.json({
-      currentUser,
+      currentUser: currentUserDto,
       employeePreview,
       permissions,
       teamOverview: employeePortalTeamOverview,
@@ -644,7 +645,7 @@ export async function GET(request: Request) {
       employeeWarnings: currentUser.role === "admin" ? employeeWarningRows.map(privateFileDto) : [],
       employeeWarningEvents: currentUser.role === "admin" ? employeeWarningEventRows : [],
       employeeRecognitions: currentUser.role === "admin" ? employeeRecognitionRows.map(privateFileDto) : [],
-      userAccounts: currentUser.role === "admin" ? userAccountRows : [],
+      userAccounts: currentUser.role === "admin" ? await publicUserAccountDtos(userAccountRows) : [],
       notificationReads: employeePreview ? [] : notificationReadRows,
       organizationPolicies: visibleOrganizationPoliciesForDisplay,
       policyAcknowledgements: visiblePolicyAcknowledgements,
@@ -830,7 +831,8 @@ type SendContractPayload = {
 type UserAccountPayload = {
   action: "saveUserAccount";
   accountId?: string;
-  email?: string;
+  loginId?: string;
+  temporaryPassword?: string;
   displayName?: string;
   role?: "admin" | "manager" | "employee";
   employeeId?: string;
@@ -874,11 +876,11 @@ type AcknowledgeOrganizationPolicyPayload = {
 
 export async function POST(request: Request) {
   try {
-    if (!authenticatedIdentity(request)) return Response.json({ error: "บัญชีนี้ไม่มีสิทธิ์ดำเนินการ" }, { status: 403 });
+    const authentication = await authenticatedRequestGate(request);
+    if (authentication.response) return authentication.response;
+    const currentUser = authentication.currentUser;
     await ensureSeedData();
     const db = getDb();
-    const currentUser = await authenticateRequest(request);
-    if (!currentUser) return Response.json({ error: "บัญชีนี้ไม่มีสิทธิ์ดำเนินการ" }, { status: 403 });
     const payload = await request.json() as EmployeePayload | EvaluationPayload | HrPlanPayload | CompleteTalentActionPayload | AttendancePayload | AttendanceApprovalPayload | SkillAchievementPayload | ProjectPayload | WorkItemPayload | ReviewWorkSubmissionPayload | RecordPointEventPayload | RunMonthlyPointCyclePayload | RedeemRewardPayload | UpdateRewardRedemptionPayload | EmployeeProfilePayload | DocumentStatusPayload | ContractPayload | SignContractPayload | SendContractPayload | UserAccountPayload | MarkNotificationsReadPayload | SaveOrganizationPolicyPayload | PublishOrganizationPolicyPayload | AcknowledgeOrganizationPolicyPayload;
     const pointPolicyRows = await db.select().from(organizationPolicies);
     const { policy: activePointPolicy, rules: activePointRules } = pointPolicyFromRows(pointPolicyRows);
@@ -920,7 +922,7 @@ export async function POST(request: Request) {
       const acknowledgementRequired = category === "points_rewards" ? true : payload.acknowledgementRequired ?? sourcePolicy?.acknowledgementRequired ?? true;
       const acknowledgementDueDays = Math.round(Math.min(365, Math.max(0, Number(payload.acknowledgementDueDays ?? sourcePolicy?.acknowledgementDueDays ?? 7))));
       const now = new Date().toISOString();
-      const actor = authenticatedActor(request);
+      const actor = authenticatedActor(currentUser);
       const codeInput = sourcePolicy?.code || (category === "points_rewards" ? "points-and-rewards" : requestedCode) || `custom-${crypto.randomUUID()}`;
       const code = /^[a-z0-9][a-z0-9-]{1,79}$/.test(codeInput) ? codeInput : sourcePolicy?.code || `custom-${crypto.randomUUID()}`;
       const sameCodeRows = await db.select().from(organizationPolicies).where(eq(organizationPolicies.code, code));
@@ -1022,7 +1024,7 @@ export async function POST(request: Request) {
         return Response.json({ error: "ลำดับเวอร์ชันล้าสมัย กรุณาสร้างร่างใหม่จากฉบับล่าสุด" }, { status: 409 });
       }
       const now = new Date().toISOString();
-      const actor = authenticatedActor(request);
+      const actor = authenticatedActor(currentUser);
       const endPreviousAt = previousIsoDay(draft.effectiveDate);
       const overlappingPreviousRows = publishedRows.filter((row) => row.version < draft.version && (!row.effectiveTo || row.effectiveTo >= draft.effectiveDate));
       const previousUpdates = overlappingPreviousRows.map((previous) => db.update(organizationPolicies).set({ effectiveTo: endPreviousAt, updatedAt: now, updatedBy: actor.name }).where(eq(organizationPolicies.id, previous.id)));
@@ -1064,7 +1066,7 @@ export async function POST(request: Request) {
       if (policy.contentHash !== currentPolicyHash) return Response.json({ error: "ตรวจสอบความถูกต้องของนโยบายไม่ผ่าน กรุณาแจ้ง HR ให้ประกาศฉบับใหม่" }, { status: 409 });
       const [existingAcknowledgement] = await db.select().from(policyAcknowledgements).where(and(eq(policyAcknowledgements.policyId, policy.id), eq(policyAcknowledgements.policyVersion, policy.version), eq(policyAcknowledgements.employeeId, employee.id))).limit(1);
       if (existingAcknowledgement) return Response.json({ policyAcknowledgement: currentUser.role === "admin" ? existingAcknowledgement : publicPolicyAcknowledgement(existingAcknowledgement) });
-      const actor = authenticatedActor(request);
+      const actor = authenticatedActor(currentUser);
       const acknowledgedAt = new Date().toISOString();
       const policyAcknowledgement = {
         id: `policy-ack-${crypto.randomUUID()}`,
@@ -1106,30 +1108,44 @@ export async function POST(request: Request) {
     }
 
     if (payload.action === "saveUserAccount") {
-      const email = typeof payload.email === "string" ? payload.email.trim().toLowerCase().slice(0, 254) : "";
-      const displayName = typeof payload.displayName === "string" ? payload.displayName.trim().slice(0, 120) : "";
       const role = payload.role === "admin" || payload.role === "manager" || payload.role === "employee" ? payload.role : payload.role === undefined ? "employee" as const : null;
       const status = payload.status === "active" || payload.status === "inactive" ? payload.status : payload.status === undefined ? "active" as const : null;
       if (!role || !status) return Response.json({ error: "สิทธิ์หรือสถานะบัญชีไม่ถูกต้อง" }, { status: 400 });
+      const suppliedAccountId = typeof payload.accountId === "string" ? payload.accountId.trim().slice(0, 100) : "";
+      if (suppliedAccountId === currentUser.id) {
+        return Response.json({ error: "ไม่สามารถแก้ไขบัญชีที่กำลังใช้งานจากหน้าจัดการผู้ใช้ได้ หากต้องการเปลี่ยนรหัสผ่านให้ใช้เมนูความปลอดภัย" }, { status: 409 });
+      }
+      const accountId = suppliedAccountId || `user-${crypto.randomUUID()}`;
+      const [existing] = suppliedAccountId ? await db.select().from(userAccounts).where(eq(userAccounts.id, accountId)).limit(1) : [];
+      if (suppliedAccountId && !existing) return Response.json({ error: "ไม่พบบัญชีผู้ใช้ที่เลือก" }, { status: 404 });
+      if (existing?.role === "admin" && existing.status === "active" && (role !== "admin" || status !== "active")) {
+        const activeAdmins = await db.select({ id: userAccounts.id }).from(userAccounts).where(and(eq(userAccounts.role, "admin"), eq(userAccounts.status, "active")));
+        if (activeAdmins.length <= 1) return Response.json({ error: "ต้องมีบัญชี HR / Admin ที่ใช้งานอยู่อย่างน้อย 1 บัญชี" }, { status: 409 });
+      }
       const employeeIdInput = typeof payload.employeeId === "string" ? payload.employeeId.trim().slice(0, 100) : "";
       const employeeId = role === "admin" ? null : employeeIdInput || null;
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !displayName) return Response.json({ error: "กรุณากรอกชื่อและอีเมลสำหรับเข้าสู่ระบบ" }, { status: 400 });
       if (role !== "admin" && !employeeId) return Response.json({ error: "บัญชีพนักงานและหัวหน้าทีมต้องผูกกับโปรไฟล์พนักงาน" }, { status: 400 });
       const [linkedEmployee] = employeeId ? await db.select().from(employees).where(eq(employees.id, employeeId)).limit(1) : [];
       if (employeeId && !linkedEmployee) return Response.json({ error: "ไม่พบโปรไฟล์พนักงานที่เลือก" }, { status: 404 });
       if (status === "active" && linkedEmployee?.status === "inactive") return Response.json({ error: "ไม่สามารถเปิดใช้บัญชีที่ผูกกับพนักงานสถานะไม่ใช้งาน" }, { status: 409 });
-      const suppliedAccountId = typeof payload.accountId === "string" ? payload.accountId.trim().slice(0, 100) : "";
-      const accountId = suppliedAccountId || `user-${crypto.randomUUID()}`;
-      const [existing] = suppliedAccountId ? await db.select().from(userAccounts).where(eq(userAccounts.id, accountId)).limit(1) : [];
-      if (existing?.id === currentUser.id && (status !== "active" || role !== "admin")) return Response.json({ error: "ไม่สามารถปิดหรือเปลี่ยนสิทธิ์บัญชีที่กำลังใช้งานอยู่" }, { status: 409 });
+      const existingCredential = existing ? await getAccountCredential(existing.id) : null;
+      const credentialChange = await credentialMutationValues(accountId, payload.loginId, payload.temporaryPassword, existingCredential);
+      const [loginOwner] = await db.select({ userAccountId: authCredentials.userAccountId }).from(authCredentials).where(eq(authCredentials.loginIdCanonical, credentialChange.values.loginIdCanonical)).limit(1);
+      if (loginOwner && loginOwner.userAccountId !== accountId) return Response.json({ error: "รหัสผู้ใช้นี้มีผู้ใช้งานแล้ว กรุณาเลือกรหัสอื่น" }, { status: 409 });
+      const requestedDisplayName = typeof payload.displayName === "string" ? payload.displayName.trim().slice(0, 120) : "";
+      const displayName = requestedDisplayName || linkedEmployee?.name || existing?.displayName || "";
+      if (!displayName) return Response.json({ error: "กรุณาระบุชื่อที่แสดง" }, { status: 400 });
       const now = new Date().toISOString();
       const linkedDepartmentId = linkedEmployee ? getRole(linkedEmployee.roleId).departmentId : "";
       const requestedDepartmentId = typeof payload.departmentId === "string" ? payload.departmentId.trim().slice(0, 80) : "";
       if (role === "manager" && requestedDepartmentId && requestedDepartmentId !== linkedDepartmentId) return Response.json({ error: "หัวหน้าทีมต้องใช้แผนกจากตำแหน่งพนักงานที่ผูกไว้" }, { status: 400 });
       const departmentId = role === "manager" ? linkedDepartmentId : "";
+      const email = existing?.email || linkedEmployee?.email || `${credentialChange.values.loginIdCanonical}@accounts.peoplepulse.internal`;
+      const [emailOwner] = await db.select({ id: userAccounts.id }).from(userAccounts).where(eq(userAccounts.email, email)).limit(1);
+      if (emailOwner && emailOwner.id !== accountId) return Response.json({ error: "โปรไฟล์พนักงานนี้มีบัญชีผู้ใช้งานแล้ว" }, { status: 409 });
       const userAccount: UserAccountRecord = {
         id: existing?.id ?? accountId,
-        authUserId: existing && existing.email === email ? existing.authUserId : "",
+        authUserId: "",
         email,
         displayName,
         role,
@@ -1141,8 +1157,48 @@ export async function POST(request: Request) {
         createdAt: existing?.createdAt ?? now,
         updatedAt: now,
       };
-      await db.insert(userAccounts).values(userAccount).onConflictDoUpdate({ target: userAccounts.id, set: { authUserId: userAccount.authUserId, email, displayName, role, employeeId, departmentId, status, updatedAt: now } });
-      return Response.json({ userAccount }, { status: existing ? 200 : 201 });
+      const accountMutation = db.insert(userAccounts).values(userAccount).onConflictDoUpdate({ target: userAccounts.id, set: { authUserId: "", email, displayName, role, employeeId, departmentId, status, updatedAt: now } });
+      if (!existingCredential) {
+        if (credentialChange.mode !== "create") return Response.json({ error: "บัญชีใหม่ต้องมีรหัสผ่านชั่วคราว" }, { status: 400 });
+        await db.batch([
+          accountMutation,
+          db.insert(authCredentials).values({ ...credentialChange.values, createdAt: now, updatedAt: now }),
+        ]);
+      } else if (credentialChange.mode === "metadata" && !credentialChange.loginChanged) {
+        await accountMutation;
+      } else {
+        const mutationClaim = {
+          id: `credential-mutation:${accountId}:${existingCredential.credentialVersion}`,
+          userAccountId: accountId,
+          eventType: credentialChange.mode === "reset" ? "credential_reset" as const : "credential_updated" as const,
+          sourceHash: await requestSourceHash(request),
+          detail: String(existingCredential.credentialVersion),
+          createdAt: now,
+        };
+        const credentialUpdate = credentialChange.mode === "reset"
+          ? db.update(authCredentials).set({ ...credentialChange.values, updatedAt: now }).where(and(
+            eq(authCredentials.userAccountId, accountId),
+            eq(authCredentials.credentialVersion, existingCredential.credentialVersion),
+          ))
+          : db.update(authCredentials).set(credentialChange.values).where(and(
+            eq(authCredentials.userAccountId, accountId),
+            eq(authCredentials.credentialVersion, existingCredential.credentialVersion),
+          ));
+        await db.batch([
+          db.insert(authEvents).values(mutationClaim),
+          credentialUpdate,
+          accountMutation,
+        ]);
+      }
+      const accessChanged = Boolean(existing && (existing.role !== role || existing.status !== status || existing.employeeId !== employeeId || existing.departmentId !== departmentId));
+      if (existing && (accessChanged || credentialChange.loginChanged || credentialChange.mode === "reset")) {
+        await revokeAllSessionsForAccount(accountId, credentialChange.mode === "reset" ? "credential-reset" : accessChanged ? "account-access-changed" : "login-id-changed");
+      }
+      if (credentialChange.mode === "create") {
+        await recordAuthEvent("credential_created", accountId, await requestSourceHash(request), currentUser.id);
+      }
+      const savedCredential = await getAccountCredential(accountId);
+      return Response.json({ userAccount: publicUserAccountDto(userAccount, savedCredential) }, { status: existing ? 200 : 201 });
     }
 
     if (payload.action === "createEmployee") {
@@ -1229,7 +1285,7 @@ export async function POST(request: Request) {
         skillScore: Number(skillScore.toFixed(1)),
         totalScore: Number(totalScore.toFixed(1)),
         note: payload.note?.trim().slice(0, 2000) ?? "",
-        evaluator: evaluatorName(request),
+        evaluator: evaluatorName(currentUser),
         evaluatedAt: now,
       };
 
@@ -1339,7 +1395,7 @@ export async function POST(request: Request) {
       const minutesLate = status === "leave" || status === "absent" || !clockIn ? 0 : Math.max(0, clockInMinutes - startMinutes);
       const resolvedStatus = status === "present" && minutesLate > 0 ? "late" as const : status;
       const now = new Date().toISOString();
-      const actor = evaluatorName(request);
+      const actor = evaluatorName(currentUser);
       const [existing] = await db.select().from(attendanceRecords).where(and(eq(attendanceRecords.employeeId, employeeId), eq(attendanceRecords.workDate, workDate))).limit(1);
       const attendanceRecord = {
         id: existing?.id ?? `attendance-${crypto.randomUUID()}`,
@@ -1373,7 +1429,7 @@ export async function POST(request: Request) {
       if (!existing || existing.status !== "leave") return Response.json({ error: "ไม่พบคำขอลาที่เลือก" }, { status: 404 });
       if (!(await canAccessEmployee(currentUser, existing.employeeId))) return Response.json({ error: "ไม่มีสิทธิ์อนุมัติคำขอนี้" }, { status: 403 });
       const now = new Date().toISOString();
-      await db.update(attendanceRecords).set({ approvalStatus, approvedBy: evaluatorName(request), approvedAt: now, updatedAt: now }).where(eq(attendanceRecords.id, attendanceId));
+      await db.update(attendanceRecords).set({ approvalStatus, approvedBy: evaluatorName(currentUser), approvedAt: now, updatedAt: now }).where(eq(attendanceRecords.id, attendanceId));
       const [attendanceRecord] = await db.select().from(attendanceRecords).where(eq(attendanceRecords.id, attendanceId)).limit(1);
       return Response.json({ attendanceRecord });
     }
@@ -1395,7 +1451,7 @@ export async function POST(request: Request) {
       if (duplicate) return Response.json({ error: "ระดับสกิลนี้ได้รับเงินเพิ่มแล้ว ระบบไม่เพิ่มซ้ำ" }, { status: 409 });
       const now = new Date().toISOString();
       const allowance = skillAllowanceFor(role.id, level);
-      const verifier = evaluatorName(request);
+      const verifier = evaluatorName(currentUser);
       const achievement = {
         id: `achievement-${crypto.randomUUID()}`,
         employeeId,
@@ -1739,7 +1795,7 @@ export async function POST(request: Request) {
         return Response.json({ error: "ตรวจสอบความถูกต้องของกติกา Points ที่ใช้ในวันที่ส่งงานไม่ผ่าน กรุณาให้ HR ประกาศฉบับแก้ไขก่อนอนุมัติ" }, { status: 409 });
       }
       const now = new Date().toISOString();
-      const actor = authenticatedActor(request);
+      const actor = authenticatedActor(currentUser);
       const reviewerNote = payload.reviewerNote?.trim().slice(0, 1000) ?? "";
       const completionMonth = submissionDate.slice(0, 7);
       const [employeeLedgerRows, employeePointEventRows, employeeCapClaimRows] = await Promise.all([
@@ -1903,7 +1959,7 @@ export async function POST(request: Request) {
       if (rule.points > 0 && positiveEventsThisMonth + workAwardsThisMonth + rule.points > eventPointEconomyPolicy.standardEarnMonthlyCap) {
         return Response.json({ error: `Points บวกมาตรฐานเดือนนี้ถึงเพดาน ${eventPointEconomyPolicy.standardEarnMonthlyCap} Points แล้ว` }, { status: 409 });
       }
-      const actor = authenticatedActor(request);
+      const actor = authenticatedActor(currentUser);
       const now = new Date().toISOString();
       const eventId = `point-event-${crypto.randomUUID()}`;
       const policyMetadata = pointPolicyMetadata(eventPointPolicy);
@@ -1965,7 +2021,7 @@ export async function POST(request: Request) {
       if (!pendingEligible.length) {
         return Response.json({ error: "เดือนนี้ประมวลผล Points จากผลประเมินครบแล้ว ไม่สามารถบันทึกซ้ำได้" }, { status: 409 });
       }
-      const actor = authenticatedActor(request);
+      const actor = authenticatedActor(currentUser);
       const now = new Date().toISOString();
       const pointEntryRows: PointLedgerRecord[] = [];
       const pointEventRows: PointEventRecord[] = [];
@@ -2200,7 +2256,7 @@ export async function POST(request: Request) {
       if (status !== "verified" && status !== "rejected") return Response.json({ error: "สถานะเอกสารไม่ถูกต้อง" }, { status: 400 });
       const [document] = await db.select().from(applicationDocuments).where(eq(applicationDocuments.id, documentId)).limit(1);
       if (!document) return Response.json({ error: "ไม่พบเอกสารที่เลือก" }, { status: 404 });
-      const actor = authenticatedActor(request);
+      const actor = authenticatedActor(currentUser);
       const now = new Date().toISOString();
       await db.update(applicationDocuments).set({ status, note: payload.note?.trim().slice(0, 500) ?? "", verifiedBy: actor.name, verifiedAt: now }).where(eq(applicationDocuments.id, documentId));
       return Response.json({ applicationDocument: { ...document, status, note: payload.note?.trim().slice(0, 500) ?? "", verifiedBy: actor.name, verifiedAt: now } });
@@ -2216,7 +2272,7 @@ export async function POST(request: Request) {
       if (!documentId) return Response.json({ error: "กรุณาอัปโหลดและเลือกไฟล์สัญญาก่อนส่งให้ลงนาม" }, { status: 400 });
       const [document] = await db.select().from(applicationDocuments).where(and(eq(applicationDocuments.id, documentId), eq(applicationDocuments.employeeId, employeeId))).limit(1);
       if (!document || document.documentType !== "contract") return Response.json({ error: "ไฟล์สัญญาไม่ตรงกับพนักงานที่เลือก" }, { status: 400 });
-      const actor = authenticatedActor(request);
+      const actor = authenticatedActor(currentUser);
       const now = new Date().toISOString();
       const status = payload.status ?? "sent";
       const contract = {
@@ -2254,7 +2310,7 @@ export async function POST(request: Request) {
       const signedName = payload.signedName?.replace(/\s+/g, " ").trim() ?? "";
       const expectedName = employee.name.replace(/\s+/g, " ").trim();
       if (!payload.consent || signedName !== expectedName) return Response.json({ error: "กรุณาพิมพ์ชื่อ–นามสกุลให้ตรงกับโปรไฟล์ และยืนยันความยินยอม" }, { status: 400 });
-      const actor = authenticatedActor(request);
+      const actor = authenticatedActor(currentUser);
       const now = new Date().toISOString();
       const consentText = "ข้าพเจ้าได้อ่าน เข้าใจ และยอมรับข้อกำหนดในสัญญาจ้างฉบับนี้ และยืนยันใช้ชื่อที่พิมพ์เป็นลายเซ็นอิเล็กทรอนิกส์";
       await db.update(employmentContracts).set({ status: "signed", signedName, signedAt: now, consentText, signerUserId: actor.userId, signerEmail: actor.email, updatedAt: now }).where(eq(employmentContracts.id, contractId));

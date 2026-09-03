@@ -458,7 +458,8 @@ test("ships durable role-based access and scoped people, work, portfolio and rew
   assert.match(dashboardRoute, /markNotificationsRead/);
   assert.match(dashboardRoute, /visibleEmployeeIds/);
   assert.match(dashboardRoute, /canManageAccounts/);
-  assert.match(accessControl, /oai-authenticated-user-id/);
+  assert.match(accessControl, /authenticatedRequestGate/);
+  assert.match(accessControl, /__Host-pp_session/);
   assert.match(accessControl, /authenticateRequest/);
   assert.match(accessControl, /canAccessEmployee/);
   assert.match(data, /pointEventRules/);
@@ -567,7 +568,8 @@ test("ships a secure admin-only, read-only employee preview link", async () => {
 
   // A preview can only be activated by an already-authenticated admin. It
   // becomes an employee-scoped identity in memory and never changes an account.
-  assert.match(dashboardRoute, /const authenticatedUser = await authenticateRequest\(request\)/);
+  assert.match(dashboardRoute, /const authentication = await authenticatedRequestGate\(request\)/);
+  assert.match(dashboardRoute, /const authenticatedUser = authentication\.currentUser/);
   assert.match(dashboardRoute, /const requestedPreviewEmployeeId = url\.searchParams\.get\("previewEmployeeId"\)/);
   assert.match(dashboardRoute, /const isEmployeePreviewRequest = authenticatedUser\.role === "admin" && Boolean\(requestedPreviewEmployeeId\)/);
   assert.match(dashboardRoute, /let currentUser = authenticatedUser/);
@@ -581,7 +583,7 @@ test("ships a secure admin-only, read-only employee preview link", async () => {
   // employee-preview boundary, including at the database-read layer.
   assert.match(dashboardRoute, /authenticatedUser\.role === "admin" && !isEmployeePreviewRequest \? db\.select\(\)\.from\(userAccounts\) : Promise\.resolve\(\[\]\)/);
   assert.match(dashboardRoute, /isEmployeePreviewRequest \? Promise\.resolve\(\[\]\) : db\.select\(\)\.from\(notificationReads\)/);
-  assert.match(dashboardRoute, /userAccounts: currentUser\.role === "admin" \? userAccountRows : \[\]/);
+  assert.match(dashboardRoute, /userAccounts: currentUser\.role === "admin" \? await publicUserAccountDtos\(userAccountRows\) : \[\]/);
   assert.match(dashboardRoute, /notificationReads: employeePreview \? \[\] : notificationReadRows/);
 
   // The UI makes the simulation obvious and blocks every employee mutation
@@ -1128,10 +1130,12 @@ test("adds a safe launch gate, owner-only contract flow and evidence-led work st
   assert.match(page, /รอตรวจจะเกิดเมื่อพนักงานส่งหลักฐาน และเสร็จแล้วเมื่อผู้ตรวจอนุมัติ/);
   assert.match(page, /type="range" min="0" max="90"/);
 
-  // The shell is also ready for a future authenticated public entry without
-  // showing a misleading unknown-email state to a signed-out visitor.
-  assert.match(page, /accessDenied\.anonymous \? "เข้าสู่ระบบเพื่อใช้งาน"/);
-  assert.match(page, /\/signin-with-chatgpt\?return_to=\//);
+  // Signed-out visitors see the first-party login gate, while a temporary
+  // password session is held at the mandatory password-change screen.
+  assert.match(page, /if \(response\.status === 401 \|\| body\.authRequired\)[\s\S]*?setAuthGate\(\{ mode: "login" \}\)/);
+  assert.match(page, /if \(response\.status === 428 \|\| body\.passwordChangeRequired\)[\s\S]*?setAuthGate\(\{ mode: "change"/);
+  assert.match(page, /if \(authGate\) \{[\s\S]*?<AuthScreen/);
+  assert.doesNotMatch(page, /signin-with-chatgpt|oai-authenticated-user-id/i);
 });
 
 test("separates work assigners from workers without changing real permissions", async () => {
@@ -1182,7 +1186,8 @@ test("separates work assigners from workers without changing real permissions", 
   assert.match(accessPage, /<form className="access-form-card" id="user-access-form" aria-labelledby="user-access-form-title"/);
   assert.match(accessPage, /<h2 id="user-access-form-title">/);
   assert.match(accessPage, /<input required name="displayName" autoComplete="name"/);
-  assert.match(accessPage, /<input required name="email" autoComplete="email" type="email"/);
+  assert.match(accessPage, /<input required name="username" autoComplete="username"/);
+  assert.match(accessPage, /id="temporary-password" name="new-password"[\s\S]*?autoComplete="new-password"/);
 
   // The comparison table and directory repeat the distinction in text, not
   // only through color, while every account retains its exact role badge.
@@ -1197,13 +1202,14 @@ test("separates work assigners from workers without changing real permissions", 
   assert.match(accessPage, /accessAccountGroups\.map/);
   assert.match(accessPage, /className=\{`access-user-kind \$\{group\.id\}`\}/);
   assert.doesNotMatch(accessPage, /\{userAccounts\.map/);
-  assert.match(accessPage, /aria-label=\{`แก้ไขสิทธิ์ของ \$\{account\.displayName\}`\}/);
+  assert.match(accessPage, /aria-label=\{`แก้ไขบัญชีของ \$\{account\.displayName\}`\}/);
+  assert.match(accessPage, /disabled=\{isSaving \|\| account\.id === currentUser\?\.id\}/);
   assert.match(accessPage, /className="access-login-state"/);
 
   // Existing server boundaries remain authoritative: only admins receive the
   // account directory, managers stay department-scoped and employees self-only.
   assert.match(dashboardRoute, /canManageAccounts: currentUser\.role === "admin"/);
-  assert.match(dashboardRoute, /userAccounts: currentUser\.role === "admin" \? userAccountRows : \[\]/);
+  assert.match(dashboardRoute, /userAccounts: currentUser\.role === "admin" \? await publicUserAccountDtos\(userAccountRows\) : \[\]/);
   assert.match(accessControl, /if \(account\.role === "admin"\) return true/);
   assert.match(accessControl, /if \(account\.employeeId === employeeId\) \{[\s\S]*?return employee\?\.status === "active";[\s\S]*?\}/);
   assert.match(accessControl, /account\.role !== "manager" \|\| !account\.departmentId/);
@@ -1342,12 +1348,12 @@ test("allows safe employee team coordination without minting points or exposing 
   assert.match(employeeTeamOverview, /description: ""/);
   assert.match(employeeTeamOverview, /createdByEmployeeId: null/);
   assert.match(employeeTeamOverview, /points: 0/);
-  const dashboardResponse = dashboardRoute.match(/return Response\.json\(\{\n      currentUser,[\s\S]*?\n    \}\);/)?.[0] ?? "";
+  const dashboardResponse = dashboardRoute.match(/return Response\.json\(\{\n      currentUser: currentUserDto,[\s\S]*?\n    \}\);/)?.[0] ?? "";
   assert.match(dashboardResponse, /workItems: scopedWorkItems/);
   assert.match(dashboardResponse, /workSubmissions: workSubmissionRows\.filter\(\(row\) => visibleEmployeeIds\.has\(row\.employeeId\)\)/);
   assert.match(dashboardResponse, /hrProfiles: currentUser\.role === "admin" \|\| currentUser\.role === "employee" \? hrProfileRows\.filter\(\(row\) => visibleEmployeeIds\.has\(row\.employeeId\)\) : \[\]/);
   assert.match(dashboardResponse, /employeeProfiles: currentUser\.role === "admin" \? employeeProfileRows\.filter\([\s\S]*?\) : visibleProfileImages/);
-  assert.match(dashboardResponse, /userAccounts: currentUser\.role === "admin" \? userAccountRows : \[\]/);
+  assert.match(dashboardResponse, /userAccounts: currentUser\.role === "admin" \? await publicUserAccountDtos\(userAccountRows\) : \[\]/);
 
   // Legacy system-owned policy and Points history copy is normalized only at
   // the display boundary. Unrelated employee or task data stays untouched.

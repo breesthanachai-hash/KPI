@@ -151,8 +151,9 @@ test("keeps private files admin-only and never exposes R2 storage keys", async (
     ["employee warnings", warningRoute],
     ["employee recognitions", recognitionRoute],
   ]) {
-    assert.match(route, /if \(!authenticatedIdentity\(request\)\) return null/);
-    assert.match(route, /currentUser\?\.role === "admin" \? currentUser : null/);
+    assert.match(route, /async function requireAdmin\(request: Request\) \{\s*return authenticatedRequestGate\(request\);\s*\}/);
+    assert.match(route, /const authentication = await requireAdmin\(request\);[\s\S]*?if \(authentication\.response\) return authentication\.response;[\s\S]*?const \{ currentUser \} = authentication;/);
+    assert.match(route, /if \(currentUser\.role !== "admin"\) return Response\.json\(/);
     assert.match(route, /getFilesBucket\(\)\.get\(/, `${name} downloads must come from private R2 storage`);
     assert.match(route, /"cache-control": "private, no-store"/);
     assert.match(route, /"x-content-type-options": "nosniff"/);

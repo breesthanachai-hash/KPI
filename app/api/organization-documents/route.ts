@@ -1,9 +1,8 @@
 import { and, eq } from "drizzle-orm";
 import { getDb, getFilesBucket } from "../../../db";
-import { ensureDatabase } from "../../../db/initialize";
 import { organizationDocuments } from "../../../db/schema";
 import type { OrganizationDocumentRecord } from "../../../lib/kpi-data";
-import { authenticateRequest, authenticatedIdentity, ensureBootstrapAccounts } from "../../../lib/access-control";
+import { authenticatedRequestGate, type CurrentUser } from "../../../lib/access-control";
 import { internalApiError } from "../../../lib/api-errors";
 
 export const dynamic = "force-dynamic";
@@ -59,9 +58,8 @@ async function validFile(file: File) {
   return false;
 }
 
-function actor(currentUser: Awaited<ReturnType<typeof authenticateRequest>>) {
-  if (!currentUser) return { userId: "", name: "ฝ่ายทรัพยากรบุคคล" };
-  return { userId: currentUser.authUserId || currentUser.id, name: currentUser.authenticatedName || currentUser.displayName };
+function actor(currentUser: CurrentUser) {
+  return { userId: currentUser.id, name: currentUser.authenticatedName };
 }
 
 function publicDocument(document: typeof organizationDocuments.$inferSelect) {
@@ -78,17 +76,15 @@ function errorResponse(error: unknown) {
 }
 
 async function requireAdmin(request: Request) {
-  if (!authenticatedIdentity(request)) return null;
-  await ensureDatabase();
-  await ensureBootstrapAccounts();
-  const currentUser = await authenticateRequest(request);
-  return currentUser?.role === "admin" ? currentUser : null;
+  return authenticatedRequestGate(request);
 }
 
 export async function GET(request: Request) {
   try {
-    const currentUser = await requireAdmin(request);
-    if (!currentUser) return Response.json({ error: "เฉพาะ HR หรือผู้ดูแลระบบเท่านั้นที่ดาวน์โหลดเอกสารองค์กรได้" }, { status: 403 });
+    const authentication = await requireAdmin(request);
+    if (authentication.response) return authentication.response;
+    const { currentUser } = authentication;
+    if (currentUser.role !== "admin") return Response.json({ error: "เฉพาะ HR หรือผู้ดูแลระบบเท่านั้นที่ดาวน์โหลดเอกสารองค์กรได้" }, { status: 403 });
     const documentId = new URL(request.url).searchParams.get("id")?.trim() ?? "";
     if (!documentId) return Response.json({ error: "กรุณาเลือกเอกสาร" }, { status: 400 });
     const [document] = await getDb().select().from(organizationDocuments).where(eq(organizationDocuments.id, documentId)).limit(1);
@@ -113,8 +109,10 @@ export async function POST(request: Request) {
   let uploadedStorageKey = "";
   let committed = false;
   try {
-    const currentUser = await requireAdmin(request);
-    if (!currentUser) return Response.json({ error: "เฉพาะ HR หรือผู้ดูแลระบบเท่านั้นที่จัดการเอกสารองค์กรได้" }, { status: 403 });
+    const authentication = await requireAdmin(request);
+    if (authentication.response) return authentication.response;
+    const { currentUser } = authentication;
+    if (currentUser.role !== "admin") return Response.json({ error: "เฉพาะ HR หรือผู้ดูแลระบบเท่านั้นที่จัดการเอกสารองค์กรได้" }, { status: 403 });
     const formData = await request.formData();
     const documentId = cleanText(formData.get("documentId"), 100);
     const title = cleanText(formData.get("title"), 220);
@@ -202,8 +200,10 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
-    const currentUser = await requireAdmin(request);
-    if (!currentUser) return Response.json({ error: "เฉพาะ HR หรือผู้ดูแลระบบเท่านั้นที่เปลี่ยนสถานะเอกสารได้" }, { status: 403 });
+    const authentication = await requireAdmin(request);
+    if (authentication.response) return authentication.response;
+    const { currentUser } = authentication;
+    if (currentUser.role !== "admin") return Response.json({ error: "เฉพาะ HR หรือผู้ดูแลระบบเท่านั้นที่เปลี่ยนสถานะเอกสารได้" }, { status: 403 });
     const payload = await request.json() as { id?: unknown; documentId?: unknown; status?: unknown; expectedRevision?: unknown };
     const rawDocumentId = typeof payload.documentId === "string" ? payload.documentId : typeof payload.id === "string" ? payload.id : "";
     const documentId = rawDocumentId.trim().slice(0, 100);

@@ -1,8 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { getDb, getFilesBucket } from "../../../db";
-import { ensureDatabase } from "../../../db/initialize";
 import { employeeProfiles, employees } from "../../../db/schema";
-import { authenticateRequest, authenticatedIdentity, canAccessEmployee, ensureBootstrapAccounts } from "../../../lib/access-control";
+import { authenticatedRequestGate, canAccessEmployee } from "../../../lib/access-control";
 import { internalApiError } from "../../../lib/api-errors";
 
 export const dynamic = "force-dynamic";
@@ -44,11 +43,9 @@ export async function POST(request: Request) {
   let uploadedStorageKey = "";
   let committed = false;
   try {
-    if (!authenticatedIdentity(request)) return Response.json({ error: "บัญชีนี้ไม่มีสิทธิ์ใช้งาน" }, { status: 403 });
-    await ensureDatabase();
-    await ensureBootstrapAccounts();
-    const currentUser = await authenticateRequest(request);
-    if (!currentUser) return Response.json({ error: "บัญชีนี้ไม่มีสิทธิ์ใช้งาน" }, { status: 403 });
+    const authentication = await authenticatedRequestGate(request);
+    if (authentication.response) return authentication.response;
+    const { currentUser } = authentication;
     const formData = await request.formData();
     const employeeId = String(formData.get("employeeId") ?? "");
     const file = formData.get("file");
@@ -114,11 +111,9 @@ export async function POST(request: Request) {
 
 export async function GET(request: Request) {
   try {
-    if (!authenticatedIdentity(request)) return Response.json({ error: "บัญชีนี้ไม่มีสิทธิ์ใช้งาน" }, { status: 403 });
-    await ensureDatabase();
-    await ensureBootstrapAccounts();
-    const currentUser = await authenticateRequest(request);
-    if (!currentUser) return Response.json({ error: "บัญชีนี้ไม่มีสิทธิ์ใช้งาน" }, { status: 403 });
+    const authentication = await authenticatedRequestGate(request);
+    if (authentication.response) return authentication.response;
+    const { currentUser } = authentication;
     const employeeId = new URL(request.url).searchParams.get("employeeId") ?? "";
     if (!(await canAccessEmployee(currentUser, employeeId))) return Response.json({ error: "ไม่มีสิทธิ์ดูรูปของพนักงานคนนี้" }, { status: 403 });
     const db = getDb();

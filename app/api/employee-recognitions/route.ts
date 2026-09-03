@@ -1,9 +1,8 @@
 import { and, eq } from "drizzle-orm";
 import { getDb, getFilesBucket } from "../../../db";
-import { ensureDatabase } from "../../../db/initialize";
 import { employees, employeeRecognitions } from "../../../db/schema";
 import type { EmployeeRecognitionRecord } from "../../../lib/kpi-data";
-import { authenticateRequest, authenticatedIdentity, ensureBootstrapAccounts } from "../../../lib/access-control";
+import { authenticatedRequestGate, type CurrentUser } from "../../../lib/access-control";
 import { internalApiError } from "../../../lib/api-errors";
 
 export const dynamic = "force-dynamic";
@@ -69,8 +68,8 @@ async function validFile(file: File) {
   return false;
 }
 
-function actor(currentUser: NonNullable<Awaited<ReturnType<typeof authenticateRequest>>>) {
-  return { userId: currentUser.authUserId || currentUser.id, name: currentUser.authenticatedName || currentUser.displayName };
+function actor(currentUser: CurrentUser) {
+  return { userId: currentUser.id, name: currentUser.authenticatedName };
 }
 
 function publicRecognition(recognition: typeof employeeRecognitions.$inferSelect) {
@@ -87,17 +86,15 @@ function errorResponse(error: unknown) {
 }
 
 async function requireAdmin(request: Request) {
-  if (!authenticatedIdentity(request)) return null;
-  await ensureDatabase();
-  await ensureBootstrapAccounts();
-  const currentUser = await authenticateRequest(request);
-  return currentUser?.role === "admin" ? currentUser : null;
+  return authenticatedRequestGate(request);
 }
 
 export async function GET(request: Request) {
   try {
-    const currentUser = await requireAdmin(request);
-    if (!currentUser) return Response.json({ error: "เฉพาะ HR หรือผู้ดูแลระบบเท่านั้นที่ดาวน์โหลดเอกสารรางวัลได้" }, { status: 403 });
+    const authentication = await requireAdmin(request);
+    if (authentication.response) return authentication.response;
+    const { currentUser } = authentication;
+    if (currentUser.role !== "admin") return Response.json({ error: "เฉพาะ HR หรือผู้ดูแลระบบเท่านั้นที่ดาวน์โหลดเอกสารรางวัลได้" }, { status: 403 });
     const recognitionId = new URL(request.url).searchParams.get("id")?.trim() ?? "";
     if (!recognitionId) return Response.json({ error: "กรุณาเลือกเกียรติบัตรหรือรางวัล" }, { status: 400 });
     const [recognition] = await getDb().select().from(employeeRecognitions).where(eq(employeeRecognitions.id, recognitionId)).limit(1);
@@ -122,8 +119,10 @@ export async function POST(request: Request) {
   let uploadedStorageKey = "";
   let committed = false;
   try {
-    const currentUser = await requireAdmin(request);
-    if (!currentUser) return Response.json({ error: "เฉพาะ HR หรือผู้ดูแลระบบเท่านั้นที่จัดการรางวัลได้" }, { status: 403 });
+    const authentication = await requireAdmin(request);
+    if (authentication.response) return authentication.response;
+    const { currentUser } = authentication;
+    if (currentUser.role !== "admin") return Response.json({ error: "เฉพาะ HR หรือผู้ดูแลระบบเท่านั้นที่จัดการรางวัลได้" }, { status: 403 });
     const formData = await request.formData();
     const recognitionId = cleanText(formData.get("recognitionId"), 100);
     const employeeId = cleanText(formData.get("employeeId"), 100);
@@ -214,8 +213,10 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
-    const currentUser = await requireAdmin(request);
-    if (!currentUser) return Response.json({ error: "เฉพาะ HR หรือผู้ดูแลระบบเท่านั้นที่เปลี่ยนสถานะรางวัลได้" }, { status: 403 });
+    const authentication = await requireAdmin(request);
+    if (authentication.response) return authentication.response;
+    const { currentUser } = authentication;
+    if (currentUser.role !== "admin") return Response.json({ error: "เฉพาะ HR หรือผู้ดูแลระบบเท่านั้นที่เปลี่ยนสถานะรางวัลได้" }, { status: 403 });
     const payload = await request.json() as { id?: unknown; recognitionId?: unknown; status?: unknown; expectedRevision?: unknown };
     const rawRecognitionId = typeof payload.recognitionId === "string" ? payload.recognitionId : typeof payload.id === "string" ? payload.id : "";
     const recognitionId = rawRecognitionId.trim().slice(0, 100);

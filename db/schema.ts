@@ -39,6 +39,69 @@ export const userAccounts = sqliteTable("user_accounts", {
   index("user_accounts_role_status_idx").on(table.role, table.status),
 ]);
 
+export const authCredentials = sqliteTable("auth_credentials", {
+  userAccountId: text("user_account_id").primaryKey().references(() => userAccounts.id, { onDelete: "cascade" }),
+  loginId: text("login_id").notNull(),
+  loginIdCanonical: text("login_id_canonical").notNull(),
+  passwordHash: text("password_hash").notNull().default(""),
+  passwordSalt: text("password_salt").notNull().default(""),
+  passwordAlgorithm: text("password_algorithm").notNull().default("pbkdf2-sha256"),
+  passwordIterations: integer("password_iterations").notNull().default(600000),
+  pepperVersion: integer("pepper_version").notNull().default(1),
+  credentialVersion: integer("credential_version").notNull().default(1),
+  mustChangePassword: integer("must_change_password", { mode: "boolean" }).notNull().default(true),
+  failedAttempts: integer("failed_attempts").notNull().default(0),
+  lockedUntil: text("locked_until"),
+  passwordChangedAt: text("password_changed_at"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("auth_credentials_login_id_canonical_unique").on(table.loginIdCanonical),
+  index("auth_credentials_locked_until_idx").on(table.lockedUntil),
+]);
+
+export const authSessions = sqliteTable("auth_sessions", {
+  id: text("id").primaryKey(),
+  tokenHash: text("token_hash").notNull(),
+  userAccountId: text("user_account_id").notNull().references(() => userAccounts.id, { onDelete: "cascade" }),
+  credentialVersion: integer("credential_version").notNull(),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  authenticatedAt: text("authenticated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  lastSeenAt: text("last_seen_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  idleExpiresAt: text("idle_expires_at").notNull(),
+  absoluteExpiresAt: text("absolute_expires_at").notNull(),
+  revokedAt: text("revoked_at"),
+  revokeReason: text("revoke_reason").notNull().default(""),
+}, (table) => [
+  uniqueIndex("auth_sessions_token_hash_unique").on(table.tokenHash),
+  index("auth_sessions_user_active_idx").on(table.userAccountId, table.revokedAt, table.absoluteExpiresAt),
+  index("auth_sessions_expiry_idx").on(table.idleExpiresAt, table.absoluteExpiresAt),
+]);
+
+export const authRateLimits = sqliteTable("auth_rate_limits", {
+  keyHash: text("key_hash").primaryKey(),
+  bucketType: text("bucket_type", { enum: ["login_id", "source"] }).notNull(),
+  windowStartedAt: text("window_started_at").notNull(),
+  attemptCount: integer("attempt_count").notNull().default(0),
+  blockedUntil: text("blocked_until"),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  index("auth_rate_limits_blocked_until_idx").on(table.blockedUntil),
+  index("auth_rate_limits_bucket_updated_idx").on(table.bucketType, table.updatedAt),
+]);
+
+export const authEvents = sqliteTable("auth_events", {
+  id: text("id").primaryKey(),
+  userAccountId: text("user_account_id").references(() => userAccounts.id, { onDelete: "set null" }),
+  eventType: text("event_type", { enum: ["login_succeeded", "login_failed", "login_rate_limited", "logout", "sessions_revoked", "password_changed", "credential_created", "credential_reset", "credential_updated"] }).notNull(),
+  sourceHash: text("source_hash").notNull().default(""),
+  detail: text("detail").notNull().default(""),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  index("auth_events_user_created_idx").on(table.userAccountId, table.createdAt),
+  index("auth_events_type_created_idx").on(table.eventType, table.createdAt),
+]);
+
 export const notificationReads = sqliteTable("notification_reads", {
   id: text("id").primaryKey(),
   userKey: text("user_key").notNull(),

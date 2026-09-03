@@ -4,6 +4,7 @@ import { Fragment, lazy, Suspense, useEffect, useMemo, useRef, useState } from "
 import type { Office3DPerson } from "./office-3d";
 import AiAssistant, { type PeopleAiActionId, type PeopleAiContext } from "./ai-assistant";
 import AiRobotMascot from "./ai-robot-mascot";
+import { AuthScreen, ChangePasswordDialog } from "./auth-ui";
 import {
   type ApplicationDocumentRecord,
   type AttendanceRecord,
@@ -49,7 +50,43 @@ const Office3D = lazy(() => import("./office-3d"));
 
 type View = "overview" | "employees" | "profiles" | "organizationDocs" | "skills" | "power" | "peopleOps" | "hr" | "portfolio" | "work" | "office" | "access";
 
-type CurrentUser = UserAccountRecord & { authenticatedName: string };
+type PublicUserAccount = Omit<UserAccountRecord, "authUserId"> & {
+  loginId?: string;
+  hasPassword?: boolean;
+  mustChangePassword?: boolean;
+  lockedUntil?: string | null;
+};
+
+type CurrentUser = PublicUserAccount & { authenticatedName?: string };
+
+type AuthGateState = {
+  mode: "login" | "change";
+  displayName?: string;
+  loginId?: string;
+};
+
+type UserAccountFormState = {
+  accountId: string;
+  loginId: string;
+  displayName: string;
+  role: UserAccountRecord["role"];
+  employeeId: string;
+  departmentId: string;
+  status: UserAccountRecord["status"];
+  temporaryPassword: string;
+};
+
+type CredentialResult = {
+  displayName: string;
+  loginId: string;
+  temporaryPassword: string;
+};
+
+type AccountCredentialState = {
+  id: "inactive" | "locked" | "no-password" | "must-change" | "ready" | "pending";
+  label: string;
+  detail: string;
+};
 
 type AppPermissions = {
   canManageAccounts: boolean;
@@ -796,6 +833,39 @@ const viewMeta: Record<View, { eyebrow: string; title: string; description: stri
   access: { eyebrow: "ACCESS & PERMISSIONS", title: "ผู้ใช้งานและสิทธิ์เข้าถึง", description: "แยกคนสั่งงานและคนทำงานให้ชัดเจน พร้อมกำหนดข้อมูลที่แต่ละคนเห็นและจัดการได้" },
 };
 
+const temporaryPasswordAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%";
+
+function generateTemporaryPassword(length = 16) {
+  const values = new Uint32Array(length);
+  globalThis.crypto.getRandomValues(values);
+  return Array.from(values, (value) => temporaryPasswordAlphabet[value % temporaryPasswordAlphabet.length]).join("");
+}
+
+function blankUserAccountForm(): UserAccountFormState {
+  return {
+    accountId: "",
+    loginId: "",
+    displayName: "",
+    role: "employee",
+    employeeId: "",
+    departmentId: "",
+    status: "active",
+    temporaryPassword: generateTemporaryPassword(),
+  };
+}
+
+function accountCredentialState(account: PublicUserAccount): AccountCredentialState {
+  if (account.status !== "active") return { id: "inactive", label: "พักสิทธิ์", detail: "บัญชีถูกระงับการเข้าใช้" };
+  const lockedUntilTime = account.lockedUntil ? Date.parse(account.lockedUntil) : Number.NaN;
+  if (Number.isFinite(lockedUntilTime) && lockedUntilTime > Date.now()) {
+    return { id: "locked", label: "ล็อกชั่วคราว", detail: `ลองใหม่ได้ ${formatUpdatedAt(account.lockedUntil as string)}` };
+  }
+  if (account.hasPassword === false) return { id: "no-password", label: "ยังไม่มีรหัสผ่าน", detail: "ผู้ดูแลต้องสร้างรหัสชั่วคราว" };
+  if (account.mustChangePassword) return { id: "must-change", label: "ต้องเปลี่ยนรหัส", detail: "รอผู้ใช้ตั้งรหัสใหม่เมื่อเข้าใช้" };
+  if (account.lastLoginAt) return { id: "ready", label: "พร้อมใช้งาน", detail: `เข้าใช้ล่าสุด ${formatUpdatedAt(account.lastLoginAt)}` };
+  return { id: "pending", label: "รอเข้าใช้ครั้งแรก", detail: "มีรหัสแล้ว แต่ยังไม่เคยเข้าสู่ระบบ" };
+}
+
 export default function Home() {
   const [view, setView] = useState<View>("work");
   const [activeDepartment, setActiveDepartment] = useState("all");
@@ -822,7 +892,7 @@ export default function Home() {
   const [organizationDocuments, setOrganizationDocuments] = useState<OrganizationDocumentRecord[]>([]);
   const [employeeWarnings, setEmployeeWarnings] = useState<EmployeeWarningRecord[]>([]);
   const [employeeRecognitions, setEmployeeRecognitions] = useState<EmployeeRecognitionRecord[]>([]);
-  const [userAccounts, setUserAccounts] = useState<UserAccountRecord[]>([]);
+  const [userAccounts, setUserAccounts] = useState<PublicUserAccount[]>([]);
   const [notificationReads, setNotificationReads] = useState<NotificationReadRecord[]>([]);
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [employeePreview, setEmployeePreview] = useState<EmployeePreview | null>(null);
@@ -830,7 +900,8 @@ export default function Home() {
   const [permissions, setPermissions] = useState<AppPermissions>({ canManageAccounts: false, canManagePeople: false, canManageWork: false, canAssignTeamWork: false, canReviewWork: false, canViewTeam: false, canViewTeamOverview: false, canViewOwnGrowth: false, canViewOwnRewards: false, canManageOrganizationDocuments: false, canManageEmployeeWarnings: false, canManageEmployeeRecognitions: false });
   const [teamOverview, setTeamOverview] = useState<EmployeeTeamOverview>({ employees: [], evaluations: [], workItems: [] });
   const [launchReadiness, setLaunchReadiness] = useState<LaunchReadiness | null>(null);
-  const [accessDenied, setAccessDenied] = useState<{ email: string; name: string; anonymous: boolean } | null>(null);
+  const [authGate, setAuthGate] = useState<AuthGateState | null>(null);
+  const [accessDenied, setAccessDenied] = useState<{ message: string } | null>(null);
   const [selectedEmployee, setSelectedEmployee] = useState<EmployeeRecord | null>(null);
   const [skillProfileEmployee, setSkillProfileEmployee] = useState<EmployeeRecord | null>(null);
   const [hrEmployee, setHrEmployee] = useState<EmployeeRecord | null>(null);
@@ -845,6 +916,8 @@ export default function Home() {
   const [showAiAssistant, setShowAiAssistant] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showChangePassword, setShowChangePassword] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [notificationFilter, setNotificationFilter] = useState<NotificationFilter>("all");
   const [isLoading, setIsLoading] = useState(true);
   const [dashboardReloadKey, setDashboardReloadKey] = useState(0);
@@ -913,7 +986,9 @@ export default function Home() {
   const [pointEventForm, setPointEventForm] = useState({ employeeId: "", eventType: "attendance_on_time" as PointEventType, eventDate: bangkokIsoDate(), note: "", evidenceUrl: "" });
   const [attendanceForm, setAttendanceForm] = useState({ employeeId: "", workDate: bangkokIsoDate(), status: "present" as AttendanceRecord["status"], clockIn: "09:00", clockOut: "", leaveType: "personal" as NonNullable<AttendanceRecord["leaveType"]>, note: "" });
   const [skillAchievementForm, setSkillAchievementForm] = useState({ skillId: "", level: 2, evidenceUrl: "", note: "" });
-  const [userAccountForm, setUserAccountForm] = useState({ accountId: "", email: "", displayName: "", role: "employee" as UserAccountRecord["role"], employeeId: "", departmentId: "", status: "active" as UserAccountRecord["status"] });
+  const [userAccountForm, setUserAccountForm] = useState<UserAccountFormState>(() => blankUserAccountForm());
+  const [credentialResult, setCredentialResult] = useState<CredentialResult | null>(null);
+  const [showTemporaryPassword, setShowTemporaryPassword] = useState(false);
   const canManageEmployeeFiles = currentUser?.role === "admin" && permissions.canManagePeople && !isEmployeePreview;
 
   useEffect(() => {
@@ -923,9 +998,36 @@ export default function Home() {
     if (previewEmployeeId) dashboardParams.set("previewEmployeeId", previewEmployeeId);
     fetch(`/api/dashboard?${dashboardParams.toString()}`, { signal: controller.signal })
       .then(async (response) => {
-        const body = await response.json() as { currentUser?: CurrentUser; employeePreview?: EmployeePreview | null; permissions?: AppPermissions; teamOverview?: EmployeeTeamOverview; launchReadiness?: LaunchReadiness; userAccounts?: UserAccountRecord[]; notificationReads?: NotificationReadRecord[]; employees?: EmployeeRecord[]; evaluations?: EvaluationRecord[]; hrProfiles?: HrProfileRecord[]; attendanceRecords?: AttendanceRecord[]; skillAchievements?: SkillAchievementRecord[]; talentActions?: TalentActionRecord[]; projects?: ProjectRecord[]; workItems?: WorkItemRecord[]; workSubmissions?: WorkSubmissionRecord[]; rewards?: RewardRecord[]; pointLedger?: PointLedgerRecord[]; pointEvents?: PointEventRecord[]; pointPolicyRules?: PointPolicyRules; rewardRedemptions?: RewardRedemptionRecord[]; organizationPolicies?: OrganizationPolicyRecord[]; policyAcknowledgements?: PolicyAcknowledgementRecord[]; employeeProfiles?: EmployeeProfileRecord[]; applicationDocuments?: ApplicationDocumentRecord[]; employmentContracts?: EmploymentContractRecord[]; organizationDocuments?: OrganizationDocumentRecord[]; employeeWarnings?: EmployeeWarningRecord[]; employeeRecognitions?: EmployeeRecognitionRecord[]; accessDenied?: boolean; identity?: { email: string; name: string } | null; error?: string };
-        if (response.status === 403 && body.accessDenied) {
-          setAccessDenied(body.identity ? { ...body.identity, anonymous: false } : { email: "", name: "", anonymous: true });
+        const body = await response.json().catch(() => ({})) as { currentUser?: CurrentUser; employeePreview?: EmployeePreview | null; permissions?: AppPermissions; teamOverview?: EmployeeTeamOverview; launchReadiness?: LaunchReadiness; userAccounts?: PublicUserAccount[]; notificationReads?: NotificationReadRecord[]; employees?: EmployeeRecord[]; evaluations?: EvaluationRecord[]; hrProfiles?: HrProfileRecord[]; attendanceRecords?: AttendanceRecord[]; skillAchievements?: SkillAchievementRecord[]; talentActions?: TalentActionRecord[]; projects?: ProjectRecord[]; workItems?: WorkItemRecord[]; workSubmissions?: WorkSubmissionRecord[]; rewards?: RewardRecord[]; pointLedger?: PointLedgerRecord[]; pointEvents?: PointEventRecord[]; pointPolicyRules?: PointPolicyRules; rewardRedemptions?: RewardRedemptionRecord[]; organizationPolicies?: OrganizationPolicyRecord[]; policyAcknowledgements?: PolicyAcknowledgementRecord[]; employeeProfiles?: EmployeeProfileRecord[]; applicationDocuments?: ApplicationDocumentRecord[]; employmentContracts?: EmploymentContractRecord[]; organizationDocuments?: OrganizationDocumentRecord[]; employeeWarnings?: EmployeeWarningRecord[]; employeeRecognitions?: EmployeeRecognitionRecord[]; authRequired?: boolean; passwordChangeRequired?: boolean; accessDenied?: boolean; displayName?: string; loginId?: string; error?: string };
+        if (response.status === 401 || body.authRequired) {
+          setAuthGate({ mode: "login" });
+          setAccessDenied(null);
+          setCurrentUser(null);
+          setEmployeePreview(null);
+          setEmployees([]);
+          setWorkItems([]);
+          setOrganizationPolicies([]);
+          setPolicyAcknowledgements([]);
+          setTeamOverview({ employees: [], evaluations: [], workItems: [] });
+          setLaunchReadiness(null);
+          return;
+        }
+        if (response.status === 428 || body.passwordChangeRequired) {
+          setAuthGate({ mode: "change", displayName: body.displayName, loginId: body.loginId });
+          setAccessDenied(null);
+          setCurrentUser(null);
+          setEmployeePreview(null);
+          setEmployees([]);
+          setWorkItems([]);
+          setOrganizationPolicies([]);
+          setPolicyAcknowledgements([]);
+          setTeamOverview({ employees: [], evaluations: [], workItems: [] });
+          setLaunchReadiness(null);
+          return;
+        }
+        if (response.status === 403 || body.accessDenied) {
+          setAuthGate(null);
+          setAccessDenied({ message: body.error || "บัญชีนี้ยังไม่พร้อมใช้งาน กรุณาติดต่อ HR หรือผู้ดูแลระบบ" });
           setCurrentUser(null);
           setEmployeePreview(null);
           setEmployees([]);
@@ -938,6 +1040,12 @@ export default function Home() {
         }
         if (!response.ok) throw new Error(body.error ?? "โหลดข้อมูลไม่สำเร็จ");
         if (!body.currentUser) throw new Error("ระบบไม่พบข้อมูลผู้ใช้งาน กรุณาลองโหลดใหม่");
+        if (body.currentUser.mustChangePassword) {
+          setAuthGate({ mode: "change", displayName: body.currentUser.displayName, loginId: body.currentUser.loginId });
+          setCurrentUser(null);
+          return;
+        }
+        setAuthGate(null);
         setCurrentUser(body.currentUser ?? null);
         setEmployeePreview(body.employeePreview ?? null);
         setPermissions(body.permissions ?? { canManageAccounts: false, canManagePeople: false, canManageWork: false, canAssignTeamWork: false, canReviewWork: false, canViewTeam: false, canViewTeamOverview: false, canViewOwnGrowth: false, canViewOwnRewards: false, canManageOrganizationDocuments: false, canManageEmployeeWarnings: false, canManageEmployeeRecognitions: false });
@@ -1040,7 +1148,7 @@ export default function Home() {
     return () => window.clearTimeout(timer);
   }, [canManageEmployeeFiles, view]);
 
-  const hasBlockingOverlay = Boolean(selectedEmployee || skillProfileEmployee || hrEmployee || showAddEmployee || showWorkForm || showProjectForm || submissionWorkItem || rewardToRedeem || showProfileEditor || showContractForm || contractToSign || showOrganizationDocumentForm || showEmployeeWarningForm || showEmployeeRecognitionForm || showNotifications || showUserMenu);
+  const hasBlockingOverlay = Boolean(selectedEmployee || skillProfileEmployee || hrEmployee || showAddEmployee || showWorkForm || showProjectForm || submissionWorkItem || rewardToRedeem || showProfileEditor || showContractForm || contractToSign || showOrganizationDocumentForm || showEmployeeWarningForm || showEmployeeRecognitionForm || showNotifications || showUserMenu || showChangePassword);
 
   useEffect(() => {
     const hasOpenOverlay = Boolean(hasBlockingOverlay || showAiAssistant);
@@ -1091,6 +1199,7 @@ export default function Home() {
         setShowEmployeeRecognitionForm(false);
         setShowNotifications(false);
         setShowUserMenu(false);
+        setShowChangePassword(false);
         setShowAiAssistant(false);
       }
     };
@@ -1102,7 +1211,7 @@ export default function Home() {
       lastFocusedElementRef.current?.focus();
       lastFocusedElementRef.current = null;
     };
-  }, [hasBlockingOverlay, selectedEmployee, skillProfileEmployee, hrEmployee, showAddEmployee, showWorkForm, showProjectForm, submissionWorkItem, rewardToRedeem, showProfileEditor, showContractForm, contractToSign, showOrganizationDocumentForm, showEmployeeWarningForm, showEmployeeRecognitionForm, showNotifications, showUserMenu, showAiAssistant]);
+  }, [hasBlockingOverlay, selectedEmployee, skillProfileEmployee, hrEmployee, showAddEmployee, showWorkForm, showProjectForm, submissionWorkItem, rewardToRedeem, showProfileEditor, showContractForm, contractToSign, showOrganizationDocumentForm, showEmployeeWarningForm, showEmployeeRecognitionForm, showNotifications, showUserMenu, showChangePassword, showAiAssistant]);
 
   const evaluationsByEmployee = useMemo(
     () => new Map(evaluations.filter((evaluation) => evaluation.period === period).map((evaluation) => [evaluation.employeeId, evaluation])),
@@ -1618,6 +1727,43 @@ export default function Home() {
 
   const showErrorToast = (error: unknown, fallback: string) => {
     showToast(error instanceof Error ? error.message : fallback, "error");
+  };
+
+  const reloadAfterAuthentication = () => {
+    setAuthGate(null);
+    setAccessDenied(null);
+    setDataWarning("");
+    setIsLoading(true);
+    setDashboardReloadKey((key) => key + 1);
+  };
+
+  const logout = async (allDevices = false) => {
+    if (isLoggingOut) return;
+    setIsLoggingOut(true);
+    setShowUserMenu(false);
+    setShowNotifications(false);
+    try {
+      const response = await fetch("/api/auth/logout", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ allDevices }),
+      });
+      const body = await response.json().catch(() => ({})) as { loggedOut?: boolean; error?: string };
+      if (!response.ok || !body.loggedOut) throw new Error(body.error || "ออกจากระบบไม่สำเร็จ กรุณาลองใหม่");
+      window.location.replace("/");
+    } catch (error) {
+      setIsLoggingOut(false);
+      showErrorToast(error, "ออกจากระบบไม่สำเร็จ กรุณาลองใหม่");
+    }
+  };
+
+  const copyCredential = async (value: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      showToast(`คัดลอก${label}แล้ว`);
+    } catch {
+      showToast(`คัดลอก${label}ไม่สำเร็จ กรุณาเลือกข้อความแล้วคัดลอก`, "error");
+    }
   };
 
   useEffect(() => () => {
@@ -2563,21 +2709,48 @@ export default function Home() {
     }
   };
 
-  const editUserAccount = (account: UserAccountRecord) => {
-    setUserAccountForm({ accountId: account.id, email: account.email, displayName: account.displayName, role: account.role, employeeId: account.employeeId ?? "", departmentId: account.departmentId, status: account.status });
+  const editUserAccount = (account: PublicUserAccount) => {
+    setCredentialResult(null);
+    setShowTemporaryPassword(false);
+    setUserAccountForm({ accountId: account.id, loginId: account.loginId ?? "", displayName: account.displayName, role: account.role, employeeId: account.employeeId ?? "", departmentId: account.departmentId, status: account.status, temporaryPassword: "" });
+    document.getElementById("user-access-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  const prepareUserAccountPasswordReset = (account: PublicUserAccount) => {
+    setCredentialResult(null);
+    setShowTemporaryPassword(true);
+    setUserAccountForm({ accountId: account.id, loginId: account.loginId ?? "", displayName: account.displayName, role: account.role, employeeId: account.employeeId ?? "", departmentId: account.departmentId, status: account.status, temporaryPassword: generateTemporaryPassword() });
     document.getElementById("user-access-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
   const saveUserAccount = async (event: React.FormEvent) => {
     event.preventDefault();
+    const loginId = userAccountForm.loginId.trim();
+    const temporaryPassword = userAccountForm.temporaryPassword;
+    const existingAccount = userAccounts.find((account) => account.id === userAccountForm.accountId);
+    const temporaryPasswordRequired = !userAccountForm.accountId || existingAccount?.hasPassword === false;
+    if (!loginId) {
+      showToast("กรุณากรอกรหัสผู้ใช้", "error");
+      return;
+    }
+    if (temporaryPasswordRequired && !temporaryPassword) {
+      showToast("บัญชีนี้ต้องมีรหัสผ่านชั่วคราวก่อนบันทึก", "error");
+      return;
+    }
+    if (temporaryPassword && (temporaryPassword.length < 15 || temporaryPassword.length > 128)) {
+      showToast("รหัสผ่านชั่วคราวต้องมี 15–128 ตัวอักษร", "error");
+      return;
+    }
     setIsSaving(true);
     try {
-      const response = await fetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "saveUserAccount", ...userAccountForm }) });
-      const body = await response.json() as { userAccount?: UserAccountRecord; error?: string };
+      const response = await fetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "saveUserAccount", ...userAccountForm, loginId, temporaryPassword }) });
+      const body = await response.json() as { userAccount?: PublicUserAccount; error?: string };
       if (!response.ok || !body.userAccount) throw new Error(body.error ?? "บันทึกบัญชีผู้ใช้ไม่สำเร็จ");
-      setUserAccounts((items) => [...items.filter((item) => item.id !== body.userAccount?.id), body.userAccount as UserAccountRecord].sort((a, b) => a.displayName.localeCompare(b.displayName, "th")));
-      setUserAccountForm({ accountId: "", email: "", displayName: "", role: "employee", employeeId: "", departmentId: "", status: "active" });
-      showToast("บันทึกสิทธิ์ของ " + body.userAccount.displayName + " แล้ว");
+      setUserAccounts((items) => [...items.filter((item) => item.id !== body.userAccount?.id), body.userAccount as PublicUserAccount].sort((a, b) => a.displayName.localeCompare(b.displayName, "th")));
+      setCredentialResult(temporaryPassword ? { displayName: body.userAccount.displayName, loginId: body.userAccount.loginId || loginId, temporaryPassword } : null);
+      setUserAccountForm(blankUserAccountForm());
+      setShowTemporaryPassword(false);
+      showToast(temporaryPassword ? `บันทึกบัญชี ${body.userAccount.displayName} และสร้างรหัสชั่วคราวแล้ว` : `บันทึกสิทธิ์ของ ${body.userAccount.displayName} แล้ว`);
     } catch (error) {
       showErrorToast(error, "บันทึกบัญชีผู้ใช้ไม่สำเร็จ");
     } finally {
@@ -2585,13 +2758,13 @@ export default function Home() {
     }
   };
 
-  const toggleUserAccount = async (account: UserAccountRecord) => {
+  const toggleUserAccount = async (account: PublicUserAccount) => {
     setIsSaving(true);
     try {
-      const response = await fetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "saveUserAccount", accountId: account.id, email: account.email, displayName: account.displayName, role: account.role, employeeId: account.employeeId ?? "", departmentId: account.departmentId, status: account.status === "active" ? "inactive" : "active" }) });
-      const body = await response.json() as { userAccount?: UserAccountRecord; error?: string };
+      const response = await fetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "saveUserAccount", accountId: account.id, loginId: account.loginId ?? "", displayName: account.displayName, role: account.role, employeeId: account.employeeId ?? "", departmentId: account.departmentId, status: account.status === "active" ? "inactive" : "active", temporaryPassword: "" }) });
+      const body = await response.json() as { userAccount?: PublicUserAccount; error?: string };
       if (!response.ok || !body.userAccount) throw new Error(body.error ?? "อัปเดตบัญชีไม่สำเร็จ");
-      setUserAccounts((items) => items.map((item) => item.id === account.id ? body.userAccount as UserAccountRecord : item));
+      setUserAccounts((items) => items.map((item) => item.id === account.id ? body.userAccount as PublicUserAccount : item));
       showToast(body.userAccount.status === "active" ? "เปิดสิทธิ์ใช้งานแล้ว" : "พักสิทธิ์ใช้งานแล้ว");
     } catch (error) {
       showErrorToast(error, "อัปเดตบัญชีไม่สำเร็จ");
@@ -2687,6 +2860,8 @@ export default function Home() {
   const workingUserAccounts = userAccounts.filter((account) => account.role === "employee");
   const activeAssigningUserCount = assigningUserAccounts.filter((account) => account.status === "active").length;
   const activeWorkingUserCount = workingUserAccounts.filter((account) => account.status === "active").length;
+  const editingUserAccount = userAccounts.find((account) => account.id === userAccountForm.accountId);
+  const userAccountRequiresTemporaryPassword = !userAccountForm.accountId || editingUserAccount?.hasPassword === false;
   const selectedUserKind = userAccountForm.role === "employee" ? "worker" : "assigner";
   const selectedUserKindLabel = selectedUserKind === "assigner" ? "คนสั่งงาน" : "คนทำงาน";
   const selectedUserRoleGuide = userAccountForm.role === "admin"
@@ -2717,8 +2892,8 @@ export default function Home() {
       ready: launchReadiness.publishedPolicyCount > 0 && launchReadiness.templatePolicyCount === 0,
     },
     {
-      title: "สร้างบัญชีให้ตรงกับพนักงานและส่งคำเชิญเว็บไซต์",
-      detail: `ผูกบัญชีใช้งานแล้ว ${launchReadiness.activeLinkedAccountCount}/${launchReadiness.activeEmployeeCount} คน · ตรวจคำเชิญเว็บไซต์กับเจ้าของระบบอีกครั้ง`,
+      title: "สร้างบัญชีให้ตรงกับพนักงานและตั้งรหัสชั่วคราว",
+      detail: `ผูกบัญชีใช้งานแล้ว ${launchReadiness.activeLinkedAccountCount}/${launchReadiness.activeEmployeeCount} คน · ส่งรหัสผู้ใช้และรหัสชั่วคราวทางช่องทางส่วนตัว`,
       ready: launchReadiness.activeEmployeeCount > 0 && launchReadiness.activeLinkedAccountCount >= launchReadiness.activeEmployeeCount,
     },
     {
@@ -2858,17 +3033,22 @@ export default function Home() {
     setShowAiAssistant(false);
   };
 
+  if (authGate) {
+    return <AuthScreen key={`${authGate.mode}:${authGate.loginId ?? ""}`} initialMode={authGate.mode} displayName={authGate.displayName} loginId={authGate.loginId} onAuthenticated={reloadAfterAuthentication} />;
+  }
+
   if (accessDenied) {
     return (
       <main className="access-denied-page">
-        <section>
+        <section role="alert" aria-labelledby="access-denied-title">
           <span className="access-lock">PP</span>
           <p className="eyebrow">PEOPLE PULSE ACCESS</p>
-          <h1>{accessDenied.anonymous ? "เข้าสู่ระบบเพื่อใช้งาน" : "บัญชีนี้ยังไม่ได้รับสิทธิ์"}</h1>
-          <p>{accessDenied.anonymous ? "ใช้บัญชี ChatGPT ที่ HR เพิ่มไว้ในระบบ ระบบจะตรวจสิทธิ์และเปิดพอร์ทัลของคุณอัตโนมัติ" : "ส่งอีเมลด้านล่างให้ HR เพื่อผูกบัญชีกับโปรไฟล์พนักงาน แล้วเปิดหน้านี้อีกครั้ง"}</p>
-          {!accessDenied.anonymous && <div><small>อีเมลที่เข้าสู่ระบบ</small><strong>{accessDenied.email}</strong></div>}
-          <a href={accessDenied.anonymous ? "/signin-with-chatgpt?return_to=/" : "/signout-with-chatgpt?return_to=/"}>{accessDenied.anonymous ? "เข้าสู่ระบบด้วย ChatGPT" : "เปลี่ยนบัญชี"}</a>
+          <h1 id="access-denied-title">บัญชีนี้ยังไม่ได้รับสิทธิ์</h1>
+          <p>{accessDenied.message}</p>
+          <div><small>วิธีดำเนินการ</small><strong>ติดต่อ HR หรือผู้ดูแลระบบให้ตรวจสถานะบัญชีและบทบาท</strong></div>
+          <button type="button" disabled={isLoggingOut} onClick={() => void logout(false)}>{isLoggingOut ? "กำลังออกจากระบบ..." : "กลับไปเข้าสู่ระบบด้วยบัญชีอื่น"}</button>
         </section>
+        <div className={`toast ${toast ? `show ${toast.tone}` : ""}`} role={toast?.tone === "error" ? "alert" : "status"} aria-live={toast?.tone === "error" ? "assertive" : "polite"} aria-atomic="true"><span>{toast?.tone === "error" ? "!" : "✓"}</span>{toast?.message}</div>
       </main>
     );
   }
@@ -2962,7 +3142,7 @@ export default function Home() {
           <i aria-hidden="true">⌄</i>
         </button>
         {showUserMenu && <aside className="top-profile-menu" aria-label="จัดการโปรไฟล์">
-          <div className="top-profile-menu-head"><span>{currentUser?.displayName ? makeInitials(currentUser.displayName) : "PP"}</span><p><strong>{currentUser?.displayName ?? "ผู้ใช้งาน"}</strong><small>{currentUser?.email}</small><b>{currentUserRoleLabel}</b></p></div>
+          <div className="top-profile-menu-head"><span>{currentUser?.displayName ? makeInitials(currentUser.displayName) : "PP"}</span><p><strong>{currentUser?.displayName ?? "ผู้ใช้งาน"}</strong><small>รหัสผู้ใช้ {currentUser?.loginId || "—"}</small><b>{currentUserRoleLabel}</b></p></div>
           {currentUserEmployee && <div className="top-profile-work-summary"><span><small>ตำแหน่ง</small><strong>{getRole(currentUserEmployee.roleId).name}</strong></span><span><small>Points คงเหลือ</small><strong>{formatMoney(pointBalances.get(currentUserEmployee.id) ?? 0)}</strong></span></div>}
           <nav>
             <button type="button" onClick={() => { setShowUserMenu(false); if (isAdmin) { if (currentUser?.employeeId) setProfileEmployeeId(currentUser.employeeId); setView("profiles"); } else { setPortfolioEmployeeId(currentUser?.employeeId ?? "all"); setView("portfolio"); } }}><span>▣</span><p><strong>{isAdmin ? "จัดการโปรไฟล์" : "แฟ้มผลงานของฉัน"}</strong><small>{isAdmin ? "ข้อมูล เอกสาร และสัญญา" : "ดูผลงานและหลักฐานที่ส่งไว้"}</small></p></button>
@@ -2970,7 +3150,11 @@ export default function Home() {
             <button type="button" onClick={() => { setShowUserMenu(false); setView("work"); setWorkSection("points"); setPointPanel("policies"); }}><span>§</span><p><strong>กฎองค์กร</strong><small>{isAdmin ? "ร่าง ประกาศ และติดตามการรับทราบ" : "อ่านกฎที่ประกาศใช้และยืนยันรับทราบ"}</small></p></button>
             {isEmployeeUser && <button type="button" onClick={() => { setShowUserMenu(false); setView("peopleOps"); }}><span>↗</span><p><strong>การเติบโตและเงินเดือน</strong><small>ดูเป้าหมาย สกิล และค่าตอบแทนของฉัน</small></p></button>}
             {isEmployeeUser && <button type="button" onClick={() => { setShowUserMenu(false); setView("work"); setWorkSection("points"); setPointPanel("overview"); }}><span>★</span><p><strong>Points และรางวัล</strong><small>ดูยอด Points และเลือกรางวัล</small></p></button>}
-            {isEmployeePreview ? <button type="button" onClick={() => window.location.assign("/")}><span>←</span><p><strong>กลับมุมมองผู้ดูแล</strong><small>ออกจากโหมดทดลองพนักงาน</small></p></button> : <a href="/signout-with-chatgpt?return_to=/"><span>↗</span><p><strong>ออกจากระบบ</strong><small>เปลี่ยนบัญชีผู้ใช้งาน</small></p></a>}
+            {isEmployeePreview ? <button type="button" onClick={() => window.location.assign("/")}><span>←</span><p><strong>กลับมุมมองผู้ดูแล</strong><small>ออกจากโหมดทดลองพนักงาน</small></p></button> : <>
+              <button type="button" onClick={() => { setShowUserMenu(false); setShowChangePassword(true); }}><span>⌁</span><p><strong>เปลี่ยนรหัสผ่าน</strong><small>ยืนยันรหัสปัจจุบันและตั้งรหัสใหม่</small></p></button>
+              <button type="button" disabled={isLoggingOut} onClick={() => void logout(false)}><span>↗</span><p><strong>ออกจากระบบ</strong><small>ออกจากอุปกรณ์เครื่องนี้</small></p></button>
+              <button type="button" disabled={isLoggingOut} onClick={() => { if (window.confirm("ต้องการออกจากระบบทุกอุปกรณ์ใช่หรือไม่?")) void logout(true); }}><span>⊘</span><p><strong>ออกจากระบบทุกอุปกรณ์</strong><small>ยกเลิกเซสชันที่เปิดอยู่ทั้งหมด</small></p></button>
+            </>}
           </nav>
         </aside>}
       </div>
@@ -3909,7 +4093,7 @@ export default function Home() {
               <div className="launch-readiness-progress" role="progressbar" aria-label="ความพร้อมก่อนเปิดใช้จริง" aria-valuemin={0} aria-valuemax={6} aria-valuenow={launchReadinessScore}><span style={{ width: `${launchReadinessScore / 6 * 100}%` }} /></div>
               <div className="launch-readiness-status"><span aria-hidden="true">{launchReadinessScore === 6 ? "✓" : hasLaunchDemoWarning ? "!" : "i"}</span><div><strong>{launchReadinessStatus}</strong><p>{launchReadiness ? `ระบบตรวจล่าสุดจากข้อมูลปัจจุบัน ${launchReadinessScore} จาก 6 ขั้น` : "ยังไม่พบผลตรวจความพร้อม กรุณาโหลดหน้าใหม่หลังระบบหลังบ้านพร้อมใช้งาน"}</p></div></div>
 
-              {hasLaunchDemoWarning && launchReadiness && <div className="launch-demo-warning" role="alert"><span aria-hidden="true">!</span><div><strong>พบข้อมูลสาธิตปะปนอยู่ — ห้ามใช้ตัดสินใจเรื่องพนักงานจริง</strong><p>พนักงานตัวอย่าง {launchReadiness.demoEmployeeCount} คน · นโยบายแม่แบบ {launchReadiness.templatePolicyCount} ฉบับ กรุณายืนยันว่าจะล้างข้อมูลหรือเก็บแยกเพื่อทดลองก่อนส่งคำเชิญให้ทีม</p></div></div>}
+              {hasLaunchDemoWarning && launchReadiness && <div className="launch-demo-warning" role="alert"><span aria-hidden="true">!</span><div><strong>พบข้อมูลสาธิตปะปนอยู่ — ห้ามใช้ตัดสินใจเรื่องพนักงานจริง</strong><p>พนักงานตัวอย่าง {launchReadiness.demoEmployeeCount} คน · นโยบายแม่แบบ {launchReadiness.templatePolicyCount} ฉบับ กรุณายืนยันว่าจะล้างข้อมูลหรือเก็บแยกเพื่อทดลองก่อนเปิดบัญชีให้ทีม</p></div></div>}
 
               <div className="launch-readiness-metrics" aria-label="ตัวเลขประกอบการตรวจความพร้อม">
                 <article><span>01</span><div><strong>{launchReadiness?.activeEmployeeCount ?? "—"}</strong><small>พนักงานใช้งาน</small></div></article>
@@ -3924,7 +4108,7 @@ export default function Home() {
                 {launchReadinessSteps.map((step, index) => <li key={step.title} className={step.ready ? "ready" : "pending"}><span>{step.ready ? "✓" : index + 1}</span><div><strong>{step.title}</strong><p>{step.detail}</p></div><b>{step.ready ? "ผ่านแล้ว" : "ต้องทำต่อ"}</b></li>)}
                 {!launchReadinessSteps.length && <li className="pending"><span>i</span><div><strong>รอข้อมูลจากระบบหลังบ้าน</strong><p>ศูนย์ตรวจความพร้อมจะแสดงรายการตรวจอัตโนมัติเมื่อได้รับข้อมูลล่าสุด</p></div><b>รอตรวจ</b></li>}
               </ol>
-              <footer className="launch-readiness-note"><span aria-hidden="true">i</span><p><strong>ศูนย์นี้ไม่ลบหรือแก้ข้อมูลให้อัตโนมัติ</strong> HR ต้องตรวจข้อมูลจริง ทบทวนกฎหมาย ยืนยันคำเชิญเว็บไซต์ และทดสอบกับพนักงานกลุ่มเล็กก่อนเปิดใช้ทั้งองค์กร</p></footer>
+              <footer className="launch-readiness-note"><span aria-hidden="true">i</span><p><strong>ศูนย์นี้ไม่ลบหรือแก้ข้อมูลให้อัตโนมัติ</strong> HR ต้องตรวจข้อมูลจริง ทบทวนกฎหมาย สร้างบัญชีและรหัสชั่วคราว แล้วทดสอบกับพนักงานกลุ่มเล็กก่อนเปิดใช้ทั้งองค์กร</p></footer>
             </section>
 
             <section className="access-operating-model" aria-labelledby="access-operating-title">
@@ -3943,10 +4127,18 @@ export default function Home() {
 
             <div className="access-main-grid">
               <form className="access-form-card" id="user-access-form" aria-labelledby="user-access-form-title" onSubmit={saveUserAccount}>
-                <div className="access-card-heading"><div><p className="eyebrow">ACCOUNT SETUP</p><h2 id="user-access-form-title">{userAccountForm.accountId ? "แก้ไขสิทธิ์ผู้ใช้งาน" : "เพิ่มผู้ใช้งาน"}</h2><p>ใช้อีเมลเดียวกับบัญชีที่พนักงานจะใช้เข้าสู่เว็บไซต์</p></div><span>{userAccountForm.accountId ? "แก้ไข" : "ใหม่"}</span></div>
+                <div className="access-card-heading"><div><p className="eyebrow">ACCOUNT SETUP</p><h2 id="user-access-form-title">{userAccountForm.accountId ? "แก้ไขบัญชีและสิทธิ์" : "สร้างบัญชีผู้ใช้งาน"}</h2><p>กำหนดรหัสผู้ใช้ บทบาท และรหัสชั่วคราวจากหน้านี้ได้เลย</p></div><span>{userAccountForm.accountId ? "แก้ไข" : "ใหม่"}</span></div>
                 <div className="form-grid access-form-grid">
                   <label className="wide"><span>ชื่อที่แสดง</span><input required name="displayName" autoComplete="name" value={userAccountForm.displayName} onChange={(event) => setUserAccountForm((form) => ({ ...form, displayName: event.target.value }))} placeholder="ชื่อ–นามสกุล" /></label>
-                  <label className="wide"><span>อีเมลที่ใช้เข้าสู่ระบบ</span><input required name="email" autoComplete="email" type="email" value={userAccountForm.email} onChange={(event) => setUserAccountForm((form) => ({ ...form, email: event.target.value }))} placeholder="name@company.com" /></label>
+                  <label className="wide"><span>รหัสผู้ใช้สำหรับเข้าสู่ระบบ</span><input required name="username" autoComplete="username" autoCapitalize="none" spellCheck={false} maxLength={64} value={userAccountForm.loginId} onChange={(event) => setUserAccountForm((form) => ({ ...form, loginId: event.target.value }))} placeholder="เช่น EMP001 หรือ niran.k" /><small>ต้องไม่ซ้ำกับผู้อื่น และไม่ต้องตรงกับอีเมล</small></label>
+                  <div className="access-temporary-password wide">
+                    <label htmlFor="temporary-password"><span>{userAccountRequiresTemporaryPassword ? "รหัสผ่านชั่วคราว" : "ตั้งรหัสผ่านชั่วคราวใหม่ (ไม่บังคับ)"}</span></label>
+                    <div className="temporary-password-input">
+                      <input id="temporary-password" name="new-password" type={showTemporaryPassword ? "text" : "password"} autoComplete="new-password" minLength={userAccountForm.temporaryPassword ? 15 : undefined} maxLength={128} required={userAccountRequiresTemporaryPassword} value={userAccountForm.temporaryPassword} onChange={(event) => setUserAccountForm((form) => ({ ...form, temporaryPassword: event.target.value }))} placeholder={userAccountRequiresTemporaryPassword ? "อย่างน้อย 15 ตัวอักษร" : "เว้นว่างเพื่อใช้รหัสเดิม"} />
+                      <button type="button" aria-label={`${showTemporaryPassword ? "ซ่อน" : "แสดง"}รหัสผ่านชั่วคราว`} aria-pressed={showTemporaryPassword} onClick={() => setShowTemporaryPassword((visible) => !visible)}>{showTemporaryPassword ? "ซ่อน" : "แสดง"}</button>
+                    </div>
+                    <div className="temporary-password-tools"><small>{userAccountRequiresTemporaryPassword ? "ผู้ใช้ต้องเปลี่ยนรหัสนี้ทันทีเมื่อเข้าสู่ระบบครั้งแรก" : "หากกรอกใหม่ ระบบจะยกเลิกรหัสเดิมและบังคับให้ผู้ใช้เปลี่ยนอีกครั้ง"}</small><button type="button" onClick={() => { setUserAccountForm((form) => ({ ...form, temporaryPassword: generateTemporaryPassword() })); setShowTemporaryPassword(true); }}>สร้างรหัส 16 ตัว</button></div>
+                  </div>
                   <fieldset className="access-exact-role-selector wide" aria-describedby="access-role-help"><legend>เลือกบทบาทและขอบเขตสิทธิ์</legend>{([
                     { role: "admin", label: "HR / Admin", group: "คนสั่งงาน", scope: "ทั้งองค์กร", icon: "HR" },
                     { role: "manager", label: "หัวหน้าทีม", group: "คนสั่งงาน", scope: "เฉพาะทีม", icon: "ทีม" },
@@ -3957,7 +4149,12 @@ export default function Home() {
                   {userAccountForm.role !== "admin" && <label className="wide"><span>ผูกกับโปรไฟล์พนักงาน</span><select required value={userAccountForm.employeeId} onChange={(event) => setUserAccountForm((form) => ({ ...form, employeeId: event.target.value }))}><option value="">เลือกพนักงาน</option>{employees.filter((employee) => employee.status === "active" && (!userAccounts.some((account) => account.employeeId === employee.id && account.id !== userAccountForm.accountId))).map((employee) => <option key={employee.id} value={employee.id}>{employee.name} · {getRole(employee.roleId).name}</option>)}</select></label>}
                   {userAccountForm.role === "manager" && <label className="wide"><span>ทีมที่ดูแล</span><select value={userAccountForm.departmentId} onChange={(event) => setUserAccountForm((form) => ({ ...form, departmentId: event.target.value }))}><option value="">ใช้แผนกตามโปรไฟล์พนักงาน</option>{Array.from(new Map(roles.map((role) => [role.departmentId, role.department])).entries()).map(([departmentId, department]) => <option key={departmentId} value={departmentId}>{department}</option>)}</select></label>}
                 </div>
-                <div className="access-form-actions">{userAccountForm.accountId && <button type="button" onClick={() => setUserAccountForm({ accountId: "", email: "", displayName: "", role: "employee", employeeId: "", departmentId: "", status: "active" })}>ยกเลิกการแก้ไข</button>}<button className="primary" disabled={isSaving}>{isSaving ? "กำลังบันทึก..." : userAccountForm.accountId ? "บันทึกการแก้ไข" : "เพิ่มผู้ใช้งาน"}</button></div>
+                <div className="access-form-actions">{userAccountForm.accountId && <button type="button" onClick={() => { setUserAccountForm(blankUserAccountForm()); setShowTemporaryPassword(false); }}>ยกเลิกการแก้ไข</button>}<button className="primary" disabled={isSaving}>{isSaving ? "กำลังบันทึก..." : userAccountForm.accountId ? "บันทึกบัญชี" : "สร้างบัญชีและรหัสชั่วคราว"}</button></div>
+                {credentialResult && <section className="credential-result-panel" role="status" aria-live="polite" aria-labelledby="credential-result-title">
+                  <header><span aria-hidden="true">✓</span><div><strong id="credential-result-title">สร้างข้อมูลเข้าใช้เรียบร้อย</strong><small>แสดงรหัสผ่านครั้งนี้ครั้งเดียว กรุณาส่งให้ {credentialResult.displayName} ทางช่องทางส่วนตัว</small></div><button type="button" onClick={() => setCredentialResult(null)} aria-label="ปิดข้อมูลรหัสชั่วคราว">×</button></header>
+                  <dl><div><dt>รหัสผู้ใช้</dt><dd><code>{credentialResult.loginId}</code><button type="button" onClick={() => void copyCredential(credentialResult.loginId, "รหัสผู้ใช้")}>คัดลอก</button></dd></div><div><dt>รหัสผ่านชั่วคราว</dt><dd><code>{credentialResult.temporaryPassword}</code><button type="button" onClick={() => void copyCredential(credentialResult.temporaryPassword, "รหัสผ่านชั่วคราว")}>คัดลอก</button></dd></div></dl>
+                  <p><b>สำคัญ:</b> อย่าส่งรหัสผ่านในกลุ่มแชท ผู้ใช้จะถูกบังคับให้ตั้งรหัสใหม่ก่อนเห็นข้อมูลในระบบ</p>
+                </section>}
               </form>
 
               <aside className="access-role-matrix-card" aria-labelledby="access-role-matrix-title">
@@ -3973,25 +4170,26 @@ export default function Home() {
                     </tbody>
                   </table>
                 </div>
-                <div className="access-invite-note"><span>i</span><p><strong>ขั้นสุดท้ายก่อนใช้งานจริง</strong> หลังเพิ่มบัญชี ให้เจ้าของเว็บไซต์เชิญอีเมลเดียวกันเข้าถึงเว็บไซต์ แล้วทดสอบการเข้าสู่ระบบด้วยบัญชีจริง</p></div>
+                <div className="access-invite-note"><span>i</span><p><strong>ส่งข้อมูลเข้าใช้อย่างปลอดภัย</strong> ส่งรหัสผู้ใช้และรหัสชั่วคราวให้เจ้าของบัญชีทางช่องทางส่วนตัว จากนั้นให้ทดลองเข้าใช้และตั้งรหัสใหม่ทันที</p></div>
               </aside>
             </div>
 
             <section className="access-account-card">
-              <div className="access-card-heading"><div><p className="eyebrow">TEAM ACCOUNTS</p><h2>บัญชีผู้ใช้งานทั้งหมด</h2><p>บัญชีจะผูกอัตโนมัติเมื่ออีเมลนั้นเข้าสู่ระบบครั้งแรก</p></div><span>{userAccounts.length} บัญชี</span></div>
+              <div className="access-card-heading"><div><p className="eyebrow">TEAM ACCOUNTS</p><h2>บัญชีผู้ใช้งานทั้งหมด</h2><p>ตรวจรหัสผู้ใช้ ความพร้อม รหัสชั่วคราว และสิทธิ์ของแต่ละคนได้ชัดเจน</p></div><span>{userAccounts.length} บัญชี</span></div>
               <div className="access-account-list">
                 {accessAccountGroups.map((group) => <Fragment key={group.id}>
                   <div className={`access-account-group-heading ${group.id}`}><span>{group.id === "assigner" ? "→" : "✓"}</span><div><strong>{group.title}</strong><small>{group.description}</small></div><b>{group.activeCount}/{group.accounts.length} ใช้งาน</b></div>
                   {group.accounts.map((account) => {
                     const employee = account.employeeId ? employeesById.get(account.employeeId) : null;
                     const roleName = account.role === "admin" ? "HR / Admin" : account.role === "manager" ? "หัวหน้าทีม" : "พนักงาน";
+                    const credentialState = accountCredentialState(account);
                     return <article key={account.id} className={`${account.status} access-account-row`}>
                       <span className="access-account-avatar">{makeInitials(account.displayName)}</span>
-                      <div className="access-account-person"><strong>{account.displayName}</strong><small>{account.email}</small></div>
+                      <div className="access-account-person"><strong>{account.displayName}</strong><small>รหัสผู้ใช้ <code>{account.loginId || "ยังไม่ได้กำหนด"}</code></small></div>
                       <div className="access-account-role"><strong className={`access-user-kind ${group.id}`}>{group.title}</strong><span className={`access-role-pill ${account.role}`}>{roleName}</span></div>
-                      <div className="access-account-link"><strong>{employee?.name ?? (account.role === "admin" ? "สิทธิ์ระดับองค์กร" : "ยังไม่ผูกโปรไฟล์")}</strong><small>{employee ? `ผูกโปรไฟล์แล้ว · ${getRole(employee.roleId).name}` : account.role === "admin" ? "ไม่ต้องผูกโปรไฟล์พนักงาน" : "กรุณาเลือกโปรไฟล์ก่อนเปิดใช้"}</small><small className="access-login-state">{account.lastLoginAt ? `เข้าใช้ล่าสุด ${formatUpdatedAt(account.lastLoginAt)}` : "ยังไม่เคยเข้าสู่ระบบ"}</small></div>
-                      <b className={`access-status ${account.status}`}>{account.status === "active" ? "ใช้งาน" : "พักสิทธิ์"}</b>
-                      <span className="access-account-actions"><button aria-label={`แก้ไขสิทธิ์ของ ${account.displayName}`} onClick={() => editUserAccount(account)}>แก้ไข</button><button aria-label={`${account.status === "active" ? "พักสิทธิ์" : "เปิดสิทธิ์"}ของ ${account.displayName}`} disabled={isSaving || account.id === currentUser?.id} onClick={() => void toggleUserAccount(account)}>{account.status === "active" ? "พักสิทธิ์" : "เปิดสิทธิ์"}</button></span>
+                      <div className="access-account-link"><strong>{employee?.name ?? (account.role === "admin" ? "สิทธิ์ระดับองค์กร" : "ยังไม่ผูกโปรไฟล์")}</strong><small>{employee ? `ผูกโปรไฟล์แล้ว · ${getRole(employee.roleId).name}` : account.role === "admin" ? "ไม่ต้องผูกโปรไฟล์พนักงาน" : "กรุณาเลือกโปรไฟล์ก่อนเปิดใช้"}</small><small className="access-login-state">{credentialState.detail}</small></div>
+                      <b className={`access-status ${credentialState.id}`}>{credentialState.label}</b>
+                      <span className="access-account-actions"><button aria-label={`แก้ไขบัญชีของ ${account.displayName}`} disabled={isSaving || account.id === currentUser?.id} title={account.id === currentUser?.id ? "บัญชีที่กำลังใช้งานให้เปลี่ยนรหัสผ่านจากเมนูโปรไฟล์" : undefined} onClick={() => editUserAccount(account)}>แก้ไข</button><button aria-label={`สร้างรหัสผ่านชั่วคราวใหม่ให้ ${account.displayName}`} disabled={isSaving || account.id === currentUser?.id} onClick={() => prepareUserAccountPasswordReset(account)}>รีเซ็ตรหัส</button><button aria-label={`${account.status === "active" ? "พักสิทธิ์" : "เปิดสิทธิ์"}ของ ${account.displayName}`} disabled={isSaving || account.id === currentUser?.id} onClick={() => void toggleUserAccount(account)}>{account.status === "active" ? "พักสิทธิ์" : "เปิดสิทธิ์"}</button></span>
                     </article>;
                   })}
                   {!group.accounts.length && <div className={`access-account-group-empty ${group.id}`}>ยังไม่มีบัญชี{group.title}</div>}
@@ -4812,6 +5010,17 @@ export default function Home() {
             <div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setShowAddEmployee(false)}>ยกเลิก</button><button className="primary-button" disabled={isSaving}>{isSaving ? "กำลังเพิ่ม..." : "เพิ่มพนักงาน"}</button></div>
           </form>
         </div>
+      )}
+
+      {showChangePassword && currentUser && !isEmployeePreview && (
+        <ChangePasswordDialog
+          displayName={currentUser.displayName}
+          onClose={() => setShowChangePassword(false)}
+          onSuccess={() => {
+            setShowChangePassword(false);
+            showToast("เปลี่ยนรหัสผ่านเรียบร้อยแล้ว");
+          }}
+        />
       )}
 
       {!isEmployeeUser && <>
