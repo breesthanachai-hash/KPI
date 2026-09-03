@@ -26,6 +26,46 @@ function assertBefore(block, first, second, label) {
   assert.ok(firstIndex < secondIndex, `${label}: the guard must run before the protected operation`);
 }
 
+test("password policy accepts a memorable numeric PIN without weakening general passwords", async () => {
+  const [policy, cryptoSource, authUi, page, authService] = await Promise.all([
+    source("lib/password-policy.js"),
+    source("lib/password-crypto.ts"),
+    source("app/auth-ui.tsx"),
+    source("app/page.tsx"),
+    source("lib/auth-service.ts"),
+  ]);
+  const policyModule = new URL("../lib/password-policy.js", import.meta.url).href;
+  const script = `
+    import { passwordMeetsMinimum, passwordMinimumError } from ${JSON.stringify(policyModule)};
+    process.stdout.write(JSON.stringify({
+      pin8: passwordMeetsMinimum("12345678"),
+      pin7: passwordMeetsMinimum("1234567"),
+      general15: passwordMeetsMinimum("correct horse 1"),
+      general14: passwordMeetsMinimum("correct horse1"),
+      pinError: passwordMinimumError("1234567"),
+      generalError: passwordMinimumError("short-pass"),
+    }));
+  `;
+  const result = spawnSync(process.execPath, ["--experimental-strip-types", "--input-type=module", "--eval", script], {
+    encoding: "utf8",
+    maxBuffer: 1024 * 1024,
+  });
+  assert.equal(result.status, 0, result.stderr || "password policy must execute");
+  assert.deepEqual(JSON.parse(result.stdout), {
+    pin8: true,
+    pin7: false,
+    general15: true,
+    general14: false,
+    pinError: "รหัสตัวเลขต้องมีอย่างน้อย 8 หลัก",
+    generalError: "รหัสผ่านทั่วไปต้องมีอย่างน้อย 15 ตัวอักษร หรือใช้ตัวเลขอย่างเดียวอย่างน้อย 8 หลัก",
+  });
+  assert.match(policy, /MIN_NUMERIC_PIN_LENGTH = 8/);
+  assert.match(cryptoSource, /passwordMinimumError\(normalized\)/);
+  assert.match(authUi, /PIN ตัวเลขอย่างเดียวอย่างน้อย 8 หลัก/);
+  assert.match(page, /passwordMeetsMinimum\(temporaryPassword\)/);
+  assert.match(authService, /PIN ตัวเลขอย่างน้อย 8 หลัก/);
+});
+
 test("bootstrap output is compatible with the real PBKDF2 verifier and keeps independent secrets", { timeout: 30_000 }, async () => {
   const bootstrapScript = await source("scripts/generate-auth-bootstrap.mjs");
   const generated = spawnSync(process.execPath, [

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
+import { MIN_NUMERIC_PIN_LENGTH, passwordMeetsMinimum, passwordMinimumError } from "../lib/password-policy.js";
 
 type AuthResponse = {
   authenticated?: boolean;
@@ -33,7 +34,8 @@ function retryMessage(response: Response) {
 }
 
 function passwordValidation(password: string, confirmation: string) {
-  if (password.length < 15) return "รหัสผ่านใหม่ต้องมีอย่างน้อย 15 ตัวอักษร";
+  const minimumError = passwordMinimumError(password);
+  if (minimumError) return minimumError;
   if (password.length > 128) return "รหัสผ่านใหม่ต้องไม่เกิน 128 ตัวอักษร";
   if (password !== confirmation) return "รหัสผ่านทั้งสองช่องไม่ตรงกัน";
   return "";
@@ -71,7 +73,7 @@ function PasswordControl({
           onChange={(event) => onChange(event.target.value)}
           aria-describedby={describedBy}
           required={required}
-          minLength={autoComplete === "new-password" ? 15 : undefined}
+          minLength={autoComplete === "new-password" ? MIN_NUMERIC_PIN_LENGTH : undefined}
           maxLength={128}
           autoFocus={autoFocus}
         />
@@ -241,7 +243,7 @@ export function AuthScreen({ initialMode, displayName = "", loginId: initialLogi
             {error && <div ref={errorRef} className="auth-error" role="alert" tabIndex={-1}><b>!</b><span>{error}</span></div>}
             <PasswordControl id={newPasswordId} label="รหัสผ่านใหม่" value={newPassword} onChange={setNewPassword} autoComplete="new-password" describedBy="forced-password-rules" autoFocus />
             <PasswordControl id={confirmationId} label="ยืนยันรหัสผ่านใหม่" value={confirmation} onChange={setConfirmation} autoComplete="new-password" describedBy="forced-password-rules" />
-            <div id="forced-password-rules" className="auth-password-rules"><b>รหัสผ่านที่ปลอดภัย</b><span className={newPassword.length >= 15 ? "passed" : ""}>อย่างน้อย 15 ตัวอักษร และไม่เกิน 128 ตัว</span><span>ใช้วลีที่จำได้ แต่ผู้อื่นเดายาก</span></div>
+            <div id="forced-password-rules" className="auth-password-rules"><b>เลือกรูปแบบที่จำง่าย</b><span className={passwordMeetsMinimum(newPassword) ? "passed" : ""}>PIN ตัวเลขอย่างเดียวอย่างน้อย 8 หลัก</span><span>หรือรหัสผ่านทั่วไปอย่างน้อย 15 ตัวอักษร และไม่เกิน 128 ตัว</span></div>
             <button className="auth-primary" disabled={busy || !newPassword || !confirmation}>{busy ? "กำลังตั้งรหัสผ่าน..." : "ตั้งรหัสผ่านและเริ่มใช้งาน"}</button>
             <button className="auth-text-button" type="button" disabled={busy} onClick={() => void exitForcedSession()}>ออกจากเซสชันนี้</button>
           </form>
@@ -318,7 +320,7 @@ export function ChangePasswordDialog({
           <PasswordControl id={currentId} label="รหัสผ่านปัจจุบัน" value={currentPassword} onChange={setCurrentPassword} autoComplete="current-password" />
           <PasswordControl id={nextId} label="รหัสผ่านใหม่" value={newPassword} onChange={setNewPassword} autoComplete="new-password" describedBy="voluntary-password-rules" />
           <PasswordControl id={confirmId} label="ยืนยันรหัสผ่านใหม่" value={confirmation} onChange={setConfirmation} autoComplete="new-password" describedBy="voluntary-password-rules" />
-          <p id="voluntary-password-rules" className="auth-dialog-rules">ใช้รหัสผ่าน 15–128 ตัวอักษรที่จำได้และผู้อื่นเดายาก</p>
+          <p id="voluntary-password-rules" className="auth-dialog-rules">ใช้ PIN ตัวเลขอย่างเดียวอย่างน้อย 8 หลัก หรือรหัสผ่านทั่วไป 15–128 ตัวอักษร</p>
         </div>
         <footer><button type="button" onClick={onClose} disabled={busy}>ยกเลิก</button><button className="primary" disabled={busy || !currentPassword || !newPassword || !confirmation}>{busy ? "กำลังบันทึก..." : "บันทึกรหัสผ่านใหม่"}</button></footer>
       </form>

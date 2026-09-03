@@ -1,4 +1,5 @@
 import { pbkdf2 } from "node:crypto";
+import { MIN_GENERAL_PASSWORD_LENGTH, passwordMinimumError } from "./password-policy.js";
 
 export const LEGACY_PASSWORD_ALGORITHM = "pbkdf2-sha256" as const;
 export const PASSWORD_ALGORITHM = "pbkdf2-sha256-chain-v1" as const;
@@ -7,7 +8,7 @@ export const PASSWORD_ITERATIONS = 600_000;
 export const PASSWORD_STAGE_ITERATIONS = 100_000;
 export const PASSWORD_STAGE_COUNT = PASSWORD_ITERATIONS / PASSWORD_STAGE_ITERATIONS;
 export const MAX_PASSWORD_ITERATIONS = PASSWORD_ITERATIONS;
-export const MIN_PASSWORD_LENGTH = 15;
+export const MIN_PASSWORD_LENGTH = MIN_GENERAL_PASSWORD_LENGTH;
 export const MAX_PASSWORD_LENGTH = 256;
 export const MAX_PASSWORD_BYTES = 1024;
 
@@ -46,7 +47,8 @@ export function passwordValidationError(password: string) {
   const normalized = password.normalize("NFC");
   const length = [...normalized].length;
   const byteLength = encoder.encode(normalized).byteLength;
-  if (length < MIN_PASSWORD_LENGTH) return `รหัสผ่านต้องมีอย่างน้อย ${MIN_PASSWORD_LENGTH} ตัวอักษร`;
+  const minimumError = passwordMinimumError(normalized);
+  if (minimumError) return minimumError;
   if (length > MAX_PASSWORD_LENGTH || byteLength > MAX_PASSWORD_BYTES) return "รหัสผ่านยาวเกินขนาดที่ระบบรองรับ";
   return null;
 }
