@@ -5,7 +5,7 @@ CREATE TABLE `auth_credentials` (
 	`password_hash` text DEFAULT '' NOT NULL,
 	`password_salt` text DEFAULT '' NOT NULL,
 	`password_algorithm` text DEFAULT 'pbkdf2-sha256' NOT NULL,
-	`password_iterations` integer DEFAULT 600000 NOT NULL,
+	`password_iterations` integer DEFAULT 100000 NOT NULL,
 	`pepper_version` integer DEFAULT 1 NOT NULL,
 	`credential_version` integer DEFAULT 1 NOT NULL,
 	`must_change_password` integer DEFAULT true NOT NULL,
@@ -97,4 +97,34 @@ WHEN NEW.id LIKE 'credential-mutation:%'
   )
 BEGIN
   SELECT RAISE(ABORT, 'STALE_CREDENTIAL_VERSION');
+END;
+--> statement-breakpoint
+CREATE TRIGGER `auth_credentials_audit_bootstrap_iteration_repair`
+AFTER UPDATE OF password_hash, password_salt, password_iterations, credential_version ON `auth_credentials`
+WHEN OLD.user_account_id = 'user-owner'
+  AND OLD.password_algorithm = 'pbkdf2-sha256'
+  AND OLD.password_iterations > 100000
+  AND OLD.credential_version = 1
+  AND OLD.must_change_password = 1
+  AND OLD.failed_attempts = 0
+  AND OLD.locked_until IS NULL
+  AND OLD.password_changed_at = OLD.created_at
+  AND OLD.created_at = OLD.updated_at
+  AND NEW.password_algorithm = 'pbkdf2-sha256'
+  AND NEW.password_iterations = 100000
+  AND NEW.credential_version = 2
+  AND NEW.must_change_password = 1
+BEGIN
+  UPDATE `auth_sessions`
+    SET revoked_at = NEW.updated_at, revoke_reason = 'bootstrap-iteration-repair'
+    WHERE user_account_id = OLD.user_account_id AND revoked_at IS NULL;
+  INSERT OR IGNORE INTO `auth_events` (id, user_account_id, event_type, source_hash, detail, created_at)
+    VALUES (
+      'bootstrap-credential-repaired:user-owner:1',
+      OLD.user_account_id,
+      'bootstrap_credential_repaired',
+      '',
+      'iterations:' || OLD.password_iterations || '->100000',
+      NEW.updated_at
+    );
 END;

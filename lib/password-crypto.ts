@@ -1,5 +1,6 @@
 export const PASSWORD_ALGORITHM = "pbkdf2-sha256" as const;
-export const PASSWORD_ITERATIONS = 600_000;
+export const PASSWORD_ITERATIONS = 100_000;
+export const MAX_PASSWORD_ITERATIONS = 100_000;
 export const MIN_PASSWORD_LENGTH = 15;
 export const MAX_PASSWORD_LENGTH = 256;
 export const MAX_PASSWORD_BYTES = 1024;
@@ -60,7 +61,7 @@ export async function hashPassword(password: string): Promise<PasswordVerifier> 
 
 export async function verifyPassword(password: string, verifier: PasswordVerifier) {
   if (!passwordInputIsWithinLimit(password)) return false;
-  if (verifier.passwordAlgorithm !== PASSWORD_ALGORITHM || verifier.passwordIterations < PASSWORD_ITERATIONS) {
+  if (verifier.passwordAlgorithm !== PASSWORD_ALGORITHM || verifier.passwordIterations < PASSWORD_ITERATIONS || verifier.passwordIterations > MAX_PASSWORD_ITERATIONS) {
     await dummyVerifyPassword(password);
     return false;
   }
@@ -96,7 +97,7 @@ export function parsePasswordVerifier(value: string): PasswordVerifier | null {
   const [passwordAlgorithm, iterationsRaw, pepperVersionRaw, passwordSalt, passwordHash, extra] = value.trim().split("$");
   const passwordIterations = Number(iterationsRaw);
   const pepperVersion = Number(pepperVersionRaw);
-  if (extra !== undefined || passwordAlgorithm !== PASSWORD_ALGORITHM || !Number.isInteger(passwordIterations) || passwordIterations < PASSWORD_ITERATIONS || !Number.isInteger(pepperVersion) || pepperVersion < 1) return null;
+  if (extra !== undefined || passwordAlgorithm !== PASSWORD_ALGORITHM || !Number.isInteger(passwordIterations) || passwordIterations < PASSWORD_ITERATIONS || passwordIterations > MAX_PASSWORD_ITERATIONS || !Number.isInteger(pepperVersion) || pepperVersion < 1) return null;
   const salt = decodeBase64Url(passwordSalt ?? "");
   const hash = decodeBase64Url(passwordHash ?? "");
   if (!salt || salt.byteLength < PASSWORD_SALT_BYTES || hash?.byteLength !== PASSWORD_HASH_BYTES) return null;
@@ -123,6 +124,9 @@ export async function privateLookupHash(purpose: string, value: string) {
 }
 
 async function derivePasswordHash(password: string, saltEncoded: string, iterations: number, pepperVersion: number) {
+  if (!Number.isInteger(iterations) || iterations < PASSWORD_ITERATIONS || iterations > MAX_PASSWORD_ITERATIONS) {
+    throw new AuthConfigurationError("Password iteration count is unsupported on this platform.");
+  }
   const salt = decodeBase64Url(saltEncoded);
   if (!salt) throw new AuthConfigurationError("Password salt is invalid.");
   const pepper = passwordPepper(pepperVersion);

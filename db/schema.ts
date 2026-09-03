@@ -46,7 +46,7 @@ export const authCredentials = sqliteTable("auth_credentials", {
   passwordHash: text("password_hash").notNull().default(""),
   passwordSalt: text("password_salt").notNull().default(""),
   passwordAlgorithm: text("password_algorithm").notNull().default("pbkdf2-sha256"),
-  passwordIterations: integer("password_iterations").notNull().default(600000),
+  passwordIterations: integer("password_iterations").notNull().default(100000),
   pepperVersion: integer("pepper_version").notNull().default(1),
   credentialVersion: integer("credential_version").notNull().default(1),
   mustChangePassword: integer("must_change_password", { mode: "boolean" }).notNull().default(true),
@@ -93,7 +93,7 @@ export const authRateLimits = sqliteTable("auth_rate_limits", {
 export const authEvents = sqliteTable("auth_events", {
   id: text("id").primaryKey(),
   userAccountId: text("user_account_id").references(() => userAccounts.id, { onDelete: "set null" }),
-  eventType: text("event_type", { enum: ["login_succeeded", "login_failed", "login_rate_limited", "logout", "sessions_revoked", "password_changed", "credential_created", "credential_reset", "credential_updated"] }).notNull(),
+  eventType: text("event_type", { enum: ["login_succeeded", "login_failed", "login_rate_limited", "logout", "sessions_revoked", "password_changed", "credential_created", "credential_reset", "credential_updated", "bootstrap_credential_repaired"] }).notNull(),
   sourceHash: text("source_hash").notNull().default(""),
   detail: text("detail").notNull().default(""),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),

@@ -1,4 +1,4 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, gt, isNull, sql } from "drizzle-orm";
 import { getDb } from "../db";
 import { ensureDatabase } from "../db/initialize";
 import { authCredentials, authEvents, authSessions, employees, userAccounts } from "../db/schema";
@@ -86,8 +86,71 @@ export async function ensureBootstrapAccounts() {
     throw new Error("Bootstrap owner exists but is not an active administrator.");
   }
 
-  const [existingCredential] = await db.select({ userAccountId: authCredentials.userAccountId }).from(authCredentials).where(eq(authCredentials.userAccountId, "user-owner")).limit(1);
-  if (existingCredential) return;
+  const [existingCredential] = await db.select().from(authCredentials).where(eq(authCredentials.userAccountId, "user-owner")).limit(1);
+  if (existingCredential) {
+    const originalPasswordChangedAt = existingCredential.passwordChangedAt;
+    const untouchedBootstrapCredential = existingOwner
+      && existingOwner.authUserId === ""
+      && existingOwner.email === configuredEmail
+      && existingOwner.role === "admin"
+      && existingOwner.status === "active"
+      && existingOwner.lastLoginAt === null
+      && existingOwner.createdBy === "ระบบเริ่มต้น"
+      && existingOwner.createdAt === existingOwner.updatedAt
+      && existingCredential.loginIdCanonical === loginIdCanonical
+      && existingCredential.passwordAlgorithm === "pbkdf2-sha256"
+      && existingCredential.passwordIterations > 100_000
+      && existingCredential.pepperVersion === verifier.pepperVersion
+      && existingCredential.credentialVersion === 1
+      && existingCredential.mustChangePassword
+      && existingCredential.failedAttempts === 0
+      && existingCredential.lockedUntil === null
+      && originalPasswordChangedAt !== null
+      && originalPasswordChangedAt === existingCredential.createdAt
+      && existingCredential.createdAt === existingCredential.updatedAt;
+    if (!untouchedBootstrapCredential || !originalPasswordChangedAt) return;
+    const repairedAt = new Date().toISOString();
+    const [repairedCredential] = await db.update(authCredentials).set({
+      ...verifier,
+      credentialVersion: 2,
+      mustChangePassword: true,
+      failedAttempts: 0,
+      lockedUntil: null,
+      passwordChangedAt: repairedAt,
+      updatedAt: repairedAt,
+    }).where(and(
+      eq(authCredentials.userAccountId, "user-owner"),
+      eq(authCredentials.loginIdCanonical, existingCredential.loginIdCanonical),
+      eq(authCredentials.passwordAlgorithm, existingCredential.passwordAlgorithm),
+      eq(authCredentials.passwordHash, existingCredential.passwordHash),
+      eq(authCredentials.passwordSalt, existingCredential.passwordSalt),
+      eq(authCredentials.passwordIterations, existingCredential.passwordIterations),
+      gt(authCredentials.passwordIterations, 100_000),
+      eq(authCredentials.pepperVersion, existingCredential.pepperVersion),
+      eq(authCredentials.credentialVersion, 1),
+      eq(authCredentials.mustChangePassword, true),
+      eq(authCredentials.failedAttempts, 0),
+      isNull(authCredentials.lockedUntil),
+      eq(authCredentials.passwordChangedAt, originalPasswordChangedAt),
+      eq(authCredentials.createdAt, existingCredential.createdAt),
+      eq(authCredentials.updatedAt, existingCredential.updatedAt),
+      sql`EXISTS (
+        SELECT 1 FROM ${userAccounts}
+        WHERE ${userAccounts.id} = 'user-owner'
+          AND ${userAccounts.authUserId} = ''
+          AND ${userAccounts.email} = ${configuredEmail}
+          AND ${userAccounts.role} = 'admin'
+          AND ${userAccounts.status} = 'active'
+          AND ${userAccounts.lastLoginAt} IS NULL
+          AND ${userAccounts.createdBy} = 'ระบบเริ่มต้น'
+          AND ${userAccounts.createdAt} = ${userAccounts.updatedAt}
+      )`,
+    )).returning({ userAccountId: authCredentials.userAccountId });
+    // The database trigger revokes version-1 sessions and records the repair in
+    // the same transaction as this successful CAS update.
+    void repairedCredential;
+    return;
+  }
   const insertedCredentials = await db.insert(authCredentials).values({
     userAccountId: "user-owner",
     loginId: configuredLoginId,

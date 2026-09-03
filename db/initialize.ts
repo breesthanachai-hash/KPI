@@ -81,7 +81,7 @@ export function ensureDatabase() {
       password_hash TEXT NOT NULL DEFAULT '',
       password_salt TEXT NOT NULL DEFAULT '',
       password_algorithm TEXT NOT NULL DEFAULT 'pbkdf2-sha256',
-      password_iterations INTEGER NOT NULL DEFAULT 600000,
+      password_iterations INTEGER NOT NULL DEFAULT 100000,
       pepper_version INTEGER NOT NULL DEFAULT 1,
       credential_version INTEGER NOT NULL DEFAULT 1,
       must_change_password INTEGER NOT NULL DEFAULT 1,
@@ -142,6 +142,35 @@ export function ensureDatabase() {
         )
       BEGIN
         SELECT RAISE(ABORT, 'STALE_CREDENTIAL_VERSION');
+      END`),
+    d1.prepare(`CREATE TRIGGER IF NOT EXISTS auth_credentials_audit_bootstrap_iteration_repair
+      AFTER UPDATE OF password_hash, password_salt, password_iterations, credential_version ON auth_credentials
+      WHEN OLD.user_account_id = 'user-owner'
+        AND OLD.password_algorithm = 'pbkdf2-sha256'
+        AND OLD.password_iterations > 100000
+        AND OLD.credential_version = 1
+        AND OLD.must_change_password = 1
+        AND OLD.failed_attempts = 0
+        AND OLD.locked_until IS NULL
+        AND OLD.password_changed_at = OLD.created_at
+        AND OLD.created_at = OLD.updated_at
+        AND NEW.password_algorithm = 'pbkdf2-sha256'
+        AND NEW.password_iterations = 100000
+        AND NEW.credential_version = 2
+        AND NEW.must_change_password = 1
+      BEGIN
+        UPDATE auth_sessions
+          SET revoked_at = NEW.updated_at, revoke_reason = 'bootstrap-iteration-repair'
+          WHERE user_account_id = OLD.user_account_id AND revoked_at IS NULL;
+        INSERT OR IGNORE INTO auth_events (id, user_account_id, event_type, source_hash, detail, created_at)
+          VALUES (
+            'bootstrap-credential-repaired:user-owner:1',
+            OLD.user_account_id,
+            'bootstrap_credential_repaired',
+            '',
+            'iterations:' || OLD.password_iterations || '->100000',
+            NEW.updated_at
+          );
       END`),
     d1.prepare(`CREATE TABLE IF NOT EXISTS notification_reads (
       id TEXT PRIMARY KEY NOT NULL,
