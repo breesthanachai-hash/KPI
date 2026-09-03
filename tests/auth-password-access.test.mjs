@@ -679,8 +679,126 @@ test("migration 0017 upgrades the old trigger, accepts one failed-login drift, a
   collisionDb.close();
 });
 
-test("auth schema, forward trigger upgrade, migration journal and built Sites bundle stay in parity", async () => {
-  const [schema, initialize, migration, packagedMigration, snapshot, legacyMigration, packagedLegacyMigration, legacySnapshot, journal, packageJson] = await Promise.all([
+test("ensureDatabase shares one probe, skips bulk work on the v18 marker, and retries a failed fallback", async () => {
+  const initializeSource = await source("db/initialize.ts");
+  assert.match(initializeSource, /const LATEST_SCHEMA_MARKER = "people_pulse_schema_v18_ready"/);
+  assert.match(initializeSource, /SELECT 1 AS ready FROM sqlite_master WHERE type = 'table' AND name = \? LIMIT 1/);
+  assert.match(initializeSource, /if \(initialization\) return initialization/);
+  assert.match(initializeSource, /initialization = \(async \(\) => \{\s*if \(await latestSchemaIsReady\(d1\)\) return/);
+  assert.match(initializeSource, /\}\)\(\)\.catch\(\(error\) => \{\s*initialization = null;\s*throw error/);
+
+  const runnableSource = initializeSource
+    .replace('import { getD1 } from ".";', "const getD1 = () => globalThis.__PEOPLE_PULSE_TEST_D1;")
+    .replace("let initialization: Promise<unknown> | null = null;", "let initialization = null;")
+    .replaceAll("d1: ReturnType<typeof getD1>", "d1")
+    .replace(/table: "rewards" \| "point_ledger" \| "point_events" \| "organization_policy_publish_claims" \| "work_items",/, "table,")
+    .replace("column: string,", "column,")
+    .replace("definition: string,", "definition,")
+    .replace(".first<{ ready: number }>()", ".first()")
+    .replace("const columns = result.results as Array<{ name: string }>;", "const columns = result.results;")
+    .replace("] as const;", "];");
+  assert.doesNotMatch(runnableSource, /Promise<unknown>|ReturnType<|\.first<\{| as Array<|\] as const/);
+
+  async function loadInitializer(d1, label) {
+    globalThis.__PEOPLE_PULSE_TEST_D1 = d1;
+    const moduleSource = `${runnableSource}\n// isolated test module: ${label}`;
+    return import(`data:text/javascript;base64,${Buffer.from(moduleSource).toString("base64")}`);
+  }
+
+  function fakeD1({ first, batch = async () => [] }) {
+    const calls = { prepared: [], binds: [], first: 0, all: 0, run: 0, batches: [] };
+    const d1 = {
+      prepare(sql) {
+        calls.prepared.push(sql);
+        return {
+          sql,
+          bind(value) {
+            calls.binds.push(value);
+            return this;
+          },
+          first() {
+            calls.first += 1;
+            return first(calls.first);
+          },
+          async all() {
+            calls.all += 1;
+            return { results: [] };
+          },
+          async run() {
+            calls.run += 1;
+            return { success: true };
+          },
+        };
+      },
+      batch(statements) {
+        const sql = statements.map((statement) => statement.sql);
+        calls.batches.push(sql);
+        return batch(sql, calls.batches.length);
+      },
+    };
+    return { calls, d1 };
+  }
+
+  try {
+    let releaseReady;
+    const readyProbe = new Promise((resolve) => { releaseReady = resolve; });
+    const fast = fakeD1({ first: () => readyProbe });
+    const fastInitializer = await loadInitializer(fast.d1, "fast-path");
+    const fastFirst = fastInitializer.ensureDatabase();
+    const fastConcurrent = fastInitializer.ensureDatabase();
+    assert.strictEqual(fastConcurrent, fastFirst, "concurrent callers must share the once-per-isolate promise");
+    assert.equal(fast.calls.prepared.length, 1, "the ready fast path must prepare only its sentinel lookup");
+    assert.equal(fast.calls.first, 1);
+    assert.deepEqual(fast.calls.binds, ["people_pulse_schema_v18_ready"]);
+    assert.equal(fast.calls.batches.length, 0);
+    assert.equal(fast.calls.all, 0);
+    assert.equal(fast.calls.run, 0);
+    releaseReady({ ready: 1 });
+    await fastFirst;
+    assert.strictEqual(fastInitializer.ensureDatabase(), fastFirst, "a resolved isolate must keep reusing the same promise");
+    assert.equal(fast.calls.prepared.length, 1);
+    assert.doesNotMatch(fast.calls.prepared[0], /CREATE|PRAGMA|ALTER/i);
+
+    let failFirstBatch = true;
+    const fallback = fakeD1({
+      first: () => undefined,
+      batch: async () => {
+        if (failFirstBatch) {
+          failFirstBatch = false;
+          throw new Error("simulated DDL failure");
+        }
+        return [];
+      },
+    });
+    const fallbackInitializer = await loadInitializer(fallback.d1, "fallback-retry");
+    const failedFirst = fallbackInitializer.ensureDatabase();
+    const failedConcurrent = fallbackInitializer.ensureDatabase();
+    assert.strictEqual(failedConcurrent, failedFirst);
+    const failedResults = await Promise.allSettled([failedFirst, failedConcurrent]);
+    assert.deepEqual(failedResults.map(({ status }) => status), ["rejected", "rejected"]);
+    assert.match(failedResults[0].reason.message, /simulated DDL failure/);
+
+    const retry = fallbackInitializer.ensureDatabase();
+    assert.notStrictEqual(retry, failedFirst, "a rejected initialization must clear the cached promise");
+    await retry;
+    assert.equal(fallback.calls.first, 2, "retry must probe the marker again before rebuilding");
+    assert.equal(fallback.calls.batches.length, 3, "one failed bulk batch plus both successful fallback batches are expected");
+    assert.ok(fallback.calls.prepared.length > 100, "a missing marker must enter the complete compatibility initializer");
+    assert.ok(fallback.calls.all > 0, "the fallback must run compatibility PRAGMA checks");
+    assert.ok(fallback.calls.run > 0, "missing compatibility columns must run their ALTER statements");
+    const successfulSql = fallback.calls.batches.slice(1).flat();
+    assert.ok(successfulSql.some((sql) => sql.includes("DROP TRIGGER IF EXISTS auth_credentials_audit_bootstrap_iteration_repair")));
+    assert.ok(successfulSql.some((sql) => sql.includes("CREATE TRIGGER IF NOT EXISTS auth_credentials_audit_bootstrap_legacy_iteration_repair")));
+    assert.match(successfulSql.at(-2), /^PRAGMA optimize$/);
+    assert.match(successfulSql.at(-1), /CREATE TABLE IF NOT EXISTS people_pulse_schema_v18_ready/);
+    assert.strictEqual(fallbackInitializer.ensureDatabase(), retry);
+  } finally {
+    delete globalThis.__PEOPLE_PULSE_TEST_D1;
+  }
+});
+
+test("auth schema, forward trigger and sentinel migrations, journal and built Sites bundle stay in parity", async () => {
+  const [schema, initialize, migration, packagedMigration, snapshot, legacyMigration, packagedLegacyMigration, legacySnapshot, markerMigration, packagedMarkerMigration, markerSnapshot, journal, packageJson] = await Promise.all([
     source("db/schema.ts"),
     source("db/initialize.ts"),
     source("drizzle/0016_jittery_lily_hollister.sql"),
@@ -689,15 +807,21 @@ test("auth schema, forward trigger upgrade, migration journal and built Sites bu
     source("drizzle/0017_legacy_bootstrap_repair.sql"),
     source("dist/.openai/drizzle/0017_legacy_bootstrap_repair.sql"),
     source("drizzle/meta/0017_snapshot.json").then(JSON.parse),
+    source("drizzle/0018_schema_v18_ready.sql"),
+    source("dist/.openai/drizzle/0018_schema_v18_ready.sql"),
+    source("drizzle/meta/0018_snapshot.json").then(JSON.parse),
     source("drizzle/meta/_journal.json").then(JSON.parse),
     source("package.json").then(JSON.parse),
   ]);
 
   assert.equal(packagedMigration, migration, "Sites build must package auth migration 0016 verbatim");
   assert.equal(packagedLegacyMigration, legacyMigration, "Sites build must package forward repair migration 0017 verbatim");
-  assert.equal(journal.entries.at(-2)?.tag, "0016_jittery_lily_hollister");
-  assert.equal(journal.entries.at(-1)?.tag, "0017_legacy_bootstrap_repair");
+  assert.equal(packagedMarkerMigration, markerMigration, "Sites build must package schema marker migration 0018 verbatim");
+  assert.equal(journal.entries.at(-3)?.tag, "0016_jittery_lily_hollister");
+  assert.equal(journal.entries.at(-2)?.tag, "0017_legacy_bootstrap_repair");
+  assert.equal(journal.entries.at(-1)?.tag, "0018_schema_v18_ready");
   assert.equal(legacySnapshot.prevId, snapshot.id, "0017 snapshot must be the direct forward successor to 0016");
+  assert.equal(markerSnapshot.prevId, legacySnapshot.id, "0018 snapshot must be the direct forward successor to 0017");
   assert.equal(packageJson.scripts["auth:bootstrap"], "node scripts/generate-auth-bootstrap.mjs");
   for (const [exportName, tableName] of [
     ["authCredentials", "auth_credentials"],
@@ -720,6 +844,7 @@ test("auth schema, forward trigger upgrade, migration journal and built Sites bu
   assert.match(migration, /`password_iterations` integer DEFAULT 100000 NOT NULL/);
   assert.equal(snapshot.tables.auth_credentials.columns.password_iterations.default, 100000);
   assert.equal(legacySnapshot.tables.auth_credentials.columns.password_iterations.default, 100000);
+  assert.equal(markerSnapshot.tables.auth_credentials.columns.password_iterations.default, 100000);
 
   const migrationDrop = legacyMigration.indexOf("DROP TRIGGER IF EXISTS `auth_credentials_audit_bootstrap_iteration_repair`");
   const migrationCreate = legacyMigration.indexOf("CREATE TRIGGER `auth_credentials_audit_bootstrap_legacy_iteration_repair`");
@@ -728,6 +853,11 @@ test("auth schema, forward trigger upgrade, migration journal and built Sites bu
   const initCreate = initialize.indexOf("CREATE TRIGGER IF NOT EXISTS auth_credentials_audit_bootstrap_legacy_iteration_repair");
   assert.ok(initDrop >= 0 && initDrop < initCreate, "fresh initialization must install the same final trigger as the upgrade path");
   assert.doesNotMatch(legacyMigration, /UPDATE [`]?auth_credentials[`]?/, "0017 must not repair any credential without the guarded runtime bootstrap flow");
+  assert.match(markerMigration, /^CREATE TABLE `people_pulse_schema_v18_ready` \{?[\s\S]*?`schema_version` integer PRIMARY KEY NOT NULL CHECK \(`schema_version` = 18\)[\s\S]*?\);?\s*$/);
+  assert.doesNotMatch(markerMigration, /(?:DROP|ALTER|UPDATE|DELETE|INSERT)\s/i, "0018 must only add the readiness marker after 0017");
+  const freshMarker = initialize.indexOf("CREATE TABLE IF NOT EXISTS people_pulse_schema_v18_ready");
+  const finalOptimize = initialize.indexOf('d1.prepare("PRAGMA optimize")');
+  assert.ok(freshMarker > initCreate && freshMarker > finalOptimize, "fresh initialization must create the marker only after all tables and final triggers");
 });
 
 test("local auth secrets are ignored by Git and excluded from the Sites bundle", async () => {
@@ -756,6 +886,7 @@ test("README defines ID/password onboarding and keeps public access behind a tes
     "100,000 รอบ",
     "--repair-existing",
     "0017_legacy_bootstrap_repair.sql",
+    "0018_schema_v18_ready.sql",
     "legacy OAI",
     "login_succeeded",
     "generic-credential-failure",

@@ -172,6 +172,7 @@ Migration ล่าสุดที่เกี่ยวข้อง:
 - `0015_parallel_the_hood.sql` เพิ่มคลังเอกสารองค์กร ประวัติใบเตือนพร้อมเหตุการณ์ และเกียรติบัตร/รางวัลในแฟ้มพนักงาน
 - `0016_jittery_lily_hollister.sql` เพิ่มระบบเข้าใช้ด้วย ID + รหัสผ่าน, session/rate-limit/audit tables, ค่า PBKDF2 100,000 รอบ และ trigger ป้องกันการปิดหรือลบ Admin คนสุดท้ายกับการแก้ credential ชนกัน
 - `0017_legacy_bootstrap_repair.sql` เปลี่ยน trigger ซ่อม bootstrap ให้รองรับ `user-owner` ที่เคยผูก legacy OAI identity ก่อนเริ่มระบบรหัสผ่าน โดยยังปฏิเสธบัญชีที่มีหลักฐานใช้หรือแก้ credential แบบ first-party แล้ว
+- `0018_schema_v18_ready.sql` เพิ่ม schema readiness marker หลัง migration ก่อนหน้าครบ เพื่อให้ Worker isolate ใหม่ตรวจเพียง query เดียวและข้ามชุด DDL/PRAGMA ขนาดใหญ่ได้อย่างปลอดภัย; หากไม่พบ marker ระบบจะกลับไปตรวจและสร้าง schema แบบเต็ม
 - `db/initialize.ts` สร้างตาราง ดัชนี และ trigger ป้องกัน race condition ตอนเริ่มระบบ ส่วนฐานข้อมูลเดิมอัปเกรดตามลำดับใน `drizzle/`; trigger แบบ `BEGIN/END` ใน migration ถูกคั่นด้วย statement marker เพื่อให้ตัวรันของ Sites/D1 ประมวลผลทั้ง trigger เป็นคำสั่งเดียว
 
 ไฟล์ `lib/kpi-data.ts` เป็นแหล่งเทมเพลตตำแหน่ง KPI สมรรถนะ AI Mastery กติกา Points นโยบายเริ่มต้น และรางวัลเริ่มต้น ส่วน `drizzle/` และ `drizzle/meta/` เก็บ migration กับ snapshot ของสคีมา
@@ -306,7 +307,7 @@ Preflight จะหยุดทันทีเมื่อ Node ต่ำกว�
 
 1. ใช้ commit ที่ clean และผ่าน `npm run release:verify`
 2. ตรวจว่า archive ที่จะบันทึกเป็น Sites version มาจาก commit เดียวกัน และมี `dist/server/index.js`, `dist/client`, `dist/.openai/hosting.json` และ `dist/.openai/drizzle`
-3. คง access policy ของ Sites เป็น `custom/private` ระหว่างติดตั้ง migration `0016` และ `0017`, ตั้ง Auth secrets และ deploy เวอร์ชันใหม่ หากเคยใช้ bootstrap รุ่นทดลองให้รัน ops gate ด้านบนและยืนยันว่า `password_iterations > 100000` ไม่เหลือสักแถว ห้ามเปิด public ก่อนผ่านการทดสอบระบบเข้าใช้
+3. คง access policy ของ Sites เป็น `custom/private` ระหว่างติดตั้ง migration `0016`–`0018`, ตั้ง Auth secrets และ deploy เวอร์ชันใหม่ หากเคยใช้ bootstrap รุ่นทดลองให้รัน ops gate ด้านบนและยืนยันว่า `password_iterations > 100000` ไม่เหลือสักแถว ห้ามเปิด public ก่อนผ่านการทดสอบระบบเข้าใช้
 4. ทดสอบผ่าน custom domain ว่าไม่มีเซสชันได้ 401, รหัสชั่วคราวได้ 428 และบังคับเปลี่ยนรหัส, ครั้งที่ 6 ของการลองรหัสผิดได้ 429 พร้อม `Retry-After`, ออกจากระบบแล้วเซสชันเดิมใช้ไม่ได้ และบัญชีต่างบทบาทเข้าข้อมูลข้ามขอบเขตได้ 403
 5. สร้างบัญชี pilot ด้วยรหัสผู้ใช้ + รหัสผ่านชั่วคราว + บทบาท + โปรไฟล์พนักงาน และทดสอบ HR, หัวหน้า และพนักงานจริงอย่างน้อยบทบาทละหนึ่งบัญชี: เข้าระบบ → เปลี่ยนรหัส → มอบหมายงาน → ส่งหลักฐาน R2 → ตรวจงาน → ได้ Points หนึ่งครั้ง → แลกรางวัล
 6. ทดสอบเอกสารส่วนตัวข้ามบัญชีให้ได้ 403, ดาวน์โหลดแม่แบบ DOCX ทั้ง 5 ฉบับ และตรวจว่า `/favicon.ico` เปลี่ยนไปใช้ `/favicon.svg` โดยไม่เป็น 404

@@ -1,6 +1,16 @@
 import { getD1 } from ".";
 
 let initialization: Promise<unknown> | null = null;
+// Migration 0018 creates this object only after every preceding schema change.
+// Future schema migrations must use a new marker name and place it last too.
+const LATEST_SCHEMA_MARKER = "people_pulse_schema_v18_ready";
+
+async function latestSchemaIsReady(d1: ReturnType<typeof getD1>) {
+  const marker = await d1.prepare(
+    "SELECT 1 AS ready FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1",
+  ).bind(LATEST_SCHEMA_MARKER).first<{ ready: number }>();
+  return marker?.ready === 1;
+}
 
 async function ensureColumn(
   d1: ReturnType<typeof getD1>,
@@ -18,6 +28,7 @@ export function ensureDatabase() {
   if (initialization) return initialization;
   const d1 = getD1();
   initialization = (async () => {
+    if (await latestSchemaIsReady(d1)) return;
     await d1.batch([
     d1.prepare(`CREATE TABLE IF NOT EXISTS employees (
       id TEXT PRIMARY KEY NOT NULL,
@@ -856,6 +867,9 @@ export function ensureDatabase() {
           SELECT RAISE(ABORT, 'EMPLOYEE_RECOGNITION_STALE_REVISION');
         END`),
       d1.prepare("PRAGMA optimize"),
+      d1.prepare(`CREATE TABLE IF NOT EXISTS people_pulse_schema_v18_ready (
+        schema_version INTEGER PRIMARY KEY NOT NULL CHECK (schema_version = 18)
+      )`),
     ]);
   })().catch((error) => {
     initialization = null;
