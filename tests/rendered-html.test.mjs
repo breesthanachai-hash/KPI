@@ -1199,12 +1199,12 @@ test("separates work assigners from workers without changing real permissions", 
   assert.match(roleTable, /<span className="worker">คนทำงาน<\/span>/);
   assert.match(accessPage, /ไม่เห็นเงินเดือนหรือเอกสารส่วนตัว/);
   assert.match(accessPage, /ดูข้อมูลตนเอง รับ–ส่งงาน และสร้างงานประสาน 0 Points โดยไม่มีสิทธิ์ตรวจ/);
-  assert.match(accessPage, /accessAccountGroups\.map/);
-  assert.match(accessPage, /className=\{`access-user-kind \$\{group\.id\}`\}/);
-  assert.doesNotMatch(accessPage, /\{userAccounts\.map/);
+  assert.match(accessPage, /className="access-user-table"/);
+  assert.match(accessPage, /\{userAccounts\.map/);
+  assert.match(accessPage, /Password Hash, Salt, Session Token/);
   assert.match(accessPage, /aria-label=\{`แก้ไขบัญชีของ \$\{account\.displayName\}`\}/);
   assert.match(accessPage, /disabled=\{isSaving \|\| account\.id === currentUser\?\.id\}/);
-  assert.match(accessPage, /className="access-login-state"/);
+  assert.match(accessPage, /const credentialState = accountCredentialState\(account\)/);
 
   // Existing server boundaries remain authoritative: only admins receive the
   // account directory, managers stay department-scoped and employees self-only.

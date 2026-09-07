@@ -24,6 +24,7 @@ export const userAccounts = sqliteTable("user_accounts", {
   authUserId: text("auth_user_id").notNull().default(""),
   email: text("email").notNull(),
   displayName: text("display_name").notNull(),
+  nickname: text("nickname").notNull().default(""),
   role: text("role", { enum: ["admin", "manager", "employee"] }).notNull().default("employee"),
   employeeId: text("employee_id").references(() => employees.id, { onDelete: "set null" }),
   departmentId: text("department_id").notNull().default(""),
@@ -93,13 +94,52 @@ export const authRateLimits = sqliteTable("auth_rate_limits", {
 export const authEvents = sqliteTable("auth_events", {
   id: text("id").primaryKey(),
   userAccountId: text("user_account_id").references(() => userAccounts.id, { onDelete: "set null" }),
-  eventType: text("event_type", { enum: ["login_succeeded", "login_failed", "login_rate_limited", "logout", "sessions_revoked", "password_changed", "credential_created", "credential_reset", "credential_updated", "account_deleted", "bootstrap_credential_repaired"] }).notNull(),
+  eventType: text("event_type", { enum: ["login_succeeded", "login_failed", "login_rate_limited", "logout", "sessions_revoked", "password_changed", "credential_created", "credential_reset", "credential_updated", "account_deleted", "bootstrap_credential_repaired", "registration_submitted", "registration_approved", "registration_rejected"] }).notNull(),
   sourceHash: text("source_hash").notNull().default(""),
   detail: text("detail").notNull().default(""),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
   index("auth_events_user_created_idx").on(table.userAccountId, table.createdAt),
   index("auth_events_type_created_idx").on(table.eventType, table.createdAt),
+]);
+
+export const employeeRegistrationRequests = sqliteTable("employee_registration_requests", {
+  id: text("id").primaryKey(),
+  email: text("email").notNull(),
+  emailCanonical: text("email_canonical").notNull(),
+  loginId: text("login_id").notNull(),
+  loginIdCanonical: text("login_id_canonical").notNull(),
+  passwordHash: text("password_hash").notNull(),
+  passwordSalt: text("password_salt").notNull(),
+  passwordAlgorithm: text("password_algorithm").notNull().default("pbkdf2-sha256-chain-v1"),
+  passwordIterations: integer("password_iterations").notNull().default(600000),
+  pepperVersion: integer("pepper_version").notNull().default(1),
+  firstName: text("first_name").notNull(),
+  lastName: text("last_name").notNull(),
+  nickname: text("nickname").notNull(),
+  status: text("status", { enum: ["pending", "approved", "rejected"] }).notNull().default("pending"),
+  sourceHash: text("source_hash").notNull().default(""),
+  submittedAt: text("submitted_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  reviewedByUserId: text("reviewed_by_user_id").references(() => userAccounts.id, { onDelete: "set null" }),
+  reviewedByName: text("reviewed_by_name").notNull().default(""),
+  reviewedAt: text("reviewed_at"),
+  rejectionReason: text("rejection_reason").notNull().default(""),
+  approvedUserAccountId: text("approved_user_account_id").references(() => userAccounts.id, { onDelete: "set null" }),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("employee_registration_pending_login_unique").on(table.loginIdCanonical).where(sql`${table.status} = 'pending'`),
+  uniqueIndex("employee_registration_pending_email_unique").on(table.emailCanonical).where(sql`${table.status} = 'pending'`),
+  index("employee_registration_status_submitted_idx").on(table.status, table.submittedAt),
+  index("employee_registration_source_submitted_idx").on(table.sourceHash, table.submittedAt),
+]);
+
+export const employeeRegistrationReviewClaims = sqliteTable("employee_registration_review_claims", {
+  requestId: text("request_id").primaryKey().references(() => employeeRegistrationRequests.id, { onDelete: "restrict" }),
+  decision: text("decision", { enum: ["approved", "rejected"] }).notNull(),
+  reviewerUserId: text("reviewer_user_id").notNull().references(() => userAccounts.id, { onDelete: "restrict" }),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  index("employee_registration_review_claims_reviewer_idx").on(table.reviewerUserId, table.createdAt),
 ]);
 
 export const notificationReads = sqliteTable("notification_reads", {

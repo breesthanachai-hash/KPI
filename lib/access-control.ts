@@ -112,6 +112,7 @@ async function initializeBootstrapAccounts() {
       authUserId: "",
       email: configuredEmail,
       displayName: configuredName,
+      nickname: "",
       role: "admin",
       employeeId: null,
       departmentId: "",

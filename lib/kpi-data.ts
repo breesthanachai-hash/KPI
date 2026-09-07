@@ -122,6 +122,7 @@ export type UserAccountRecord = {
   authUserId: string;
   email: string;
   displayName: string;
+  nickname: string;
   role: "admin" | "manager" | "employee";
   employeeId: string | null;
   departmentId: string;

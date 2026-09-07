@@ -19,7 +19,7 @@ test("employee self-assessment is stored separately from official evaluation and
     assert.match(code, /employee_self_assessments/);
     assert.match(code, /employee_self_assessments_employee_period_unique/);
   }
-  assert.match(initialize, /LATEST_SCHEMA_MARKER = "people_pulse_schema_v20_ready"/);
+  assert.match(initialize, /LATEST_SCHEMA_MARKER = "people_pulse_schema_v21_ready"/);
   assert.match(migration, /CREATE TABLE `people_pulse_schema_v20_ready`/);
   assert.match(route, /employeePortalActions = new Set\(\[[^\]]*"saveSelfAssessment"/);
   assert.match(route, /currentUser\.role !== "employee" \|\| !currentUser\.employeeId \|\| currentUser\.employeeId !== employeeId/);

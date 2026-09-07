@@ -1,10 +1,11 @@
 import { and, eq, notExists, sql } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { ensureDatabase } from "../../../db/initialize";
-import { applicationDocuments, attendanceRecords, authCredentials, authEvents, employeeProfiles, employeeRecognitions, employeeSelfAssessments, employees, employeeWarningEvents, employeeWarnings, employmentContracts, evaluations, hrProfiles, notificationReads, organizationDocuments, organizationPolicies, organizationPolicyPublishClaims, pointCapClaims, pointEvents, pointLedger, pointMutationClaims, policyAcknowledgements, projects, rewardRedemptionClaims, rewardRedemptions, rewards, skillAchievements, talentActions, userAccounts, workItems, workSubmissions } from "../../../db/schema";
+import { applicationDocuments, attendanceRecords, authCredentials, authEvents, employeeProfiles, employeeRecognitions, employeeRegistrationRequests, employeeSelfAssessments, employees, employeeWarningEvents, employeeWarnings, employmentContracts, evaluations, hrProfiles, notificationReads, organizationDocuments, organizationPolicies, organizationPolicyPublishClaims, pointCapClaims, pointEvents, pointLedger, pointMutationClaims, policyAcknowledgements, projects, rewardRedemptionClaims, rewardRedemptions, rewards, skillAchievements, talentActions, userAccounts, workItems, workSubmissions } from "../../../db/schema";
 import { authenticatedRequestGate, canAccessEmployee, ensureBootstrapAccounts, recordAuthEvent, revokeAllSessionsForAccount, type CurrentUser } from "../../../lib/access-control";
 import { AuthInputError, credentialMutationValues, getAccountCredential, publicUserAccountDto, publicUserAccountDtos, requestSourceHash } from "../../../lib/auth-service";
 import { internalApiError } from "../../../lib/api-errors";
+import { approveEmployeeRegistration, employeeRegistrationRequestDtos, RegistrationInputError, rejectEmployeeRegistration } from "../../../lib/registration-service";
 import {
   clampScore,
   clampSkillLevel,
@@ -45,11 +46,15 @@ export const dynamic = "force-dynamic";
 function apiError(error: unknown) {
   const message = error instanceof Error ? error.message : "เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ";
   if (error instanceof AuthInputError) return Response.json({ error: error.message }, { status: error.status });
+  if (error instanceof RegistrationInputError) return Response.json({ error: error.message }, { status: error.status });
   if (message.includes("no such table")) {
     return Response.json({ error: "ฐานข้อมูลยังไม่พร้อม กรุณาเผยแพร่เวอร์ชันที่มี migration ล่าสุด" }, { status: 503 });
   }
   if (message.includes("STALE_CREDENTIAL_VERSION") || message.includes("auth_events.id")) {
     return Response.json({ error: "ข้อมูลบัญชีถูกแก้ไขจากอีกหน้าจอ กรุณาโหลดข้อมูลล่าสุด" }, { status: 409 });
+  }
+  if (message.includes("employee_registration_review_claims.request_id") || message.includes("REGISTRATION_ALREADY_REVIEWED") || message.includes("REGISTRATION_REVIEW_REQUIRED")) {
+    return Response.json({ error: "คำขอนี้ได้รับการตรวจแล้ว กรุณาโหลดข้อมูลล่าสุด" }, { status: 409 });
   }
   if (message.includes("auth_credentials.login_id_canonical")) {
     return Response.json({ error: "รหัสผู้ใช้นี้มีผู้ใช้งานแล้ว กรุณาเลือกรหัสอื่น" }, { status: 409 });
@@ -438,7 +443,7 @@ export async function GET(request: Request) {
     const requestedPreviewEmployeeId = url.searchParams.get("previewEmployeeId")?.trim() ?? "";
     const isEmployeePreviewRequest = authenticatedUser.role === "admin" && Boolean(requestedPreviewEmployeeId);
     const db = getDb();
-    const [employeeRows, evaluationRows, selfAssessmentRows, hrProfileRows, attendanceRows, skillAchievementRows, talentActionRows, projectRows, workItemRows, workSubmissionRows, rewardRows, pointRows, pointEventRows, redemptionRows, employeeProfileRows, applicationDocumentRows, employmentContractRows, organizationPolicyRows, policyAcknowledgementRows, organizationDocumentRows, employeeWarningRows, employeeWarningEventRows, employeeRecognitionRows, userAccountRows, notificationReadRows] = await Promise.all([
+    const [employeeRows, evaluationRows, selfAssessmentRows, hrProfileRows, attendanceRows, skillAchievementRows, talentActionRows, projectRows, workItemRows, workSubmissionRows, rewardRows, pointRows, pointEventRows, redemptionRows, employeeProfileRows, applicationDocumentRows, employmentContractRows, organizationPolicyRows, policyAcknowledgementRows, organizationDocumentRows, employeeWarningRows, employeeWarningEventRows, employeeRecognitionRows, userAccountRows, registrationRequestRows, notificationReadRows] = await Promise.all([
       db.select().from(employees),
       db.select().from(evaluations).where(eq(evaluations.period, period)),
       db.select().from(employeeSelfAssessments).where(eq(employeeSelfAssessments.period, period)),
@@ -463,6 +468,7 @@ export async function GET(request: Request) {
       authenticatedUser.role === "admin" && !isEmployeePreviewRequest ? db.select().from(employeeWarningEvents) : Promise.resolve([]),
       authenticatedUser.role === "admin" && !isEmployeePreviewRequest ? db.select().from(employeeRecognitions) : Promise.resolve([]),
       authenticatedUser.role === "admin" && !isEmployeePreviewRequest ? db.select().from(userAccounts) : Promise.resolve([]),
+      authenticatedUser.role === "admin" && !isEmployeePreviewRequest ? db.select().from(employeeRegistrationRequests) : Promise.resolve([]),
       isEmployeePreviewRequest ? Promise.resolve([]) : db.select().from(notificationReads).where(eq(notificationReads.userKey, authenticatedUser.id)),
     ]);
     let currentUser = authenticatedUser;
@@ -477,6 +483,7 @@ export async function GET(request: Request) {
         authUserId: "",
         email: previewEmployee.email,
         displayName: previewEmployee.name,
+        nickname: "",
         role: "employee",
         employeeId: previewEmployee.id,
         departmentId: getRole(previewEmployee.roleId).departmentId,
@@ -650,6 +657,7 @@ export async function GET(request: Request) {
       employeeWarningEvents: currentUser.role === "admin" ? employeeWarningEventRows : [],
       employeeRecognitions: currentUser.role === "admin" ? employeeRecognitionRows.map(privateFileDto) : [],
       userAccounts: currentUser.role === "admin" ? await publicUserAccountDtos(userAccountRows) : [],
+      employeeRegistrationRequests: currentUser.role === "admin" ? employeeRegistrationRequestDtos(registrationRequestRows) : [],
       notificationReads: employeePreview ? [] : notificationReadRows,
       organizationPolicies: visibleOrganizationPoliciesForDisplay,
       policyAcknowledgements: visiblePolicyAcknowledgements,
@@ -847,6 +855,7 @@ type UserAccountPayload = {
   loginId?: string;
   temporaryPassword?: string;
   displayName?: string;
+  nickname?: string;
   role?: "admin" | "manager" | "employee";
   employeeId?: string;
   departmentId?: string;
@@ -856,6 +865,13 @@ type UserAccountPayload = {
 type DeleteUserAccountPayload = {
   action: "deleteUserAccount";
   accountId?: string;
+};
+
+type ReviewEmployeeRegistrationPayload = {
+  action: "approveEmployeeRegistration" | "rejectEmployeeRegistration";
+  requestId?: string;
+  employeeId?: string;
+  rejectionReason?: string;
 };
 
 type MarkNotificationsReadPayload = {
@@ -899,10 +915,10 @@ export async function POST(request: Request) {
     const currentUser = authentication.currentUser;
     await ensureSeedData();
     const db = getDb();
-    const payload = await request.json() as EmployeePayload | EvaluationPayload | SelfAssessmentPayload | HrPlanPayload | CompleteTalentActionPayload | AttendancePayload | AttendanceApprovalPayload | SkillAchievementPayload | ProjectPayload | WorkItemPayload | ReviewWorkSubmissionPayload | RecordPointEventPayload | RunMonthlyPointCyclePayload | RedeemRewardPayload | UpdateRewardRedemptionPayload | EmployeeProfilePayload | DocumentStatusPayload | ContractPayload | SignContractPayload | SendContractPayload | UserAccountPayload | DeleteUserAccountPayload | MarkNotificationsReadPayload | SaveOrganizationPolicyPayload | PublishOrganizationPolicyPayload | AcknowledgeOrganizationPolicyPayload;
+    const payload = await request.json() as EmployeePayload | EvaluationPayload | SelfAssessmentPayload | HrPlanPayload | CompleteTalentActionPayload | AttendancePayload | AttendanceApprovalPayload | SkillAchievementPayload | ProjectPayload | WorkItemPayload | ReviewWorkSubmissionPayload | RecordPointEventPayload | RunMonthlyPointCyclePayload | RedeemRewardPayload | UpdateRewardRedemptionPayload | EmployeeProfilePayload | DocumentStatusPayload | ContractPayload | SignContractPayload | SendContractPayload | UserAccountPayload | DeleteUserAccountPayload | ReviewEmployeeRegistrationPayload | MarkNotificationsReadPayload | SaveOrganizationPolicyPayload | PublishOrganizationPolicyPayload | AcknowledgeOrganizationPolicyPayload;
     const pointPolicyRows = await db.select().from(organizationPolicies);
     const { policy: activePointPolicy, rules: activePointRules } = pointPolicyFromRows(pointPolicyRows);
-    const adminOnlyActions = new Set(["createEmployee", "saveHrPlan", "verifySkillAchievement", "runMonthlyPointCycle", "saveEmployeeProfile", "updateDocumentStatus", "createContract", "sendContract", "saveUserAccount", "deleteUserAccount", "saveOrganizationPolicy", "publishOrganizationPolicy", "updateRewardRedemption"]);
+    const adminOnlyActions = new Set(["createEmployee", "saveHrPlan", "verifySkillAchievement", "runMonthlyPointCycle", "saveEmployeeProfile", "updateDocumentStatus", "createContract", "sendContract", "saveUserAccount", "deleteUserAccount", "approveEmployeeRegistration", "rejectEmployeeRegistration", "saveOrganizationPolicy", "publishOrganizationPolicy", "updateRewardRedemption"]);
     const teamActions = new Set(["saveEvaluation", "completeTalentAction", "approveAttendance", "saveProject", "reviewWorkSubmission", "recordPointEvent"]);
     const employeePortalActions = new Set(["markNotificationsRead", "saveWorkItem", "saveSelfAssessment", "redeemReward", "acknowledgeOrganizationPolicy", "signContract"]);
     if (currentUser.role === "employee" && !employeePortalActions.has(payload.action)) return Response.json({ error: "สิทธิ์พนักงานใช้ได้เฉพาะงานของฉัน การแจ้งเตือน การแลกรางวัล การรับทราบกฎองค์กร และการลงนามสัญญาของตนเอง" }, { status: 403 });
@@ -1151,6 +1167,16 @@ export async function POST(request: Request) {
       return Response.json({ deletedUserAccountId: accountId });
     }
 
+    if (payload.action === "approveEmployeeRegistration") {
+      const result = await approveEmployeeRegistration(payload.requestId, payload.employeeId, currentUser);
+      return Response.json(result);
+    }
+
+    if (payload.action === "rejectEmployeeRegistration") {
+      const registrationRequest = await rejectEmployeeRegistration(payload.requestId, payload.rejectionReason, currentUser);
+      return Response.json({ registrationRequest });
+    }
+
     if (payload.action === "saveUserAccount") {
       const role = payload.role === "admin" || payload.role === "manager" || payload.role === "employee" ? payload.role : payload.role === undefined ? "employee" as const : null;
       const status = payload.status === "active" || payload.status === "inactive" ? payload.status : payload.status === undefined ? "active" as const : null;
@@ -1179,6 +1205,7 @@ export async function POST(request: Request) {
       const requestedDisplayName = typeof payload.displayName === "string" ? payload.displayName.trim().slice(0, 120) : "";
       const displayName = requestedDisplayName || linkedEmployee?.name || existing?.displayName || "";
       if (!displayName) return Response.json({ error: "กรุณาระบุชื่อที่แสดง" }, { status: 400 });
+      const nickname = typeof payload.nickname === "string" ? payload.nickname.trim().replace(/\s+/g, " ").slice(0, 40) : existing?.nickname ?? "";
       const now = new Date().toISOString();
       const linkedDepartmentId = linkedEmployee ? getRole(linkedEmployee.roleId).departmentId : "";
       const requestedDepartmentId = typeof payload.departmentId === "string" ? payload.departmentId.trim().slice(0, 80) : "";
@@ -1192,6 +1219,7 @@ export async function POST(request: Request) {
         authUserId: "",
         email,
         displayName,
+        nickname,
         role,
         employeeId,
         departmentId,
@@ -1201,7 +1229,7 @@ export async function POST(request: Request) {
         createdAt: existing?.createdAt ?? now,
         updatedAt: now,
       };
-      const accountMutation = db.insert(userAccounts).values(userAccount).onConflictDoUpdate({ target: userAccounts.id, set: { authUserId: "", email, displayName, role, employeeId, departmentId, status, updatedAt: now } });
+      const accountMutation = db.insert(userAccounts).values(userAccount).onConflictDoUpdate({ target: userAccounts.id, set: { authUserId: "", email, displayName, nickname, role, employeeId, departmentId, status, updatedAt: now } });
       if (!existingCredential) {
         if (credentialChange.mode !== "create") return Response.json({ error: "บัญชีใหม่ต้องมีรหัสผ่านชั่วคราว" }, { status: 400 });
         await db.batch([

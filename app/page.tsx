@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import type { Office3DPerson } from "./office-3d";
 import AiAssistant, { type PeopleAiActionId, type PeopleAiContext } from "./ai-assistant";
 import AiRobotMascot from "./ai-robot-mascot";
@@ -71,12 +71,31 @@ type UserAccountFormState = {
   accountId: string;
   loginId: string;
   displayName: string;
+  nickname: string;
   role: UserAccountRecord["role"];
   employeeId: string;
   departmentId: string;
   status: UserAccountRecord["status"];
   temporaryPassword: string;
 };
+
+type EmployeeRegistrationRequest = {
+  id: string;
+  email: string;
+  loginId: string;
+  firstName: string;
+  lastName: string;
+  nickname: string;
+  status: "pending" | "approved" | "rejected";
+  submittedAt: string;
+  reviewedByName: string;
+  reviewedAt: string | null;
+  rejectionReason: string;
+  approvedUserAccountId: string | null;
+  updatedAt: string;
+};
+
+type AccessPanel = "users" | "requests" | "rights";
 
 type CredentialResult = {
   displayName: string;
@@ -850,6 +869,7 @@ function blankUserAccountForm(): UserAccountFormState {
     accountId: "",
     loginId: "",
     displayName: "",
+    nickname: "",
     role: "employee",
     employeeId: "",
     departmentId: "",
@@ -898,6 +918,7 @@ export default function Home() {
   const [employeeWarnings, setEmployeeWarnings] = useState<EmployeeWarningRecord[]>([]);
   const [employeeRecognitions, setEmployeeRecognitions] = useState<EmployeeRecognitionRecord[]>([]);
   const [userAccounts, setUserAccounts] = useState<PublicUserAccount[]>([]);
+  const [employeeRegistrationRequests, setEmployeeRegistrationRequests] = useState<EmployeeRegistrationRequest[]>([]);
   const [notificationReads, setNotificationReads] = useState<NotificationReadRecord[]>([]);
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [employeePreview, setEmployeePreview] = useState<EmployeePreview | null>(null);
@@ -994,6 +1015,9 @@ export default function Home() {
   const [userAccountForm, setUserAccountForm] = useState<UserAccountFormState>(() => blankUserAccountForm());
   const [credentialResult, setCredentialResult] = useState<CredentialResult | null>(null);
   const [showTemporaryPassword, setShowTemporaryPassword] = useState(false);
+  const [accessPanel, setAccessPanel] = useState<AccessPanel>("users");
+  const [registrationEmployeeSelections, setRegistrationEmployeeSelections] = useState<Record<string, string>>({});
+  const [registrationRejectionReasons, setRegistrationRejectionReasons] = useState<Record<string, string>>({});
   const canManageEmployeeFiles = currentUser?.role === "admin" && permissions.canManagePeople && !isEmployeePreview;
 
   useEffect(() => {
@@ -1003,7 +1027,7 @@ export default function Home() {
     if (previewEmployeeId) dashboardParams.set("previewEmployeeId", previewEmployeeId);
     fetch(`/api/dashboard?${dashboardParams.toString()}`, { signal: controller.signal })
       .then(async (response) => {
-        const body = await response.json().catch(() => ({})) as { currentUser?: CurrentUser; employeePreview?: EmployeePreview | null; permissions?: AppPermissions; teamOverview?: EmployeeTeamOverview; launchReadiness?: LaunchReadiness; userAccounts?: PublicUserAccount[]; notificationReads?: NotificationReadRecord[]; employees?: EmployeeRecord[]; evaluations?: EvaluationRecord[]; selfAssessments?: EmployeeSelfAssessmentRecord[]; hrProfiles?: HrProfileRecord[]; attendanceRecords?: AttendanceRecord[]; skillAchievements?: SkillAchievementRecord[]; talentActions?: TalentActionRecord[]; projects?: ProjectRecord[]; workItems?: WorkItemRecord[]; workSubmissions?: WorkSubmissionRecord[]; rewards?: RewardRecord[]; pointLedger?: PointLedgerRecord[]; pointEvents?: PointEventRecord[]; pointPolicyRules?: PointPolicyRules; rewardRedemptions?: RewardRedemptionRecord[]; organizationPolicies?: OrganizationPolicyRecord[]; policyAcknowledgements?: PolicyAcknowledgementRecord[]; employeeProfiles?: EmployeeProfileRecord[]; applicationDocuments?: ApplicationDocumentRecord[]; employmentContracts?: EmploymentContractRecord[]; organizationDocuments?: OrganizationDocumentRecord[]; employeeWarnings?: EmployeeWarningRecord[]; employeeRecognitions?: EmployeeRecognitionRecord[]; authRequired?: boolean; passwordChangeRequired?: boolean; accessDenied?: boolean; displayName?: string; loginId?: string; error?: string };
+        const body = await response.json().catch(() => ({})) as { currentUser?: CurrentUser; employeePreview?: EmployeePreview | null; permissions?: AppPermissions; teamOverview?: EmployeeTeamOverview; launchReadiness?: LaunchReadiness; userAccounts?: PublicUserAccount[]; employeeRegistrationRequests?: EmployeeRegistrationRequest[]; notificationReads?: NotificationReadRecord[]; employees?: EmployeeRecord[]; evaluations?: EvaluationRecord[]; selfAssessments?: EmployeeSelfAssessmentRecord[]; hrProfiles?: HrProfileRecord[]; attendanceRecords?: AttendanceRecord[]; skillAchievements?: SkillAchievementRecord[]; talentActions?: TalentActionRecord[]; projects?: ProjectRecord[]; workItems?: WorkItemRecord[]; workSubmissions?: WorkSubmissionRecord[]; rewards?: RewardRecord[]; pointLedger?: PointLedgerRecord[]; pointEvents?: PointEventRecord[]; pointPolicyRules?: PointPolicyRules; rewardRedemptions?: RewardRedemptionRecord[]; organizationPolicies?: OrganizationPolicyRecord[]; policyAcknowledgements?: PolicyAcknowledgementRecord[]; employeeProfiles?: EmployeeProfileRecord[]; applicationDocuments?: ApplicationDocumentRecord[]; employmentContracts?: EmploymentContractRecord[]; organizationDocuments?: OrganizationDocumentRecord[]; employeeWarnings?: EmployeeWarningRecord[]; employeeRecognitions?: EmployeeRecognitionRecord[]; authRequired?: boolean; passwordChangeRequired?: boolean; accessDenied?: boolean; displayName?: string; loginId?: string; error?: string };
         if (response.status === 401 || body.authRequired) {
           setAuthGate({ mode: "login" });
           setAccessDenied(null);
@@ -1057,6 +1081,7 @@ export default function Home() {
         setTeamOverview(body.teamOverview ?? { employees: [], evaluations: [], workItems: [] });
         setLaunchReadiness(body.launchReadiness ?? null);
         setUserAccounts(body.userAccounts ?? []);
+        setEmployeeRegistrationRequests(body.employeeRegistrationRequests ?? []);
         setNotificationReads(body.notificationReads ?? []);
         setAccessDenied(null);
         setEmployees(body.employees ?? []);
@@ -2745,14 +2770,14 @@ export default function Home() {
   const editUserAccount = (account: PublicUserAccount) => {
     setCredentialResult(null);
     setShowTemporaryPassword(false);
-    setUserAccountForm({ accountId: account.id, loginId: account.loginId ?? "", displayName: account.displayName, role: account.role, employeeId: account.employeeId ?? "", departmentId: account.departmentId, status: account.status, temporaryPassword: "" });
+    setUserAccountForm({ accountId: account.id, loginId: account.loginId ?? "", displayName: account.displayName, nickname: account.nickname ?? "", role: account.role, employeeId: account.employeeId ?? "", departmentId: account.departmentId, status: account.status, temporaryPassword: "" });
     document.getElementById("user-access-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
   const prepareUserAccountPasswordReset = (account: PublicUserAccount) => {
     setCredentialResult(null);
     setShowTemporaryPassword(true);
-    setUserAccountForm({ accountId: account.id, loginId: account.loginId ?? "", displayName: account.displayName, role: account.role, employeeId: account.employeeId ?? "", departmentId: account.departmentId, status: account.status, temporaryPassword: generateTemporaryPassword() });
+    setUserAccountForm({ accountId: account.id, loginId: account.loginId ?? "", displayName: account.displayName, nickname: account.nickname ?? "", role: account.role, employeeId: account.employeeId ?? "", departmentId: account.departmentId, status: account.status, temporaryPassword: generateTemporaryPassword() });
     document.getElementById("user-access-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
@@ -2794,7 +2819,7 @@ export default function Home() {
   const toggleUserAccount = async (account: PublicUserAccount) => {
     setIsSaving(true);
     try {
-      const response = await fetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "saveUserAccount", accountId: account.id, loginId: account.loginId ?? "", displayName: account.displayName, role: account.role, employeeId: account.employeeId ?? "", departmentId: account.departmentId, status: account.status === "active" ? "inactive" : "active", temporaryPassword: "" }) });
+      const response = await fetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "saveUserAccount", accountId: account.id, loginId: account.loginId ?? "", displayName: account.displayName, nickname: account.nickname ?? "", role: account.role, employeeId: account.employeeId ?? "", departmentId: account.departmentId, status: account.status === "active" ? "inactive" : "active", temporaryPassword: "" }) });
       const body = await response.json() as { userAccount?: PublicUserAccount; error?: string };
       if (!response.ok || !body.userAccount) throw new Error(body.error ?? "อัปเดตบัญชีไม่สำเร็จ");
       setUserAccounts((items) => items.map((item) => item.id === account.id ? body.userAccount as PublicUserAccount : item));
@@ -2826,6 +2851,60 @@ export default function Home() {
       showToast(`ลบบัญชี ${account.displayName} แล้ว`);
     } catch (error) {
       showErrorToast(error, "ลบบัญชีผู้ใช้ไม่สำเร็จ");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const approveRegistrationRequest = async (registrationRequest: EmployeeRegistrationRequest) => {
+    const matchingEmployeeId = employees.find((employee) => employee.status === "active" && employee.email.toLowerCase() === registrationRequest.email.toLowerCase() && !userAccounts.some((account) => account.employeeId === employee.id))?.id ?? "";
+    const employeeId = registrationEmployeeSelections[registrationRequest.id] || matchingEmployeeId;
+    if (!employeeId) {
+      showToast("กรุณาเลือกโปรไฟล์พนักงานที่จะผูกก่อนอนุมัติ", "error");
+      return;
+    }
+    const employee = employeesById.get(employeeId);
+    if (!window.confirm(`อนุมัติ ${registrationRequest.firstName} ${registrationRequest.lastName} และผูกกับโปรไฟล์ “${employee?.name ?? employeeId}” ใช่หรือไม่?`)) return;
+    setIsSaving(true);
+    try {
+      const response = await fetch("/api/dashboard", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "approveEmployeeRegistration", requestId: registrationRequest.id, employeeId }),
+      });
+      const body = await response.json() as { registrationRequest?: EmployeeRegistrationRequest; userAccount?: PublicUserAccount; error?: string };
+      if (!response.ok || !body.registrationRequest || !body.userAccount) throw new Error(body.error || "อนุมัติคำขอไม่สำเร็จ");
+      setEmployeeRegistrationRequests((items) => items.map((item) => item.id === registrationRequest.id ? body.registrationRequest as EmployeeRegistrationRequest : item));
+      setUserAccounts((items) => [...items.filter((item) => item.id !== body.userAccount?.id), body.userAccount as PublicUserAccount].sort((a, b) => a.displayName.localeCompare(b.displayName, "th")));
+      showToast(`อนุมัติบัญชี ${body.userAccount.displayName} แล้ว สามารถเข้าสู่ระบบด้วยรหัสที่สมัครไว้ได้`);
+    } catch (error) {
+      showErrorToast(error, "อนุมัติคำขอไม่สำเร็จ");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const rejectRegistrationRequest = async (registrationRequest: EmployeeRegistrationRequest) => {
+    const rejectionReason = (registrationRejectionReasons[registrationRequest.id] ?? "").trim();
+    if (rejectionReason.length < 3) {
+      showToast("กรุณาระบุเหตุผลที่ปฏิเสธอย่างน้อย 3 ตัวอักษร", "error");
+      return;
+    }
+    if (!window.confirm(`ปฏิเสธคำขอของ ${registrationRequest.firstName} ${registrationRequest.lastName} ใช่หรือไม่?`)) return;
+    setIsSaving(true);
+    try {
+      const response = await fetch("/api/dashboard", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "rejectEmployeeRegistration", requestId: registrationRequest.id, rejectionReason }),
+      });
+      const body = await response.json() as { registrationRequest?: EmployeeRegistrationRequest; error?: string };
+      if (!response.ok || !body.registrationRequest) throw new Error(body.error || "ปฏิเสธคำขอไม่สำเร็จ");
+      setEmployeeRegistrationRequests((items) => items.map((item) => item.id === registrationRequest.id ? body.registrationRequest as EmployeeRegistrationRequest : item));
+      setRegistrationRejectionReasons((items) => ({ ...items, [registrationRequest.id]: "" }));
+      showToast("บันทึกการปฏิเสธคำขอแล้ว");
+    } catch (error) {
+      showErrorToast(error, "ปฏิเสธคำขอไม่สำเร็จ");
     } finally {
       setIsSaving(false);
     }
@@ -2911,6 +2990,39 @@ export default function Home() {
     showToast(`ส่งออกแฟ้มผลงาน ${visiblePortfolioEntries.length} รายการแล้ว`);
   };
 
+  const exportUserAccounts = () => {
+    const rows = userAccounts.map((account) => {
+      const employee = account.employeeId ? employeesById.get(account.employeeId) : null;
+      const credentialState = accountCredentialState(account);
+      return [
+        account.loginId || "ยังไม่กำหนด",
+        account.displayName,
+        account.nickname || "",
+        account.role === "admin" ? "HR / Admin" : account.role === "manager" ? "หัวหน้าทีม" : "พนักงาน",
+        account.status === "active" ? "ใช้งาน" : "พักสิทธิ์",
+        employee?.name ?? (account.role === "admin" ? "ระดับองค์กร" : "ยังไม่ผูก"),
+        employee ? getRole(employee.roleId).name : "",
+        account.email,
+        account.hasPassword ? "มีรหัสผ่าน" : "ไม่มีรหัสผ่าน",
+        account.mustChangePassword ? "ต้องเปลี่ยนรหัส" : "ไม่ต้องเปลี่ยนรหัส",
+        credentialState.id === "locked" ? "ล็อก" : "ปกติ",
+        account.lastLoginAt ?? "",
+      ];
+    });
+    const content = [
+      ["Username", "ชื่อ–นามสกุล", "ชื่อเล่น", "บทบาท", "สถานะ", "โปรไฟล์พนักงาน", "ตำแหน่ง", "อีเมล", "สถานะรหัสผ่าน", "การเปลี่ยนรหัส", "สถานะล็อก", "เข้าใช้ล่าสุด"],
+      ...rows,
+    ].map((row) => row.map(csvCell).join(",")).join("\n");
+    const blob = new Blob([`\uFEFF${content}`], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `people-pulse-user-accounts-${bangkokIsoDate()}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+    showToast(`ส่งออกข้อมูลผู้ใช้ ${userAccounts.length} บัญชีแล้ว`);
+  };
+
   const isAdmin = currentUser?.role === "admin";
   const isEmployeeUser = currentUser?.role === "employee";
   const isEmployeeCoordinationCreate = Boolean(isEmployeeUser && !editingWorkItem);
@@ -2918,6 +3030,8 @@ export default function Home() {
   const workingUserAccounts = userAccounts.filter((account) => account.role === "employee");
   const activeAssigningUserCount = assigningUserAccounts.filter((account) => account.status === "active").length;
   const activeWorkingUserCount = workingUserAccounts.filter((account) => account.status === "active").length;
+  const pendingRegistrationRequests = employeeRegistrationRequests.filter((request) => request.status === "pending").sort((a, b) => b.submittedAt.localeCompare(a.submittedAt));
+  const reviewedRegistrationRequests = employeeRegistrationRequests.filter((request) => request.status !== "pending").sort((a, b) => (b.reviewedAt ?? b.updatedAt).localeCompare(a.reviewedAt ?? a.updatedAt));
   const editingUserAccount = userAccounts.find((account) => account.id === userAccountForm.accountId);
   const userAccountRequiresTemporaryPassword = !userAccountForm.accountId || editingUserAccount?.hasPassword === false;
   const selectedUserKind = userAccountForm.role === "employee" ? "worker" : "assigner";
@@ -2927,10 +3041,6 @@ export default function Home() {
     : userAccountForm.role === "manager"
       ? "มอบหมายงาน ติดตามทีม ตรวจผลงาน และประเมินลูกทีม โดยไม่เห็นเงินเดือนหรือเอกสารส่วนตัว"
       : "รับงาน อัปเดตความคืบหน้า ส่งหลักฐาน และสร้างงานประสาน 0 Points ให้ตนเองหรือเพื่อนร่วมทีม โดยไม่มีสิทธิ์ตรวจอนุมัติ";
-  const accessAccountGroups = [
-    { id: "assigner", title: "คนสั่งงาน", description: "HR / Admin และหัวหน้าทีม — วางแผน มอบหมาย ติดตาม และตรวจผลงาน", accounts: assigningUserAccounts, activeCount: activeAssigningUserCount },
-    { id: "worker", title: "คนทำงาน", description: "พนักงาน — รับงาน ส่งหลักฐาน และสร้างงานประสาน 0 Points โดยหัวหน้าหรือ HR เป็นผู้ตรวจ", accounts: workingUserAccounts, activeCount: activeWorkingUserCount },
-  ] as const;
   const launchReadinessSteps = launchReadiness ? [
     {
       title: "ยืนยันล้างหรือเก็บข้อมูลตัวอย่างแยกจากงานจริง",
@@ -4142,7 +4252,12 @@ export default function Home() {
 
         {view === "access" && isAdmin && (
           <section className="access-layout">
-            <section className={`launch-readiness-center ${hasLaunchDemoWarning ? "has-demo-warning" : launchReadinessScore === 6 ? "is-ready" : ""}`} aria-labelledby="launch-readiness-title">
+            <nav className="access-panel-tabs" aria-label="เลือกข้อมูลผู้ใช้งาน">
+              <button type="button" className={accessPanel === "users" ? "active" : ""} aria-pressed={accessPanel === "users"} onClick={() => setAccessPanel("users")}><span aria-hidden="true">▤</span><b>ข้อมูลผู้ใช้งาน</b><em>{userAccounts.length}</em></button>
+              <button type="button" className={accessPanel === "requests" ? "active" : ""} aria-pressed={accessPanel === "requests"} onClick={() => setAccessPanel("requests")}><span aria-hidden="true">＋</span><b>คำขอสมัครใหม่</b><em className={pendingRegistrationRequests.length ? "attention" : ""}>{pendingRegistrationRequests.length}</em></button>
+              <button type="button" className={accessPanel === "rights" ? "active" : ""} aria-pressed={accessPanel === "rights"} onClick={() => setAccessPanel("rights")}><span aria-hidden="true">◎</span><b>กฎและสิทธิ์</b><em>3</em></button>
+            </nav>
+            <section hidden={accessPanel !== "rights"} className={`launch-readiness-center ${hasLaunchDemoWarning ? "has-demo-warning" : launchReadinessScore === 6 ? "is-ready" : ""}`} aria-labelledby="launch-readiness-title">
               <header className="launch-readiness-heading">
                 <div className="launch-readiness-title"><span aria-hidden="true">✓</span><div><p className="eyebrow">LAUNCH READINESS</p><h2 id="launch-readiness-title">ศูนย์ตรวจความพร้อมก่อนเปิดใช้จริง</h2><p>ตรวจข้อมูล คน กฎ สิทธิ์ และเส้นทางส่งงานให้ครบก่อนเชิญพนักงานทั้งองค์กร</p></div></div>
                 <div className="launch-readiness-score" aria-label={`ความพร้อม ${launchReadinessScore} จาก 6 ขั้น`}><strong>{launchReadinessScore}<small>/6</small></strong><span>ขั้นพร้อมใช้งาน</span></div>
@@ -4169,7 +4284,7 @@ export default function Home() {
               <footer className="launch-readiness-note"><span aria-hidden="true">i</span><p><strong>ศูนย์นี้ไม่ลบหรือแก้ข้อมูลให้อัตโนมัติ</strong> HR ต้องตรวจข้อมูลจริง ทบทวนกฎหมาย สร้างบัญชีและรหัสชั่วคราว แล้วทดสอบกับพนักงานกลุ่มเล็กก่อนเปิดใช้ทั้งองค์กร</p></footer>
             </section>
 
-            <section className="access-operating-model" aria-labelledby="access-operating-title">
+            <section hidden={accessPanel !== "rights"} className="access-operating-model" aria-labelledby="access-operating-title">
               <header>
                 <div><p className="eyebrow">ACCESS WORKFLOW</p><h2 id="access-operating-title">สิทธิ์ 3 ระดับในขั้นตอนทำงานเดียว</h2><p>ชื่อ “คนสั่งงาน” และ “คนทำงาน” ช่วยอธิบายวิธีใช้ระบบ ส่วนสิทธิ์จริงยังคงเป็น admin, manager และ employee</p></div>
                 <div className="access-model-counts" aria-label="สรุปบัญชีตามกลุ่ม"><span><strong>{activeAssigningUserCount}</strong><small>คนสั่งงานใช้งาน</small></span><span><strong>{activeWorkingUserCount}</strong><small>คนทำงานใช้งาน</small></span><span><strong>{userAccounts.filter((account) => account.status === "inactive").length}</strong><small>บัญชีพักสิทธิ์</small></span></div>
@@ -4183,11 +4298,12 @@ export default function Home() {
               <p className="access-review-boundary" role="note"><span aria-hidden="true">i</span><strong>พนักงานสร้างงานประสานได้ แต่ตรวจอนุมัติเองไม่ได้</strong> งานที่พนักงานสร้างถูกกำหนดเป็นรีเควสต์ 0 Points ผู้รับงานเป็นผู้อัปเดต และเฉพาะหัวหน้าทีมหรือ HR เท่านั้นที่ตรวจผลงาน</p>
             </section>
 
-            <div className="access-main-grid">
+            <div hidden={accessPanel !== "users"} className="access-main-grid">
               <form className="access-form-card" id="user-access-form" aria-labelledby="user-access-form-title" onSubmit={saveUserAccount}>
                 <div className="access-card-heading"><div><p className="eyebrow">ACCOUNT SETUP</p><h2 id="user-access-form-title">{userAccountForm.accountId ? "แก้ไขบัญชีและสิทธิ์" : "สร้างบัญชีผู้ใช้งาน"}</h2><p>กำหนดรหัสผู้ใช้ บทบาท และรหัสชั่วคราวจากหน้านี้ได้เลย</p></div><span>{userAccountForm.accountId ? "แก้ไข" : "ใหม่"}</span></div>
                 <div className="form-grid access-form-grid">
                   <label className="wide"><span>ชื่อที่แสดง</span><input required name="displayName" autoComplete="name" value={userAccountForm.displayName} onChange={(event) => setUserAccountForm((form) => ({ ...form, displayName: event.target.value }))} placeholder="ชื่อ–นามสกุล" /></label>
+                  <label className="wide"><span>ชื่อเล่น (ไม่บังคับ)</span><input name="nickname" autoComplete="nickname" maxLength={40} value={userAccountForm.nickname} onChange={(event) => setUserAccountForm((form) => ({ ...form, nickname: event.target.value }))} placeholder="เช่น นัท" /></label>
                   <label className="wide"><span>รหัสผู้ใช้สำหรับเข้าสู่ระบบ</span><input required name="username" autoComplete="username" autoCapitalize="none" spellCheck={false} maxLength={64} value={userAccountForm.loginId} onChange={(event) => setUserAccountForm((form) => ({ ...form, loginId: event.target.value }))} placeholder="เช่น EMP001 หรือ niran.k" /><small>ต้องไม่ซ้ำกับผู้อื่น และไม่ต้องตรงกับอีเมล</small></label>
                   <div className="access-temporary-password wide">
                     <label htmlFor="temporary-password"><span>{userAccountRequiresTemporaryPassword ? "รหัสผ่านชั่วคราว" : "ตั้งรหัสผ่านชั่วคราวใหม่ (ไม่บังคับ)"}</span></label>
@@ -4232,26 +4348,40 @@ export default function Home() {
               </aside>
             </div>
 
-            <section className="access-account-card">
-              <div className="access-card-heading"><div><p className="eyebrow">TEAM ACCOUNTS</p><h2>บัญชีผู้ใช้งานทั้งหมด</h2><p>ตรวจรหัสผู้ใช้ ความพร้อม รหัสชั่วคราว และสิทธิ์ของแต่ละคนได้ชัดเจน</p></div><span>{userAccounts.length} บัญชี</span></div>
-              <div className="access-account-list">
-                {accessAccountGroups.map((group) => <Fragment key={group.id}>
-                  <div className={`access-account-group-heading ${group.id}`}><span>{group.id === "assigner" ? "→" : "✓"}</span><div><strong>{group.title}</strong><small>{group.description}</small></div><b>{group.activeCount}/{group.accounts.length} ใช้งาน</b></div>
-                  {group.accounts.map((account) => {
+            <section hidden={accessPanel !== "requests"} className="access-registration-card" aria-labelledby="registration-requests-title">
+              <div className="access-card-heading"><div><p className="eyebrow">EMPLOYEE REGISTRATION</p><h2 id="registration-requests-title">คำขอสมัครสมาชิกพนักงาน</h2><p>ตรวจข้อมูลผู้สมัคร แล้วเลือกโปรไฟล์พนักงานที่ถูกต้องก่อนอนุมัติ บัญชีที่ยังไม่อนุมัติจะเข้าสู่ระบบไม่ได้</p></div><span>{pendingRegistrationRequests.length} รอตรวจ</span></div>
+              <div className="registration-request-list">
+                {pendingRegistrationRequests.map((registrationRequest) => {
+                  const matchingEmployeeId = employees.find((employee) => employee.status === "active" && employee.email.toLowerCase() === registrationRequest.email.toLowerCase() && !userAccounts.some((account) => account.employeeId === employee.id))?.id ?? "";
+                  const selectedEmployeeId = registrationEmployeeSelections[registrationRequest.id] || matchingEmployeeId;
+                  const availableEmployees = employees.filter((employee) => employee.status === "active" && !userAccounts.some((account) => account.employeeId === employee.id));
+                  return <article key={registrationRequest.id} className="registration-request-item">
+                    <header><span className="access-account-avatar">{makeInitials(`${registrationRequest.firstName} ${registrationRequest.lastName}`)}</span><div><strong>{registrationRequest.firstName} {registrationRequest.lastName}</strong><small>ชื่อเล่น {registrationRequest.nickname} · ส่งเมื่อ {formatUpdatedAt(registrationRequest.submittedAt)}</small></div><b>รออนุมัติ</b></header>
+                    <dl><div><dt>รหัสผู้ใช้</dt><dd><code>{registrationRequest.loginId}</code></dd></div><div><dt>อีเมล</dt><dd>{registrationRequest.email}</dd></div><div><dt>รหัสผ่าน</dt><dd>ตั้งแล้ว · ไม่แสดงข้อมูลลับ</dd></div></dl>
+                    <label><span>ผูกกับโปรไฟล์พนักงาน</span><select value={selectedEmployeeId} onChange={(event) => setRegistrationEmployeeSelections((items) => ({ ...items, [registrationRequest.id]: event.target.value }))}><option value="">เลือกโปรไฟล์พนักงาน</option>{availableEmployees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name} · {getRole(employee.roleId).name}{employee.email.toLowerCase() === registrationRequest.email.toLowerCase() ? " · อีเมลตรงกัน" : ""}</option>)}</select><small>หากยังไม่มีโปรไฟล์ ให้เพิ่มพนักงานในทะเบียนก่อน แล้วกลับมาอนุมัติ</small></label>
+                    <label><span>เหตุผลกรณีปฏิเสธ</span><input maxLength={500} value={registrationRejectionReasons[registrationRequest.id] ?? ""} onChange={(event) => setRegistrationRejectionReasons((items) => ({ ...items, [registrationRequest.id]: event.target.value }))} placeholder="เช่น ข้อมูลไม่ตรงกับทะเบียนพนักงาน" /></label>
+                    <footer><button type="button" className="reject" disabled={isSaving} onClick={() => void rejectRegistrationRequest(registrationRequest)}>ปฏิเสธ</button><button type="button" className="approve" disabled={isSaving || !selectedEmployeeId} onClick={() => void approveRegistrationRequest(registrationRequest)}>อนุมัติและเปิดบัญชี</button></footer>
+                  </article>;
+                })}
+                {!pendingRegistrationRequests.length && <div className="registration-empty"><span aria-hidden="true">✓</span><strong>ตรวจครบแล้ว</strong><p>ยังไม่มีคำขอสมัครสมาชิกใหม่ที่รออนุมัติ</p></div>}
+              </div>
+              {reviewedRegistrationRequests.length > 0 && <div className="registration-history"><h3>ประวัติคำขอที่ตรวจแล้ว</h3><div className="access-user-table-wrap"><table className="access-user-table"><thead><tr><th>ผู้สมัคร</th><th>รหัสผู้ใช้</th><th>ผลตรวจ</th><th>ผู้ตรวจ</th><th>วันที่ตรวจ</th></tr></thead><tbody>{reviewedRegistrationRequests.map((registrationRequest) => <tr key={registrationRequest.id}><td><strong>{registrationRequest.firstName} {registrationRequest.lastName}</strong><small>{registrationRequest.email}</small></td><td><code>{registrationRequest.loginId}</code></td><td><span className={`registration-status ${registrationRequest.status}`}>{registrationRequest.status === "approved" ? "อนุมัติแล้ว" : "ปฏิเสธ"}</span>{registrationRequest.rejectionReason && <small>{registrationRequest.rejectionReason}</small>}</td><td>{registrationRequest.reviewedByName || "—"}</td><td>{registrationRequest.reviewedAt ? formatUpdatedAt(registrationRequest.reviewedAt) : "—"}</td></tr>)}</tbody></table></div></div>}
+            </section>
+
+            <section hidden={accessPanel !== "users"} className="access-account-card">
+              <div className="access-card-heading"><div><p className="eyebrow">USER DATABASE</p><h2>ข้อมูลผู้ใช้งานทั้งหมด</h2><p>ดูบนหน้าเว็บหรือส่งออกไปเปิดใน Excel ได้ โดยไม่เปิดเผย Password Hash, Salt, Session Token หรือข้อมูลลับ</p></div><div className="access-user-heading-actions"><span>{userAccounts.length} บัญชี</span><button type="button" onClick={exportUserAccounts}>↓ ส่งออก Excel (.csv)</button></div></div>
+              <div className="access-user-table-wrap" tabIndex={0} aria-label="เลื่อนเพื่อดูข้อมูลผู้ใช้งานทั้งหมด">
+                <table className="access-user-table">
+                  <caption className="sr-only">ฐานข้อมูลผู้ใช้งานสำหรับผู้ดูแลระบบ</caption>
+                  <thead><tr><th>Username</th><th>ชื่อผู้ใช้งาน</th><th>บทบาท</th><th>สถานะ</th><th>โปรไฟล์พนักงาน</th><th>อีเมล</th><th>รหัสผ่าน</th><th>เปลี่ยนรหัส</th><th>ล็อก</th><th>เข้าใช้ล่าสุด</th><th>จัดการ</th></tr></thead>
+                  <tbody>{userAccounts.map((account) => {
                     const employee = account.employeeId ? employeesById.get(account.employeeId) : null;
-                    const roleName = account.role === "admin" ? "HR / Admin" : account.role === "manager" ? "หัวหน้าทีม" : "พนักงาน";
                     const credentialState = accountCredentialState(account);
-                    return <article key={account.id} className={`${account.status} access-account-row`}>
-                      <span className="access-account-avatar">{makeInitials(account.displayName)}</span>
-                      <div className="access-account-person"><strong>{account.displayName}</strong><small>รหัสผู้ใช้ <code>{account.loginId || "ยังไม่ได้กำหนด"}</code></small></div>
-                      <div className="access-account-role"><strong className={`access-user-kind ${group.id}`}>{group.title}</strong><span className={`access-role-pill ${account.role}`}>{roleName}</span></div>
-                      <div className="access-account-link"><strong>{employee?.name ?? (account.role === "admin" ? "สิทธิ์ระดับองค์กร" : "ยังไม่ผูกโปรไฟล์")}</strong><small>{employee ? `ผูกโปรไฟล์แล้ว · ${getRole(employee.roleId).name}` : account.role === "admin" ? "ไม่ต้องผูกโปรไฟล์พนักงาน" : "กรุณาเลือกโปรไฟล์ก่อนเปิดใช้"}</small><small className="access-login-state">{credentialState.detail}</small></div>
-                      <b className={`access-status ${credentialState.id}`}>{credentialState.label}</b>
-                      <span className="access-account-actions"><button aria-label={`แก้ไขบัญชีของ ${account.displayName}`} disabled={isSaving || account.id === currentUser?.id} title={account.id === currentUser?.id ? "บัญชีที่กำลังใช้งานให้เปลี่ยนรหัสผ่านจากเมนูโปรไฟล์" : undefined} onClick={() => editUserAccount(account)}>แก้ไข</button><button aria-label={`สร้างรหัสผ่านชั่วคราวใหม่ให้ ${account.displayName}`} disabled={isSaving || account.id === currentUser?.id} onClick={() => prepareUserAccountPasswordReset(account)}>รีเซ็ตรหัส</button><button aria-label={`${account.status === "active" ? "พักสิทธิ์" : "เปิดสิทธิ์"}ของ ${account.displayName}`} disabled={isSaving || account.id === currentUser?.id} onClick={() => void toggleUserAccount(account)}>{account.status === "active" ? "พักสิทธิ์" : "เปิดสิทธิ์"}</button><button className="delete-account" aria-label={`ลบบัญชีของ ${account.displayName}`} disabled={isSaving || account.id === currentUser?.id || account.id === "user-owner"} title={account.id === "user-owner" ? "บัญชีเจ้าของระบบลบไม่ได้" : account.id === currentUser?.id ? "ไม่สามารถลบบัญชีที่กำลังใช้งาน" : "ลบบัญชีและข้อมูลเข้าสู่ระบบถาวร"} onClick={() => void deleteUserAccount(account)}>ลบบัญชี</button></span>
-                    </article>;
-                  })}
-                  {!group.accounts.length && <div className={`access-account-group-empty ${group.id}`}>ยังไม่มีบัญชี{group.title}</div>}
-                </Fragment>)}
+                    const roleName = account.role === "admin" ? "HR / Admin" : account.role === "manager" ? "หัวหน้าทีม" : "พนักงาน";
+                    const locked = credentialState.id === "locked";
+                    return <tr key={account.id} className={account.status}><td><code>{account.loginId || "ยังไม่กำหนด"}</code></td><td><strong>{account.displayName}</strong><small>{account.nickname ? `ชื่อเล่น ${account.nickname}` : "ไม่ระบุชื่อเล่น"}</small></td><td><span className={`access-role-pill ${account.role}`}>{roleName}</span></td><td><span className={`access-status ${account.status}`}>{account.status === "active" ? "ใช้งาน" : "พักสิทธิ์"}</span></td><td><strong>{employee?.name ?? (account.role === "admin" ? "ระดับองค์กร" : "ยังไม่ผูก")}</strong><small>{employee ? getRole(employee.roleId).name : "—"}</small></td><td>{account.email}</td><td>{account.hasPassword ? "มี" : "ไม่มี"}</td><td>{account.mustChangePassword ? "ต้องเปลี่ยน" : "ไม่ต้องเปลี่ยน"}</td><td>{locked ? "ล็อก" : "ปกติ"}</td><td>{account.lastLoginAt ? formatUpdatedAt(account.lastLoginAt) : credentialState.label}</td><td><span className="access-account-actions"><button aria-label={`แก้ไขบัญชีของ ${account.displayName}`} disabled={isSaving || account.id === currentUser?.id} onClick={() => editUserAccount(account)}>แก้ไข</button><button aria-label={`สร้างรหัสผ่านชั่วคราวใหม่ให้ ${account.displayName}`} disabled={isSaving || account.id === currentUser?.id} onClick={() => prepareUserAccountPasswordReset(account)}>รีเซ็ต</button><button aria-label={`${account.status === "active" ? "พักสิทธิ์" : "เปิดสิทธิ์"}ของ ${account.displayName}`} disabled={isSaving || account.id === currentUser?.id} onClick={() => void toggleUserAccount(account)}>{account.status === "active" ? "พัก" : "เปิด"}</button><button className="delete-account" aria-label={`ลบบัญชีของ ${account.displayName}`} disabled={isSaving || account.id === currentUser?.id || account.id === "user-owner"} onClick={() => void deleteUserAccount(account)}>ลบ</button></span></td></tr>;
+                  })}</tbody>
+                </table>
                 {!userAccounts.length && <div className="empty-state">ยังไม่มีบัญชีผู้ใช้งาน</div>}
               </div>
             </section>

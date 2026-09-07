@@ -1,9 +1,9 @@
 import { getD1 } from ".";
 
 let initialization: Promise<unknown> | null = null;
-// Migration 0020 creates this object only after every preceding schema change.
+// Migration 0021 creates this object only after every preceding schema change.
 // Future schema migrations must use a new marker name and place it last too.
-const LATEST_SCHEMA_MARKER = "people_pulse_schema_v20_ready";
+const LATEST_SCHEMA_MARKER = "people_pulse_schema_v21_ready";
 
 async function latestSchemaIsReady(d1: ReturnType<typeof getD1>) {
   const marker = await d1.prepare(
@@ -14,7 +14,7 @@ async function latestSchemaIsReady(d1: ReturnType<typeof getD1>) {
 
 async function ensureColumn(
   d1: ReturnType<typeof getD1>,
-  table: "rewards" | "point_ledger" | "point_events" | "organization_policy_publish_claims" | "work_items",
+  table: "rewards" | "point_ledger" | "point_events" | "organization_policy_publish_claims" | "work_items" | "user_accounts",
   column: string,
   definition: string,
 ) {
@@ -51,6 +51,7 @@ export function ensureDatabase() {
       auth_user_id TEXT NOT NULL DEFAULT '',
       email TEXT NOT NULL,
       display_name TEXT NOT NULL,
+      nickname TEXT NOT NULL DEFAULT '',
       role TEXT NOT NULL DEFAULT 'employee',
       employee_id TEXT REFERENCES employees(id) ON DELETE SET NULL,
       department_id TEXT NOT NULL DEFAULT '',
@@ -140,6 +141,70 @@ export function ensureDatabase() {
     )`),
     d1.prepare("CREATE INDEX IF NOT EXISTS auth_events_user_created_idx ON auth_events (user_account_id, created_at)"),
     d1.prepare("CREATE INDEX IF NOT EXISTS auth_events_type_created_idx ON auth_events (event_type, created_at)"),
+    d1.prepare(`CREATE TABLE IF NOT EXISTS employee_registration_requests (
+      id TEXT PRIMARY KEY NOT NULL,
+      email TEXT NOT NULL,
+      email_canonical TEXT NOT NULL,
+      login_id TEXT NOT NULL,
+      login_id_canonical TEXT NOT NULL,
+      password_hash TEXT NOT NULL,
+      password_salt TEXT NOT NULL,
+      password_algorithm TEXT NOT NULL DEFAULT 'pbkdf2-sha256-chain-v1',
+      password_iterations INTEGER NOT NULL DEFAULT 600000,
+      pepper_version INTEGER NOT NULL DEFAULT 1,
+      first_name TEXT NOT NULL,
+      last_name TEXT NOT NULL,
+      nickname TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      source_hash TEXT NOT NULL DEFAULT '',
+      submitted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      reviewed_by_user_id TEXT REFERENCES user_accounts(id) ON DELETE SET NULL,
+      reviewed_by_name TEXT NOT NULL DEFAULT '',
+      reviewed_at TEXT,
+      rejection_reason TEXT NOT NULL DEFAULT '',
+      approved_user_account_id TEXT REFERENCES user_accounts(id) ON DELETE SET NULL,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`),
+    d1.prepare("CREATE UNIQUE INDEX IF NOT EXISTS employee_registration_pending_login_unique ON employee_registration_requests (login_id_canonical) WHERE status = 'pending'"),
+    d1.prepare("CREATE UNIQUE INDEX IF NOT EXISTS employee_registration_pending_email_unique ON employee_registration_requests (email_canonical) WHERE status = 'pending'"),
+    d1.prepare("CREATE INDEX IF NOT EXISTS employee_registration_status_submitted_idx ON employee_registration_requests (status, submitted_at)"),
+    d1.prepare("CREATE INDEX IF NOT EXISTS employee_registration_source_submitted_idx ON employee_registration_requests (source_hash, submitted_at)"),
+    d1.prepare(`CREATE TABLE IF NOT EXISTS employee_registration_review_claims (
+      request_id TEXT PRIMARY KEY NOT NULL REFERENCES employee_registration_requests(id) ON DELETE RESTRICT,
+      decision TEXT NOT NULL,
+      reviewer_user_id TEXT NOT NULL REFERENCES user_accounts(id) ON DELETE RESTRICT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`),
+    d1.prepare("CREATE INDEX IF NOT EXISTS employee_registration_review_claims_reviewer_idx ON employee_registration_review_claims (reviewer_user_id, created_at)"),
+    d1.prepare(`CREATE TRIGGER IF NOT EXISTS employee_registration_review_claim_validate
+      BEFORE INSERT ON employee_registration_review_claims
+      WHEN NOT EXISTS (
+        SELECT 1 FROM employee_registration_requests
+        WHERE id = NEW.request_id AND status = 'pending'
+      )
+      BEGIN
+        SELECT RAISE(ABORT, 'REGISTRATION_ALREADY_REVIEWED');
+      END`),
+    d1.prepare(`CREATE TRIGGER IF NOT EXISTS employee_registration_status_review_guard
+      BEFORE UPDATE OF status ON employee_registration_requests
+      WHEN (
+        OLD.status != 'pending'
+        AND NEW.status != OLD.status
+      ) OR (
+        OLD.status = 'pending'
+        AND NEW.status IN ('approved', 'rejected')
+        AND (
+          NEW.password_hash != ''
+          OR NEW.password_salt != ''
+          OR NOT EXISTS (
+            SELECT 1 FROM employee_registration_review_claims
+            WHERE request_id = OLD.id AND decision = NEW.status
+          )
+        )
+      )
+      BEGIN
+        SELECT RAISE(ABORT, 'REGISTRATION_REVIEW_REQUIRED');
+      END`),
     d1.prepare(`CREATE TRIGGER IF NOT EXISTS auth_events_validate_credential_mutation_claim
       BEFORE INSERT ON auth_events
       WHEN NEW.id LIKE 'credential-mutation:%'
@@ -700,6 +765,7 @@ export function ensureDatabase() {
     ]);
 
     const compatibilityColumns = [
+      ["user_accounts", "nickname", "TEXT NOT NULL DEFAULT ''"],
       ["organization_policy_publish_claims", "expected_content_hash", "TEXT NOT NULL DEFAULT ''"],
       ["work_items", "created_by_employee_id", "TEXT REFERENCES employees(id) ON DELETE SET NULL"],
       ["rewards", "inventory_version", "INTEGER NOT NULL DEFAULT 0"],
@@ -908,8 +974,8 @@ export function ensureDatabase() {
           SELECT RAISE(ABORT, 'EMPLOYEE_RECOGNITION_STALE_REVISION');
         END`),
       d1.prepare("PRAGMA optimize"),
-      d1.prepare(`CREATE TABLE IF NOT EXISTS people_pulse_schema_v20_ready (
-        schema_version INTEGER PRIMARY KEY NOT NULL CHECK (schema_version = 20)
+      d1.prepare(`CREATE TABLE IF NOT EXISTS people_pulse_schema_v21_ready (
+        schema_version INTEGER PRIMARY KEY NOT NULL CHECK (schema_version = 21)
       )`),
     ]);
   })().catch((error) => {
