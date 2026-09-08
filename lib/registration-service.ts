@@ -141,10 +141,12 @@ export async function submitEmployeeRegistration(request: Request, input: Record
   return employeeRegistrationRequestDto(record as RegistrationRecord);
 }
 
-export async function approveEmployeeRegistration(requestIdInput: unknown, employeeIdInput: unknown, reviewer: CurrentUser) {
+export async function approveEmployeeRegistration(requestIdInput: unknown, employeeIdInput: unknown, roleInput: unknown, reviewer: CurrentUser) {
   const requestId = textValue(requestIdInput, 120);
   const employeeId = textValue(employeeIdInput, 120);
+  const role = roleInput === undefined ? "employee" : roleInput === "admin" || roleInput === "manager" || roleInput === "employee" ? roleInput : null;
   if (!requestId || !employeeId) throw new RegistrationInputError("กรุณาเลือกคำขอและโปรไฟล์พนักงานที่จะผูก");
+  if (!role) throw new RegistrationInputError("กรุณาเลือกสิทธิ์บัญชีที่ถูกต้อง");
   const db = getDb();
   const [registrationRows, employeeRows] = await db.batch([
     db.select().from(employeeRegistrationRequests).where(eq(employeeRegistrationRequests.id, requestId)).limit(1),
@@ -175,9 +177,9 @@ export async function approveEmployeeRegistration(requestIdInput: unknown, emplo
     email: registration.emailCanonical,
     displayName,
     nickname: registration.nickname,
-    role: "employee",
+    role,
     employeeId,
-    departmentId: getRole(employee.roleId).departmentId,
+    departmentId: role === "admin" ? "" : getRole(employee.roleId).departmentId,
     status: "active",
     lastLoginAt: null,
     createdBy: reviewer.displayName,
@@ -220,7 +222,7 @@ export async function approveEmployeeRegistration(requestIdInput: unknown, emplo
       userAccountId: accountId,
       eventType: "registration_approved",
       sourceHash: "",
-      detail: `request:${requestId};reviewer:${reviewer.id}`,
+      detail: `request:${requestId};reviewer:${reviewer.id};role:${role}`,
       createdAt: now,
     }),
   ]);

@@ -1017,6 +1017,7 @@ export default function Home() {
   const [showTemporaryPassword, setShowTemporaryPassword] = useState(false);
   const [accessPanel, setAccessPanel] = useState<AccessPanel>("users");
   const [registrationEmployeeSelections, setRegistrationEmployeeSelections] = useState<Record<string, string>>({});
+  const [registrationRoleSelections, setRegistrationRoleSelections] = useState<Record<string, UserAccountRecord["role"]>>({});
   const [registrationRejectionReasons, setRegistrationRejectionReasons] = useState<Record<string, string>>({});
   const canManageEmployeeFiles = currentUser?.role === "admin" && permissions.canManagePeople && !isEmployeePreview;
 
@@ -2817,13 +2818,19 @@ export default function Home() {
   };
 
   const toggleUserAccount = async (account: PublicUserAccount) => {
+    const nextStatus = account.status === "active" ? "inactive" : "active";
+    const actionLabel = nextStatus === "inactive" ? "เพิกถอนสิทธิ์" : "คืนสิทธิ์";
+    const consequence = nextStatus === "inactive"
+      ? "ผู้ใช้นี้จะออกจากระบบทุกอุปกรณ์ทันที และจะเข้าใช้งานไม่ได้จนกว่า HR / Admin จะคืนสิทธิ์"
+      : "ผู้ใช้นี้จะกลับมาเข้าสู่ระบบได้ด้วยรหัสผู้ใช้และรหัสผ่านเดิม";
+    if (!window.confirm(`${actionLabel}ของ “${account.displayName}” ใช่หรือไม่?\n\n${consequence}`)) return;
     setIsSaving(true);
     try {
-      const response = await fetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "saveUserAccount", accountId: account.id, loginId: account.loginId ?? "", displayName: account.displayName, nickname: account.nickname ?? "", role: account.role, employeeId: account.employeeId ?? "", departmentId: account.departmentId, status: account.status === "active" ? "inactive" : "active", temporaryPassword: "" }) });
+      const response = await fetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "saveUserAccount", accountId: account.id, loginId: account.loginId ?? "", displayName: account.displayName, nickname: account.nickname ?? "", role: account.role, employeeId: account.employeeId ?? "", departmentId: account.departmentId, status: nextStatus, temporaryPassword: "" }) });
       const body = await response.json() as { userAccount?: PublicUserAccount; error?: string };
       if (!response.ok || !body.userAccount) throw new Error(body.error ?? "อัปเดตบัญชีไม่สำเร็จ");
       setUserAccounts((items) => items.map((item) => item.id === account.id ? body.userAccount as PublicUserAccount : item));
-      showToast(body.userAccount.status === "active" ? "เปิดสิทธิ์ใช้งานแล้ว" : "พักสิทธิ์ใช้งานแล้ว");
+      showToast(body.userAccount.status === "active" ? `คืนสิทธิ์ให้ ${body.userAccount.displayName} แล้ว` : `เพิกถอนสิทธิ์ของ ${body.userAccount.displayName} แล้ว`);
     } catch (error) {
       showErrorToast(error, "อัปเดตบัญชีไม่สำเร็จ");
     } finally {
@@ -2859,24 +2866,28 @@ export default function Home() {
   const approveRegistrationRequest = async (registrationRequest: EmployeeRegistrationRequest) => {
     const matchingEmployeeId = employees.find((employee) => employee.status === "active" && employee.email.toLowerCase() === registrationRequest.email.toLowerCase() && !userAccounts.some((account) => account.employeeId === employee.id))?.id ?? "";
     const employeeId = registrationEmployeeSelections[registrationRequest.id] || matchingEmployeeId;
+    const role = registrationRoleSelections[registrationRequest.id] ?? "employee";
     if (!employeeId) {
       showToast("กรุณาเลือกโปรไฟล์พนักงานที่จะผูกก่อนอนุมัติ", "error");
       return;
     }
     const employee = employeesById.get(employeeId);
-    if (!window.confirm(`อนุมัติ ${registrationRequest.firstName} ${registrationRequest.lastName} และผูกกับโปรไฟล์ “${employee?.name ?? employeeId}” ใช่หรือไม่?`)) return;
+    const roleLabel = role === "admin" ? "HR / Admin" : role === "manager" ? "หัวหน้าทีม" : "พนักงาน";
+    const elevatedAccessWarning = role === "admin" ? "\n\nบัญชี HR / Admin จะเข้าถึงและจัดการข้อมูลทั้งองค์กรได้" : role === "manager" ? "\n\nบัญชีหัวหน้าทีมจะเห็นและจัดการข้อมูลในทีมตามแผนกของโปรไฟล์ที่ผูก" : "";
+    if (!window.confirm(`อนุมัติ ${registrationRequest.firstName} ${registrationRequest.lastName} เป็น “${roleLabel}” และผูกกับโปรไฟล์ “${employee?.name ?? employeeId}” ใช่หรือไม่?${elevatedAccessWarning}`)) return;
     setIsSaving(true);
     try {
       const response = await fetch("/api/dashboard", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "approveEmployeeRegistration", requestId: registrationRequest.id, employeeId }),
+        body: JSON.stringify({ action: "approveEmployeeRegistration", requestId: registrationRequest.id, employeeId, role }),
       });
       const body = await response.json() as { registrationRequest?: EmployeeRegistrationRequest; userAccount?: PublicUserAccount; error?: string };
       if (!response.ok || !body.registrationRequest || !body.userAccount) throw new Error(body.error || "อนุมัติคำขอไม่สำเร็จ");
       setEmployeeRegistrationRequests((items) => items.map((item) => item.id === registrationRequest.id ? body.registrationRequest as EmployeeRegistrationRequest : item));
       setUserAccounts((items) => [...items.filter((item) => item.id !== body.userAccount?.id), body.userAccount as PublicUserAccount].sort((a, b) => a.displayName.localeCompare(b.displayName, "th")));
-      showToast(`อนุมัติบัญชี ${body.userAccount.displayName} แล้ว สามารถเข้าสู่ระบบด้วยรหัสที่สมัครไว้ได้`);
+      setRegistrationRoleSelections((items) => { const next = { ...items }; delete next[registrationRequest.id]; return next; });
+      showToast(`อนุมัติบัญชี ${body.userAccount.displayName} เป็น ${roleLabel} แล้ว สามารถเข้าสู่ระบบด้วยรหัสที่สมัครไว้ได้`);
     } catch (error) {
       showErrorToast(error, "อนุมัติคำขอไม่สำเร็จ");
     } finally {
@@ -4253,8 +4264,8 @@ export default function Home() {
         {view === "access" && isAdmin && (
           <section className="access-layout">
             <nav className="access-panel-tabs" aria-label="เลือกข้อมูลผู้ใช้งาน">
-              <button type="button" className={accessPanel === "users" ? "active" : ""} aria-pressed={accessPanel === "users"} onClick={() => setAccessPanel("users")}><span aria-hidden="true">▤</span><b>ข้อมูลผู้ใช้งาน</b><em>{userAccounts.length}</em></button>
-              <button type="button" className={accessPanel === "requests" ? "active" : ""} aria-pressed={accessPanel === "requests"} onClick={() => setAccessPanel("requests")}><span aria-hidden="true">＋</span><b>คำขอสมัครใหม่</b><em className={pendingRegistrationRequests.length ? "attention" : ""}>{pendingRegistrationRequests.length}</em></button>
+              <button type="button" className={accessPanel === "users" ? "active" : ""} aria-pressed={accessPanel === "users"} onClick={() => setAccessPanel("users")}><span aria-hidden="true">▤</span><b>จัดการสมาชิก</b><em>{userAccounts.length}</em></button>
+              <button type="button" className={accessPanel === "requests" ? "active" : ""} aria-pressed={accessPanel === "requests"} onClick={() => setAccessPanel("requests")}><span aria-hidden="true">＋</span><b>อนุมัติสมาชิก</b><em className={pendingRegistrationRequests.length ? "attention" : ""}>{pendingRegistrationRequests.length}</em></button>
               <button type="button" className={accessPanel === "rights" ? "active" : ""} aria-pressed={accessPanel === "rights"} onClick={() => setAccessPanel("rights")}><span aria-hidden="true">◎</span><b>กฎและสิทธิ์</b><em>3</em></button>
             </nav>
             <section hidden={accessPanel !== "rights"} className={`launch-readiness-center ${hasLaunchDemoWarning ? "has-demo-warning" : launchReadinessScore === 6 ? "is-ready" : ""}`} aria-labelledby="launch-readiness-title">
@@ -4318,7 +4329,7 @@ export default function Home() {
                     { role: "manager", label: "หัวหน้าทีม", group: "คนสั่งงาน", scope: "เฉพาะทีม", icon: "ทีม" },
                     { role: "employee", label: "พนักงาน", group: "คนทำงาน", scope: "ข้อมูลตนเอง", icon: "คน" },
                   ] as const).map((option) => <label key={option.role} className={`${option.role} ${userAccountForm.role === option.role ? "selected" : ""}`}><input type="radio" name="access-role" value={option.role} checked={userAccountForm.role === option.role} onChange={() => setUserAccountForm((form) => ({ ...form, role: option.role }))} /><span aria-hidden="true">{option.icon}</span><div><strong>{option.label}</strong><small>{option.group} · {option.scope}</small></div><code>{option.role}</code></label>)}<p id="access-role-help">เลือกจากข้อมูลที่ต้องเห็นและงานที่ต้องทำ ระบบยังคงใช้บทบาทจริง admin, manager และ employee</p></fieldset>
-                  <label className="wide"><span>สถานะบัญชี</span><select value={userAccountForm.status} onChange={(event) => setUserAccountForm((form) => ({ ...form, status: event.target.value as UserAccountRecord["status"] }))}><option value="active">ใช้งาน</option><option value="inactive">พักสิทธิ์</option></select></label>
+                  <label className="wide"><span>สถานะบัญชี</span><select value={userAccountForm.status} onChange={(event) => setUserAccountForm((form) => ({ ...form, status: event.target.value as UserAccountRecord["status"] }))}><option value="active">ใช้งาน</option><option value="inactive">เพิกถอนสิทธิ์</option></select></label>
                   <div className={`access-selected-role-note wide ${selectedUserKind}`} aria-live="polite"><strong>{selectedUserKindLabel} · {userAccountForm.role === "admin" ? "HR / Admin" : userAccountForm.role === "manager" ? "หัวหน้าทีม" : "พนักงาน"}</strong><span>{selectedUserRoleGuide}</span></div>
                   {userAccountForm.role !== "admin" && <label className="wide"><span>ผูกกับโปรไฟล์พนักงาน</span><select required value={userAccountForm.employeeId} onChange={(event) => setUserAccountForm((form) => ({ ...form, employeeId: event.target.value }))}><option value="">เลือกพนักงาน</option>{employees.filter((employee) => employee.status === "active" && (!userAccounts.some((account) => account.employeeId === employee.id && account.id !== userAccountForm.accountId))).map((employee) => <option key={employee.id} value={employee.id}>{employee.name} · {getRole(employee.roleId).name}</option>)}</select></label>}
                   {userAccountForm.role === "manager" && <label className="wide"><span>ทีมที่ดูแล</span><select value={userAccountForm.departmentId} onChange={(event) => setUserAccountForm((form) => ({ ...form, departmentId: event.target.value }))}><option value="">ใช้แผนกตามโปรไฟล์พนักงาน</option>{Array.from(new Map(roles.map((role) => [role.departmentId, role.department])).entries()).map(([departmentId, department]) => <option key={departmentId} value={departmentId}>{department}</option>)}</select></label>}
@@ -4349,15 +4360,17 @@ export default function Home() {
             </div>
 
             <section hidden={accessPanel !== "requests"} className="access-registration-card" aria-labelledby="registration-requests-title">
-              <div className="access-card-heading"><div><p className="eyebrow">EMPLOYEE REGISTRATION</p><h2 id="registration-requests-title">คำขอสมัครสมาชิกพนักงาน</h2><p>ตรวจข้อมูลผู้สมัคร แล้วเลือกโปรไฟล์พนักงานที่ถูกต้องก่อนอนุมัติ บัญชีที่ยังไม่อนุมัติจะเข้าสู่ระบบไม่ได้</p></div><span>{pendingRegistrationRequests.length} รอตรวจ</span></div>
+              <div className="access-card-heading"><div><p className="eyebrow">EMPLOYEE REGISTRATION</p><h2 id="registration-requests-title">อนุมัติสมาชิกพนักงาน</h2><p>เฉพาะ HR / Admin เท่านั้นที่อนุมัติได้ ตรวจตัวตน เลือกโปรไฟล์ และกำหนดบทบาทก่อนเปิดบัญชี</p></div><span>{pendingRegistrationRequests.length} รอตรวจ</span></div>
               <div className="registration-request-list">
                 {pendingRegistrationRequests.map((registrationRequest) => {
                   const matchingEmployeeId = employees.find((employee) => employee.status === "active" && employee.email.toLowerCase() === registrationRequest.email.toLowerCase() && !userAccounts.some((account) => account.employeeId === employee.id))?.id ?? "";
                   const selectedEmployeeId = registrationEmployeeSelections[registrationRequest.id] || matchingEmployeeId;
+                  const selectedRole = registrationRoleSelections[registrationRequest.id] ?? "employee";
                   const availableEmployees = employees.filter((employee) => employee.status === "active" && !userAccounts.some((account) => account.employeeId === employee.id));
                   return <article key={registrationRequest.id} className="registration-request-item">
                     <header><span className="access-account-avatar">{makeInitials(`${registrationRequest.firstName} ${registrationRequest.lastName}`)}</span><div><strong>{registrationRequest.firstName} {registrationRequest.lastName}</strong><small>ชื่อเล่น {registrationRequest.nickname} · ส่งเมื่อ {formatUpdatedAt(registrationRequest.submittedAt)}</small></div><b>รออนุมัติ</b></header>
                     <dl><div><dt>รหัสผู้ใช้</dt><dd><code>{registrationRequest.loginId}</code></dd></div><div><dt>อีเมล</dt><dd>{registrationRequest.email}</dd></div><div><dt>รหัสผ่าน</dt><dd>ตั้งแล้ว · ไม่แสดงข้อมูลลับ</dd></div></dl>
+                    <label><span>สิทธิ์หลังอนุมัติ</span><select value={selectedRole} onChange={(event) => setRegistrationRoleSelections((items) => ({ ...items, [registrationRequest.id]: event.target.value as UserAccountRecord["role"] }))}><option value="employee">พนักงาน — ดูและจัดการข้อมูลของตนเอง</option><option value="manager">หัวหน้าทีม — จัดการงานและประเมินทีม</option><option value="admin">HR / Admin — จัดการข้อมูลทั้งองค์กร</option></select><small>{selectedRole === "admin" ? "สิทธิ์ระดับสูง: เข้าถึงบัญชี ข้อมูล HR และการตั้งค่าทั้งองค์กร" : selectedRole === "manager" ? "ขอบเขตทีมจะยึดตามแผนกของโปรไฟล์พนักงานที่เลือก" : "เหมาะสำหรับสมาชิกทั่วไปและไม่มีสิทธิ์อนุมัติงานของตนเอง"}</small></label>
                     <label><span>ผูกกับโปรไฟล์พนักงาน</span><select value={selectedEmployeeId} onChange={(event) => setRegistrationEmployeeSelections((items) => ({ ...items, [registrationRequest.id]: event.target.value }))}><option value="">เลือกโปรไฟล์พนักงาน</option>{availableEmployees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name} · {getRole(employee.roleId).name}{employee.email.toLowerCase() === registrationRequest.email.toLowerCase() ? " · อีเมลตรงกัน" : ""}</option>)}</select><small>หากยังไม่มีโปรไฟล์ ให้เพิ่มพนักงานในทะเบียนก่อน แล้วกลับมาอนุมัติ</small></label>
                     <label><span>เหตุผลกรณีปฏิเสธ</span><input maxLength={500} value={registrationRejectionReasons[registrationRequest.id] ?? ""} onChange={(event) => setRegistrationRejectionReasons((items) => ({ ...items, [registrationRequest.id]: event.target.value }))} placeholder="เช่น ข้อมูลไม่ตรงกับทะเบียนพนักงาน" /></label>
                     <footer><button type="button" className="reject" disabled={isSaving} onClick={() => void rejectRegistrationRequest(registrationRequest)}>ปฏิเสธ</button><button type="button" className="approve" disabled={isSaving || !selectedEmployeeId} onClick={() => void approveRegistrationRequest(registrationRequest)}>อนุมัติและเปิดบัญชี</button></footer>
@@ -4365,11 +4378,11 @@ export default function Home() {
                 })}
                 {!pendingRegistrationRequests.length && <div className="registration-empty"><span aria-hidden="true">✓</span><strong>ตรวจครบแล้ว</strong><p>ยังไม่มีคำขอสมัครสมาชิกใหม่ที่รออนุมัติ</p></div>}
               </div>
-              {reviewedRegistrationRequests.length > 0 && <div className="registration-history"><h3>ประวัติคำขอที่ตรวจแล้ว</h3><div className="access-user-table-wrap"><table className="access-user-table"><thead><tr><th>ผู้สมัคร</th><th>รหัสผู้ใช้</th><th>ผลตรวจ</th><th>ผู้ตรวจ</th><th>วันที่ตรวจ</th></tr></thead><tbody>{reviewedRegistrationRequests.map((registrationRequest) => <tr key={registrationRequest.id}><td><strong>{registrationRequest.firstName} {registrationRequest.lastName}</strong><small>{registrationRequest.email}</small></td><td><code>{registrationRequest.loginId}</code></td><td><span className={`registration-status ${registrationRequest.status}`}>{registrationRequest.status === "approved" ? "อนุมัติแล้ว" : "ปฏิเสธ"}</span>{registrationRequest.rejectionReason && <small>{registrationRequest.rejectionReason}</small>}</td><td>{registrationRequest.reviewedByName || "—"}</td><td>{registrationRequest.reviewedAt ? formatUpdatedAt(registrationRequest.reviewedAt) : "—"}</td></tr>)}</tbody></table></div></div>}
+              {reviewedRegistrationRequests.length > 0 && <div className="registration-history"><h3>ประวัติคำขอที่ตรวจแล้ว</h3><div className="access-user-table-wrap"><table className="access-user-table"><thead><tr><th>ผู้สมัคร</th><th>รหัสผู้ใช้</th><th>บทบาทที่อนุมัติ</th><th>ผลตรวจ</th><th>ผู้ตรวจ</th><th>วันที่ตรวจ</th></tr></thead><tbody>{reviewedRegistrationRequests.map((registrationRequest) => { const approvedAccount = registrationRequest.approvedUserAccountId ? userAccounts.find((account) => account.id === registrationRequest.approvedUserAccountId) : null; return <tr key={registrationRequest.id}><td><strong>{registrationRequest.firstName} {registrationRequest.lastName}</strong><small>{registrationRequest.email}</small></td><td><code>{registrationRequest.loginId}</code></td><td>{approvedAccount ? <span className={`access-role-pill ${approvedAccount.role}`}>{approvedAccount.role === "admin" ? "HR / Admin" : approvedAccount.role === "manager" ? "หัวหน้าทีม" : "พนักงาน"}</span> : "—"}</td><td><span className={`registration-status ${registrationRequest.status}`}>{registrationRequest.status === "approved" ? "อนุมัติแล้ว" : "ปฏิเสธ"}</span>{registrationRequest.rejectionReason && <small>{registrationRequest.rejectionReason}</small>}</td><td>{registrationRequest.reviewedByName || "—"}</td><td>{registrationRequest.reviewedAt ? formatUpdatedAt(registrationRequest.reviewedAt) : "—"}</td></tr>; })}</tbody></table></div></div>}
             </section>
 
             <section hidden={accessPanel !== "users"} className="access-account-card">
-              <div className="access-card-heading"><div><p className="eyebrow">USER DATABASE</p><h2>ข้อมูลผู้ใช้งานทั้งหมด</h2><p>ดูบนหน้าเว็บหรือส่งออกไปเปิดใน Excel ได้ โดยไม่เปิดเผย Password Hash, Salt, Session Token หรือข้อมูลลับ</p></div><div className="access-user-heading-actions"><span>{userAccounts.length} บัญชี</span><button type="button" onClick={exportUserAccounts}>↓ ส่งออก Excel (.csv)</button></div></div>
+              <div className="access-card-heading"><div><p className="eyebrow">MEMBER ACCESS</p><h2>สมาชิกที่อนุมัติแล้ว</h2><p>HR / Admin แก้ไขบทบาท รีเซ็ตรหัสผ่าน เพิกถอนหรือคืนสิทธิ์ได้ และส่งออกไปเปิดใน Excel โดยไม่เปิดเผย Password Hash, Salt, Session Token หรือข้อมูลลับ</p></div><div className="access-user-heading-actions"><span>{userAccounts.length} บัญชี</span><button type="button" onClick={exportUserAccounts}>↓ ส่งออก Excel (.csv)</button></div></div>
               <div className="access-user-table-wrap" tabIndex={0} aria-label="เลื่อนเพื่อดูข้อมูลผู้ใช้งานทั้งหมด">
                 <table className="access-user-table">
                   <caption className="sr-only">ฐานข้อมูลผู้ใช้งานสำหรับผู้ดูแลระบบ</caption>
@@ -4379,7 +4392,7 @@ export default function Home() {
                     const credentialState = accountCredentialState(account);
                     const roleName = account.role === "admin" ? "HR / Admin" : account.role === "manager" ? "หัวหน้าทีม" : "พนักงาน";
                     const locked = credentialState.id === "locked";
-                    return <tr key={account.id} className={account.status}><td><code>{account.loginId || "ยังไม่กำหนด"}</code></td><td><strong>{account.displayName}</strong><small>{account.nickname ? `ชื่อเล่น ${account.nickname}` : "ไม่ระบุชื่อเล่น"}</small></td><td><span className={`access-role-pill ${account.role}`}>{roleName}</span></td><td><span className={`access-status ${account.status}`}>{account.status === "active" ? "ใช้งาน" : "พักสิทธิ์"}</span></td><td><strong>{employee?.name ?? (account.role === "admin" ? "ระดับองค์กร" : "ยังไม่ผูก")}</strong><small>{employee ? getRole(employee.roleId).name : "—"}</small></td><td>{account.email}</td><td>{account.hasPassword ? "มี" : "ไม่มี"}</td><td>{account.mustChangePassword ? "ต้องเปลี่ยน" : "ไม่ต้องเปลี่ยน"}</td><td>{locked ? "ล็อก" : "ปกติ"}</td><td>{account.lastLoginAt ? formatUpdatedAt(account.lastLoginAt) : credentialState.label}</td><td><span className="access-account-actions"><button aria-label={`แก้ไขบัญชีของ ${account.displayName}`} disabled={isSaving || account.id === currentUser?.id} onClick={() => editUserAccount(account)}>แก้ไข</button><button aria-label={`สร้างรหัสผ่านชั่วคราวใหม่ให้ ${account.displayName}`} disabled={isSaving || account.id === currentUser?.id} onClick={() => prepareUserAccountPasswordReset(account)}>รีเซ็ต</button><button aria-label={`${account.status === "active" ? "พักสิทธิ์" : "เปิดสิทธิ์"}ของ ${account.displayName}`} disabled={isSaving || account.id === currentUser?.id} onClick={() => void toggleUserAccount(account)}>{account.status === "active" ? "พัก" : "เปิด"}</button><button className="delete-account" aria-label={`ลบบัญชีของ ${account.displayName}`} disabled={isSaving || account.id === currentUser?.id || account.id === "user-owner"} onClick={() => void deleteUserAccount(account)}>ลบ</button></span></td></tr>;
+                    return <tr key={account.id} className={account.status}><td><code>{account.loginId || "ยังไม่กำหนด"}</code></td><td><strong>{account.displayName}</strong><small>{account.nickname ? `ชื่อเล่น ${account.nickname}` : "ไม่ระบุชื่อเล่น"}</small></td><td><span className={`access-role-pill ${account.role}`}>{roleName}</span></td><td><span className={`access-status ${account.status}`}>{account.status === "active" ? "ใช้งาน" : "เพิกถอนสิทธิ์"}</span></td><td><strong>{employee?.name ?? (account.role === "admin" ? "ระดับองค์กร" : "ยังไม่ผูก")}</strong><small>{employee ? getRole(employee.roleId).name : "—"}</small></td><td>{account.email}</td><td>{account.hasPassword ? "มี" : "ไม่มี"}</td><td>{account.mustChangePassword ? "ต้องเปลี่ยน" : "ไม่ต้องเปลี่ยน"}</td><td>{locked ? "ล็อก" : "ปกติ"}</td><td>{account.lastLoginAt ? formatUpdatedAt(account.lastLoginAt) : credentialState.label}</td><td><span className="access-account-actions"><button aria-label={`แก้ไขบัญชีของ ${account.displayName}`} disabled={isSaving || account.id === currentUser?.id} onClick={() => editUserAccount(account)}>แก้ไข</button><button aria-label={`สร้างรหัสผ่านชั่วคราวใหม่ให้ ${account.displayName}`} disabled={isSaving || account.id === currentUser?.id} onClick={() => prepareUserAccountPasswordReset(account)}>รีเซ็ต</button><button className={account.status === "active" ? "revoke-account" : "restore-account"} aria-label={`${account.status === "active" ? "เพิกถอนสิทธิ์" : "คืนสิทธิ์"}ของ ${account.displayName}`} disabled={isSaving || account.id === currentUser?.id} onClick={() => void toggleUserAccount(account)}>{account.status === "active" ? "เพิกถอน" : "คืนสิทธิ์"}</button><button className="delete-account" aria-label={`ลบบัญชีของ ${account.displayName}`} disabled={isSaving || account.id === currentUser?.id || account.id === "user-owner"} onClick={() => void deleteUserAccount(account)}>ลบ</button></span></td></tr>;
                   })}</tbody>
                 </table>
                 {!userAccounts.length && <div className="empty-state">ยังไม่มีบัญชีผู้ใช้งาน</div>}

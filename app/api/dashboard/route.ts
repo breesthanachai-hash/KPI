@@ -871,6 +871,7 @@ type ReviewEmployeeRegistrationPayload = {
   action: "approveEmployeeRegistration" | "rejectEmployeeRegistration";
   requestId?: string;
   employeeId?: string;
+  role?: "admin" | "manager" | "employee";
   rejectionReason?: string;
 };
 
@@ -1168,7 +1169,7 @@ export async function POST(request: Request) {
     }
 
     if (payload.action === "approveEmployeeRegistration") {
-      const result = await approveEmployeeRegistration(payload.requestId, payload.employeeId, currentUser);
+      const result = await approveEmployeeRegistration(payload.requestId, payload.employeeId, payload.role, currentUser);
       return Response.json(result);
     }
 

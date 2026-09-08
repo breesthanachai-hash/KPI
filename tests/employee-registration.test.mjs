@@ -80,7 +80,7 @@ test("public registration is origin-checked, bounded, rate-limited, hashed and r
   assert.doesNotMatch(dto, /passwordHash|passwordSalt|passwordAlgorithm|passwordIterations|pepperVersion|sourceHash/);
 });
 
-test("admin approval is one-time, links an active employee and erases the pending password verifier", async () => {
+test("HR/Admin approval is one-time, selects the role, links an active employee and erases the pending password verifier", async () => {
   const [service, dashboard] = await Promise.all([
     source("lib/registration-service.ts"),
     source("app/api/dashboard/route.ts"),
@@ -89,7 +89,10 @@ test("admin approval is one-time, links an active employee and erases the pendin
   assert.match(approval, /employee\.status !== "active"/);
   assert.match(approval, /eq\(userAccounts\.employeeId, employeeId\)/);
   assert.match(approval, /db\.batch\(\[[\s\S]*?employeeRegistrationReviewClaims[\s\S]*?userAccounts[\s\S]*?authCredentials[\s\S]*?passwordHash: ""[\s\S]*?passwordSalt: ""[\s\S]*?registration_approved/);
-  assert.match(approval, /role: "employee"/);
+  assert.match(approval, /roleInput === "admin" \|\| roleInput === "manager" \|\| roleInput === "employee"/);
+  assert.match(approval, /role,/);
+  assert.match(approval, /departmentId: role === "admin" \? "" : getRole\(employee\.roleId\)\.departmentId/);
+  assert.match(approval, /role:\$\{role\}/);
   assert.match(approval, /mustChangePassword: false/);
 
   const rejection = blockBetween(service, /export async function rejectEmployeeRegistration/, /\nfunction normalizeEmail/);
@@ -99,15 +102,23 @@ test("admin approval is one-time, links an active employee and erases the pendin
   assert.match(rejection, /registration_rejected/);
 
   assert.match(dashboard, /adminOnlyActions = new Set\(\[[\s\S]*?"approveEmployeeRegistration"[\s\S]*?"rejectEmployeeRegistration"/);
+  assert.match(dashboard, /approveEmployeeRegistration\(payload\.requestId, payload\.employeeId, payload\.role, currentUser\)/);
   assert.match(dashboard, /authenticatedUser\.role === "admin"[\s\S]*?db\.select\(\)\.from\(employeeRegistrationRequests\)/);
   assert.match(dashboard, /employeeRegistrationRequests: currentUser\.role === "admin" \? employeeRegistrationRequestDtos\(registrationRequestRows\) : \[\]/);
 });
 
 test("admin user database has safe Excel export and registration-review tabs", async () => {
   const page = await source("app/page.tsx");
-  for (const copy of ["ข้อมูลผู้ใช้งาน", "คำขอสมัครใหม่", "กฎและสิทธิ์", "ส่งออก Excel (.csv)", "อนุมัติและเปิดบัญชี", "ปฏิเสธ"]) {
+  for (const copy of ["จัดการสมาชิก", "อนุมัติสมาชิก", "กฎและสิทธิ์", "ส่งออก Excel (.csv)", "อนุมัติและเปิดบัญชี", "ปฏิเสธ", "สิทธิ์หลังอนุมัติ", "เพิกถอน", "คืนสิทธิ์"]) {
     assert.ok(page.includes(copy), `missing admin UI copy: ${copy}`);
   }
+  assert.match(page, /registrationRoleSelections\[registrationRequest\.id\] \?\? "employee"/);
+  assert.match(page, /action: "approveEmployeeRegistration"[\s\S]*?employeeId, role/);
+  assert.match(page, /<option value="employee">พนักงาน[\s\S]*?<option value="manager">หัวหน้าทีม[\s\S]*?<option value="admin">HR \/ Admin/);
+  const revokeAccess = blockBetween(page, /const toggleUserAccount =/, /\n  const deleteUserAccount/);
+  assert.match(revokeAccess, /ออกจากระบบทุกอุปกรณ์ทันที/);
+  assert.match(revokeAccess, /window\.confirm\(`\$\{actionLabel\}ของ/);
+  assert.match(page, /className=\{account\.status === "active" \? "revoke-account" : "restore-account"\}/);
   assert.match(page, /view === "access" && isAdmin/);
   assert.match(page, /const exportUserAccounts =/);
   assert.match(page, /people-pulse-user-accounts-\$\{bangkokIsoDate\(\)\}\.csv/);
@@ -164,7 +175,7 @@ test("built client contains registration and admin review features", async () =>
   const assetRoot = new URL("../dist/client/assets/", import.meta.url);
   const assetNames = (await readdir(assetRoot)).filter((name) => name.endsWith(".js"));
   const client = (await Promise.all(assetNames.map((name) => source(`dist/client/assets/${name}`)))).join("\n");
-  for (const copy of ["สมัครสมาชิกพนักงาน", "คำขอสมัครใหม่", "ข้อมูลผู้ใช้งานทั้งหมด", "อนุมัติและเปิดบัญชี", "ส่งออก Excel (.csv)", "ใช้ตัวอักษร ตัวเลข หรือสัญลักษณ์แบบใดก็ได้", "ความยาวไม่เกิน 15 ตัวอักษร"]) {
+  for (const copy of ["สมัครสมาชิกพนักงาน", "อนุมัติสมาชิก", "สมาชิกที่อนุมัติแล้ว", "สิทธิ์หลังอนุมัติ", "เพิกถอนสิทธิ์", "คืนสิทธิ์", "อนุมัติและเปิดบัญชี", "ส่งออก Excel (.csv)", "ใช้ตัวอักษร ตัวเลข หรือสัญลักษณ์แบบใดก็ได้", "ความยาวไม่เกิน 15 ตัวอักษร"]) {
     assert.match(client, new RegExp(copy.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
   assert.match(client, /\/api\/auth\/register/);
