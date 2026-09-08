@@ -86,6 +86,10 @@ test("owner recovery is expiring, single-use and can safely reset to one owner a
   assert.match(recovery, /PEOPLE_PULSE_OWNER_RECOVERY_EXPIRES_AT/);
   assert.match(recovery, /PEOPLE_PULSE_OWNER_RECOVERY_PURGE_OTHER_USERS/);
   assert.match(recovery, /expiresAtTime <= Date\.now\(\)/);
+  assert.match(recovery, /purgeOtherUsersValue && !purgeOtherUsers\)\) \{\s*return;/);
+  assert.match(recovery, /expiresAtTime <= Date\.now\(\)\) \{\s*return;/);
+  assert.match(recovery, /if \(validationError\) return;/);
+  assert.doesNotMatch(recovery, /configuration is incomplete|configuration has expired/, "a stale partial recovery environment must never block ordinary login");
   assert.match(recovery, /credential-mutation:owner-recovery:/);
   assert.match(recovery, /eq\(authEvents\.id, claimId\)/);
   assert.match(recovery, /eq\(authCredentials\.credentialVersion, credential\.credentialVersion\)/);

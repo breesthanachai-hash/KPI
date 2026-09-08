@@ -91,15 +91,15 @@ export async function ensureOwnerRecoveryCredential() {
   const hasAnyRecoveryConfig = Boolean(recoveryId || recoveryPassword || recoveryExpiresAt || purgeOtherUsersValue);
   if (!hasAnyRecoveryConfig) return;
   if (!/^[a-z0-9]{16,64}$/i.test(recoveryId) || !recoveryExpiresAt || (purgeOtherUsersValue && !purgeOtherUsers)) {
-    throw new Error("Owner recovery configuration is incomplete or invalid.");
+    return;
   }
   const expiresAtTime = Date.parse(recoveryExpiresAt);
   if (!Number.isFinite(expiresAtTime) || expiresAtTime <= Date.now()) {
-    throw new Error("Owner recovery configuration has expired.");
+    return;
   }
   const usesTemporaryFourDigitPin = /^\d{4}$/.test(recoveryPassword.normalize("NFC"));
   const validationError = usesTemporaryFourDigitPin ? "" : passwordValidationError(recoveryPassword);
-  if (validationError) throw new Error("Owner recovery password does not meet the active password policy.");
+  if (validationError) return;
 
   const db = getDb();
   const claimId = `credential-mutation:owner-recovery:${recoveryId}`;
