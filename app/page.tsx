@@ -2868,6 +2868,44 @@ export default function Home() {
     }
   };
 
+  const deleteEmployeePermanently = async (employee: EmployeeRecord) => {
+    if (employee.status !== "archived") {
+      showToast("ต้องลบพนักงานออกจากรายชื่อก่อน จึงจะลบแฟ้มถาวรได้", "error");
+      return;
+    }
+    const confirmationPhrase = `ลบถาวร ${employee.name}`;
+    const confirmation = window.prompt(`การลบถาวรจะลบข้อมูลส่วนบุคคล ประวัติงาน การประเมิน สัญญา เอกสาร และไฟล์แนบทั้งหมดของ ${employee.name}\n\nการดำเนินการนี้กู้คืนไม่ได้ หากยืนยันให้พิมพ์:\n${confirmationPhrase}`);
+    if (confirmation === null) return;
+    if (confirmation !== confirmationPhrase) {
+      showToast(`ข้อความไม่ตรง กรุณาพิมพ์ “${confirmationPhrase}”`, "error");
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const response = await fetch("/api/dashboard", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "deleteEmployeePermanently", employeeId: employee.id, expectedUpdatedAt: employee.updatedAt, confirmation }),
+      });
+      const body = await response.json() as { deletedEmployeeId?: string; disabledUserAccountIds?: string[]; reassignedProjectCount?: number; replacementEmployeeName?: string; fileCleanupPending?: boolean; error?: string };
+      if (!response.ok || body.deletedEmployeeId !== employee.id) throw new Error(body.error ?? "ลบแฟ้มพนักงานถาวรไม่สำเร็จ");
+      setEmployees((items) => items.filter((item) => item.id !== employee.id));
+      setProfileEmployeeId("");
+      setDossierStatusFilter("all");
+      setDashboardReloadKey((key) => key + 1);
+      const reassignedCopy = body.reassignedProjectCount
+        ? ` · โอน ${body.reassignedProjectCount} โปรเจกต์ให้ ${body.replacementEmployeeName}`
+        : "";
+      const cleanupCopy = body.fileCleanupPending ? " · มีไฟล์บางรายการรอล้างโดยระบบ" : "";
+      showToast(`ลบแฟ้ม ${employee.name} ถาวรแล้ว${reassignedCopy}${cleanupCopy}`);
+    } catch (error) {
+      showErrorToast(error, "ลบแฟ้มพนักงานถาวรไม่สำเร็จ");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const editUserAccount = (account: PublicUserAccount) => {
     setCredentialResult(null);
     setShowTemporaryPassword(false);
@@ -3739,7 +3777,7 @@ export default function Home() {
                   <div className="dossier-person"><div className="profile-photo-control"><EmployeeAvatar employee={profileEmployee} profile={profileRecord} className="avatar-dossier" /><label>{uploadingProfileImage ? "กำลังอัปโหลด" : "เปลี่ยนรูป"}<input type="file" accept=".jpg,.jpeg,.png,.webp" disabled={uploadingProfileImage || profileEmployee.status === "archived"} onChange={(event) => { const file = event.target.files?.[0]; void uploadProfileImage(file); event.currentTarget.value = ""; }} /></label></div><div><p className="eyebrow">DIGITAL EMPLOYEE FILE</p><h2>{profileEmployee.name}</h2><small>{getRole(profileEmployee.roleId).name} · {getRole(profileEmployee.roleId).department}</small><em className={`employee-lifecycle-badge status-${profileEmployee.status}`}>{employeeLifecycleLabel(profileEmployee.status)}</em></div></div>
                   <div className="dossier-completeness"><span style={{ "--dossier-score": `${dossierCompleteness}%` } as React.CSSProperties}><b>{dossierCompleteness}%</b></span><div><strong>ความสมบูรณ์ของแฟ้ม</strong><small>{dossierCompleteness >= 85 ? "ข้อมูลพร้อมใช้งาน" : "ยังมีข้อมูลหรือเอกสารที่ต้องเติม"}</small></div></div>
                   <div className="dossier-lifecycle-actions">
-                    {profileEmployee.status === "archived" ? <button type="button" className="restore-employee" disabled={isSaving} onClick={() => void updateEmployeeLifecycleStatus(profileEmployee, "resigned")}>กู้คืนแฟ้ม</button> : <>
+                    {profileEmployee.status === "archived" ? <><button type="button" className="restore-employee" disabled={isSaving} onClick={() => void updateEmployeeLifecycleStatus(profileEmployee, "resigned")}>กู้คืนแฟ้ม</button><button type="button" className="purge-employee" disabled={isSaving} title="ลบข้อมูลและไฟล์ทั้งหมดถาวร กู้คืนไม่ได้" onClick={() => void deleteEmployeePermanently(profileEmployee)}>ลบถาวร</button></> : <>
                       <label><span>สถานะการจ้าง</span><select value={profileEmployee.status === "active" ? "active" : "resigned"} disabled={isSaving} onChange={(event) => void updateEmployeeLifecycleStatus(profileEmployee, event.target.value as "active" | "resigned")}><option value="active">ทำงานอยู่</option><option value="resigned">ลาออกแล้ว</option></select></label>
                       <button type="button" onClick={openProfileEditor}>แก้ไขข้อมูล</button>
                       <button type="button" className="archive-employee" disabled={isSaving || profileEmployee.status === "active"} title={profileEmployee.status === "active" ? "เลือก “ลาออกแล้ว” ก่อนลบออกจากรายชื่อ" : "ซ่อนจากรายชื่อโดยเก็บประวัติไว้"} onClick={() => void archiveEmployeeRecord(profileEmployee)}>ลบออกจากรายชื่อ</button>

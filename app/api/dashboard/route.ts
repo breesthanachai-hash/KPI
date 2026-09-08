@@ -1,5 +1,5 @@
-import { and, eq, isNull, notExists, sql } from "drizzle-orm";
-import { getDb } from "../../../db";
+import { and, eq, isNull, notExists, or, sql } from "drizzle-orm";
+import { getD1, getDb, getFilesBucket } from "../../../db";
 import { ensureDatabase } from "../../../db/initialize";
 import { applicationDocuments, attendanceRecords, authCredentials, authEvents, authSessions, employeeProfiles, employeeRecognitions, employeeRegistrationRequests, employeeSelfAssessments, employees, employeeWarningEvents, employeeWarnings, employmentContracts, evaluations, hrProfiles, notificationReads, organizationDocuments, organizationPolicies, organizationPolicyPublishClaims, pointCapClaims, pointEvents, pointLedger, pointMutationClaims, policyAcknowledgements, projects, rewardRedemptionClaims, rewardRedemptions, rewards, skillAchievements, talentActions, userAccounts, workItems, workSubmissions } from "../../../db/schema";
 import { authenticatedRequestGate, canAccessEmployee, ensureBootstrapAccounts, recordAuthEvent, revokeAllSessionsForAccount, type CurrentUser } from "../../../lib/access-control";
@@ -686,6 +686,13 @@ type UpdateEmployeeStatusPayload = {
   expectedUpdatedAt?: string;
 };
 
+type DeleteEmployeePermanentlyPayload = {
+  action: "deleteEmployeePermanently";
+  employeeId?: string;
+  expectedUpdatedAt?: string;
+  confirmation?: string;
+};
+
 type EvaluationPayload = {
   action: "saveEvaluation";
   employeeId?: string;
@@ -923,10 +930,10 @@ export async function POST(request: Request) {
     const currentUser = authentication.currentUser;
     await ensureSeedData();
     const db = getDb();
-    const payload = await request.json() as EmployeePayload | UpdateEmployeeStatusPayload | EvaluationPayload | SelfAssessmentPayload | HrPlanPayload | CompleteTalentActionPayload | AttendancePayload | AttendanceApprovalPayload | SkillAchievementPayload | ProjectPayload | WorkItemPayload | ReviewWorkSubmissionPayload | RecordPointEventPayload | RunMonthlyPointCyclePayload | RedeemRewardPayload | UpdateRewardRedemptionPayload | EmployeeProfilePayload | DocumentStatusPayload | ContractPayload | SignContractPayload | SendContractPayload | UserAccountPayload | DeleteUserAccountPayload | ReviewEmployeeRegistrationPayload | MarkNotificationsReadPayload | SaveOrganizationPolicyPayload | PublishOrganizationPolicyPayload | AcknowledgeOrganizationPolicyPayload;
+    const payload = await request.json() as EmployeePayload | UpdateEmployeeStatusPayload | DeleteEmployeePermanentlyPayload | EvaluationPayload | SelfAssessmentPayload | HrPlanPayload | CompleteTalentActionPayload | AttendancePayload | AttendanceApprovalPayload | SkillAchievementPayload | ProjectPayload | WorkItemPayload | ReviewWorkSubmissionPayload | RecordPointEventPayload | RunMonthlyPointCyclePayload | RedeemRewardPayload | UpdateRewardRedemptionPayload | EmployeeProfilePayload | DocumentStatusPayload | ContractPayload | SignContractPayload | SendContractPayload | UserAccountPayload | DeleteUserAccountPayload | ReviewEmployeeRegistrationPayload | MarkNotificationsReadPayload | SaveOrganizationPolicyPayload | PublishOrganizationPolicyPayload | AcknowledgeOrganizationPolicyPayload;
     const pointPolicyRows = await db.select().from(organizationPolicies);
     const { policy: activePointPolicy, rules: activePointRules } = pointPolicyFromRows(pointPolicyRows);
-    const adminOnlyActions = new Set(["createEmployee", "updateEmployeeStatus", "archiveEmployee", "saveHrPlan", "verifySkillAchievement", "runMonthlyPointCycle", "saveEmployeeProfile", "updateDocumentStatus", "createContract", "sendContract", "saveUserAccount", "deleteUserAccount", "approveEmployeeRegistration", "rejectEmployeeRegistration", "saveOrganizationPolicy", "publishOrganizationPolicy", "updateRewardRedemption"]);
+    const adminOnlyActions = new Set(["createEmployee", "updateEmployeeStatus", "archiveEmployee", "deleteEmployeePermanently", "saveHrPlan", "verifySkillAchievement", "runMonthlyPointCycle", "saveEmployeeProfile", "updateDocumentStatus", "createContract", "sendContract", "saveUserAccount", "deleteUserAccount", "approveEmployeeRegistration", "rejectEmployeeRegistration", "saveOrganizationPolicy", "publishOrganizationPolicy", "updateRewardRedemption"]);
     const teamActions = new Set(["saveEvaluation", "completeTalentAction", "approveAttendance", "saveProject", "reviewWorkSubmission", "recordPointEvent"]);
     const employeePortalActions = new Set(["markNotificationsRead", "saveWorkItem", "saveSelfAssessment", "redeemReward", "acknowledgeOrganizationPolicy", "signContract"]);
     if (currentUser.role === "employee" && !employeePortalActions.has(payload.action)) return Response.json({ error: "สิทธิ์พนักงานใช้ได้เฉพาะงานของฉัน การแจ้งเตือน การแลกรางวัล การรับทราบกฎองค์กร และการลงนามสัญญาของตนเอง" }, { status: 403 });
@@ -1334,6 +1341,121 @@ export async function POST(request: Request) {
         employee: savedEmployee,
         disabledUserAccountIds: disablesAccess && linkedAccount ? [linkedAccount.id] : [],
         archived: nextStatus === "archived",
+      });
+    }
+
+    if (payload.action === "deleteEmployeePermanently") {
+      const employeeId = payload.employeeId?.trim().slice(0, 120) ?? "";
+      const expectedUpdatedAt = payload.expectedUpdatedAt?.trim() ?? "";
+      if (!employeeId || !expectedUpdatedAt) {
+        return Response.json({ error: "ข้อมูลแฟ้มพนักงานไม่ครบ กรุณาโหลดข้อมูลล่าสุดแล้วลองอีกครั้ง" }, { status: 400 });
+      }
+      if (currentUser.employeeId === employeeId) {
+        return Response.json({ error: "ไม่สามารถลบแฟ้มของบัญชีที่กำลังใช้งานอยู่" }, { status: 409 });
+      }
+
+      const [employee] = await db.select().from(employees).where(eq(employees.id, employeeId)).limit(1);
+      if (!employee) return Response.json({ error: "ไม่พบแฟ้มพนักงานที่เลือก" }, { status: 404 });
+      if (employee.status !== "archived") {
+        return Response.json({ error: "ต้องลบพนักงานออกจากรายชื่อก่อน จึงจะลบแฟ้มถาวรได้" }, { status: 409 });
+      }
+      if (employee.updatedAt !== expectedUpdatedAt) {
+        return Response.json({ error: "แฟ้มนี้ถูกแก้ไขจากอีกหน้าจอ กรุณาโหลดข้อมูลล่าสุด" }, { status: 409 });
+      }
+      const requiredConfirmation = `ลบถาวร ${employee.name}`;
+      if (payload.confirmation !== requiredConfirmation) {
+        return Response.json({ error: `พิมพ์ “${requiredConfirmation}” ให้ตรงเพื่อยืนยันการลบถาวร` }, { status: 400 });
+      }
+
+      const employeeDepartmentId = getRole(employee.roleId).departmentId;
+      const [ownedProjectRows, activeEmployeeRows, linkedAccountRows, profileFileRows, documentFileRows, warningFileRows, recognitionFileRows, submissionFileRows] = await Promise.all([
+        db.select({ id: projects.id }).from(projects).where(eq(projects.ownerEmployeeId, employeeId)),
+        db.select({ id: employees.id, name: employees.name, roleId: employees.roleId }).from(employees).where(and(eq(employees.status, "active"), sql`${employees.id} <> ${employeeId}`)),
+        db.select({ id: userAccounts.id }).from(userAccounts).where(eq(userAccounts.employeeId, employeeId)),
+        db.select({ storageKey: employeeProfiles.profileImageKey }).from(employeeProfiles).where(eq(employeeProfiles.employeeId, employeeId)),
+        db.select({ storageKey: applicationDocuments.storageKey }).from(applicationDocuments).where(eq(applicationDocuments.employeeId, employeeId)),
+        db.select({ storageKey: employeeWarnings.storageKey }).from(employeeWarnings).where(eq(employeeWarnings.employeeId, employeeId)),
+        db.select({ storageKey: employeeRecognitions.storageKey }).from(employeeRecognitions).where(eq(employeeRecognitions.employeeId, employeeId)),
+        db.select({ storageKey: workSubmissions.storageKey })
+          .from(workSubmissions)
+          .leftJoin(workItems, eq(workSubmissions.workItemId, workItems.id))
+          .where(or(eq(workSubmissions.employeeId, employeeId), eq(workItems.assigneeEmployeeId, employeeId))),
+      ]);
+      const replacementEmployee = activeEmployeeRows
+        .filter((candidate) => getRole(candidate.roleId).departmentId === employeeDepartmentId)
+        .sort((a, b) => a.name.localeCompare(b.name, "th") || a.id.localeCompare(b.id))[0];
+      if (ownedProjectRows.length && !replacementEmployee) {
+        return Response.json({ error: `ยังลบถาวรไม่ได้ เพราะ ${employee.name} เป็นเจ้าของ ${ownedProjectRows.length} โปรเจกต์ และไม่มีพนักงานที่ทำงานอยู่ในแผนกเดียวกันให้รับช่วง กรุณาเพิ่มหรือคืนสถานะพนักงานในแผนกนี้ก่อน` }, { status: 409 });
+      }
+
+      const fileKeys = [...new Set([
+        ...profileFileRows,
+        ...documentFileRows,
+        ...warningFileRows,
+        ...recognitionFileRows,
+        ...submissionFileRows,
+      ].map((row) => row.storageKey).filter((key): key is string => Boolean(key)))];
+      const filesBucket = fileKeys.length ? getFilesBucket() : null;
+      const now = new Date().toISOString();
+      const d1 = getD1();
+      const employeeGuard = "EXISTS (SELECT 1 FROM employees WHERE id = ? AND status = 'archived' AND updated_at = ?)";
+      const statements: D1PreparedStatement[] = [
+        d1.prepare(`DELETE FROM auth_sessions WHERE user_account_id IN (SELECT id FROM user_accounts WHERE employee_id = ?) AND ${employeeGuard}`).bind(employeeId, employeeId, expectedUpdatedAt),
+        d1.prepare(`DELETE FROM auth_credentials WHERE user_account_id IN (SELECT id FROM user_accounts WHERE employee_id = ?) AND ${employeeGuard}`).bind(employeeId, employeeId, expectedUpdatedAt),
+        d1.prepare(`DELETE FROM notification_reads WHERE user_key IN (SELECT id FROM user_accounts WHERE employee_id = ?) AND ${employeeGuard}`).bind(employeeId, employeeId, expectedUpdatedAt),
+        d1.prepare(`UPDATE user_accounts SET auth_user_id = '', email = 'deleted-' || id || '@deleted.invalid', display_name = 'ผู้ใช้ที่ลบแล้ว', nickname = '', status = 'inactive', employee_id = NULL, department_id = '', updated_at = ? WHERE employee_id = ? AND ${employeeGuard}`).bind(now, employeeId, employeeId, expectedUpdatedAt),
+      ];
+      if (ownedProjectRows.length && replacementEmployee) {
+        statements.push(d1.prepare(`UPDATE projects SET owner_employee_id = ?, updated_at = ? WHERE owner_employee_id = ? AND ${employeeGuard}`).bind(replacementEmployee.id, now, employeeId, employeeId, expectedUpdatedAt));
+      }
+      statements.push(
+        d1.prepare(`DELETE FROM policy_acknowledgements WHERE employee_id = ? AND ${employeeGuard}`).bind(employeeId, employeeId, expectedUpdatedAt),
+        d1.prepare(`DELETE FROM point_mutation_claims WHERE employee_id = ? AND ${employeeGuard}`).bind(employeeId, employeeId, expectedUpdatedAt),
+        d1.prepare(`DELETE FROM point_cap_claims WHERE employee_id = ? AND ${employeeGuard}`).bind(employeeId, employeeId, expectedUpdatedAt),
+        d1.prepare(`DELETE FROM reward_redemption_claims WHERE employee_id = ? AND ${employeeGuard}`).bind(employeeId, employeeId, expectedUpdatedAt),
+        // The immutable warning-event guard is suspended only inside this atomic purge batch.
+        // If any later statement fails, D1 rolls the whole batch back and restores the guard.
+        d1.prepare("DROP TRIGGER IF EXISTS employee_warning_event_delete_guard"),
+        d1.prepare(`DELETE FROM employee_warning_events WHERE warning_id IN (SELECT id FROM employee_warnings WHERE employee_id = ?) AND ${employeeGuard}`).bind(employeeId, employeeId, expectedUpdatedAt),
+        d1.prepare(`CREATE TRIGGER employee_warning_event_delete_guard
+          BEFORE DELETE ON employee_warning_events
+          BEGIN
+            SELECT RAISE(ABORT, 'EMPLOYEE_WARNING_EVENT_IMMUTABLE');
+          END`),
+        d1.prepare(`DELETE FROM employee_warnings WHERE employee_id = ? AND ${employeeGuard}`).bind(employeeId, employeeId, expectedUpdatedAt),
+        d1.prepare(`DELETE FROM employee_recognitions WHERE employee_id = ? AND ${employeeGuard}`).bind(employeeId, employeeId, expectedUpdatedAt),
+        d1.prepare(`INSERT INTO auth_events (id, user_account_id, event_type, source_hash, detail, created_at) SELECT ?, ?, 'employee_purged', ?, ?, ? WHERE ${employeeGuard}`).bind(
+          `auth-event-${crypto.randomUUID()}`,
+          currentUser.id,
+          await requestSourceHash(request),
+          `employee:${employeeId};projects-reassigned:${ownedProjectRows.length};actor:${currentUser.id}`,
+          now,
+          employeeId,
+          expectedUpdatedAt,
+        ),
+      );
+      const employeeDeleteResultIndex = statements.length;
+      statements.push(d1.prepare("DELETE FROM employees WHERE id = ? AND status = 'archived' AND updated_at = ?").bind(employeeId, expectedUpdatedAt));
+
+      const deletionResults = await d1.batch(statements);
+      if ((deletionResults[employeeDeleteResultIndex]?.meta.changes ?? 0) !== 1) {
+        return Response.json({ error: "แฟ้มนี้ถูกแก้ไขจากอีกหน้าจอ กรุณาโหลดข้อมูลล่าสุด" }, { status: 409 });
+      }
+
+      let fileCleanupPending = false;
+      if (filesBucket) {
+        for (let index = 0; index < fileKeys.length; index += 25) {
+          const results = await Promise.allSettled(fileKeys.slice(index, index + 25).map((fileKey) => filesBucket.delete(fileKey)));
+          if (results.some((result) => result.status === "rejected")) fileCleanupPending = true;
+        }
+      }
+      return Response.json({
+        deletedEmployeeId: employeeId,
+        disabledUserAccountIds: linkedAccountRows.map((account) => account.id),
+        reassignedProjectCount: ownedProjectRows.length,
+        replacementEmployeeName: replacementEmployee?.name ?? "",
+        deletedFileCount: fileKeys.length,
+        fileCleanupPending,
       });
     }
 

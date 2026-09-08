@@ -5721,6 +5721,8 @@ input::placeholder,textarea::placeholder { color: #526f8d !important; opacity: 1
 .dossier-lifecycle-actions button { background: rgba(255,255,255,.1); color: #fff; cursor: pointer; }
 .dossier-lifecycle-actions button.archive-employee { border-color: #ffc2d4; background: #fff0f5; color: #8f2047; }
 .dossier-lifecycle-actions button.restore-employee { border-color: #9bd0bd; background: #e9f7f1; color: #176151; }
+.dossier-lifecycle-actions button.purge-employee { border-color: #ff9fba; background: #9f1239; color: #fff; box-shadow: 0 8px 18px rgba(80,7,36,.22); }
+.dossier-lifecycle-actions button.purge-employee:hover:not(:disabled) { background: #7f102f; border-color: #ffd3df; }
 .dossier-lifecycle-actions button:disabled { opacity: .5; cursor: not-allowed; }
 .dossier-status-filter select:focus-visible,.dossier-lifecycle-actions :is(select,button):focus-visible { outline: 3px solid #f4b942; outline-offset: 2px; }
 
