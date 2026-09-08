@@ -5,7 +5,7 @@ import type { Office3DPerson } from "./office-3d";
 import AiAssistant, { type PeopleAiActionId, type PeopleAiContext } from "./ai-assistant";
 import AiRobotMascot from "./ai-robot-mascot";
 import { AuthScreen, ChangePasswordDialog } from "./auth-ui";
-import { MIN_NUMERIC_PIN_LENGTH, passwordMeetsMinimum } from "../lib/password-policy.js";
+import { MAX_NEW_PASSWORD_LENGTH, MIN_GENERAL_PASSWORD_LENGTH, passwordMeetsMinimum } from "../lib/password-policy.js";
 import {
   type ApplicationDocumentRecord,
   type AttendanceRecord,
@@ -858,7 +858,7 @@ const viewMeta: Record<View, { eyebrow: string; title: string; description: stri
 
 const temporaryPasswordAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%";
 
-function generateTemporaryPassword(length = 16) {
+function generateTemporaryPassword(length = 10) {
   const values = new Uint32Array(length);
   globalThis.crypto.getRandomValues(values);
   return Array.from(values, (value) => temporaryPasswordAlphabet[value % temporaryPasswordAlphabet.length]).join("");
@@ -2796,8 +2796,8 @@ export default function Home() {
       showToast("บัญชีนี้ต้องมีรหัสผ่านชั่วคราวก่อนบันทึก", "error");
       return;
     }
-    if (temporaryPassword && (!passwordMeetsMinimum(temporaryPassword) || temporaryPassword.length > 128)) {
-      showToast("ใช้ PIN ตัวเลขอย่างน้อย 8 หลัก หรือรหัสผ่านทั่วไป 15–128 ตัวอักษร", "error");
+    if (temporaryPassword && (!passwordMeetsMinimum(temporaryPassword) || [...temporaryPassword.normalize("NFC")].length > MAX_NEW_PASSWORD_LENGTH)) {
+      showToast("รหัสผ่านต้องมี 6–15 ตัวอักษร", "error");
       return;
     }
     setIsSaving(true);
@@ -4319,10 +4319,10 @@ export default function Home() {
                   <div className="access-temporary-password wide">
                     <label htmlFor="temporary-password"><span>{userAccountRequiresTemporaryPassword ? "รหัสผ่านชั่วคราว" : "ตั้งรหัสผ่านชั่วคราวใหม่ (ไม่บังคับ)"}</span></label>
                     <div className="temporary-password-input">
-                      <input id="temporary-password" name="new-password" type={showTemporaryPassword ? "text" : "password"} autoComplete="new-password" minLength={userAccountForm.temporaryPassword ? MIN_NUMERIC_PIN_LENGTH : undefined} maxLength={128} required={userAccountRequiresTemporaryPassword} value={userAccountForm.temporaryPassword} onChange={(event) => setUserAccountForm((form) => ({ ...form, temporaryPassword: event.target.value }))} placeholder={userAccountRequiresTemporaryPassword ? "PIN ตัวเลขอย่างน้อย 8 หลัก" : "เว้นว่างเพื่อใช้รหัสเดิม"} />
+                      <input id="temporary-password" name="new-password" type={showTemporaryPassword ? "text" : "password"} autoComplete="new-password" minLength={userAccountForm.temporaryPassword ? MIN_GENERAL_PASSWORD_LENGTH : undefined} maxLength={MAX_NEW_PASSWORD_LENGTH} required={userAccountRequiresTemporaryPassword} value={userAccountForm.temporaryPassword} onChange={(event) => setUserAccountForm((form) => ({ ...form, temporaryPassword: event.target.value }))} placeholder={userAccountRequiresTemporaryPassword ? "รหัสผ่าน 6–15 ตัวอักษร" : "เว้นว่างเพื่อใช้รหัสเดิม"} />
                       <button type="button" aria-label={`${showTemporaryPassword ? "ซ่อน" : "แสดง"}รหัสผ่านชั่วคราว`} aria-pressed={showTemporaryPassword} onClick={() => setShowTemporaryPassword((visible) => !visible)}>{showTemporaryPassword ? "ซ่อน" : "แสดง"}</button>
                     </div>
-                    <div className="temporary-password-tools"><small>{userAccountRequiresTemporaryPassword ? "ผู้ใช้ต้องเปลี่ยนรหัสนี้ทันทีเมื่อเข้าสู่ระบบครั้งแรก" : "หากกรอกใหม่ ระบบจะยกเลิกรหัสเดิมและบังคับให้ผู้ใช้เปลี่ยนอีกครั้ง"}</small><button type="button" onClick={() => { setUserAccountForm((form) => ({ ...form, temporaryPassword: generateTemporaryPassword() })); setShowTemporaryPassword(true); }}>สร้างรหัส 16 ตัว</button></div>
+                    <div className="temporary-password-tools"><small>{userAccountRequiresTemporaryPassword ? "ผู้ใช้ต้องเปลี่ยนรหัสนี้ทันทีเมื่อเข้าสู่ระบบครั้งแรก" : "หากกรอกใหม่ ระบบจะยกเลิกรหัสเดิมและบังคับให้ผู้ใช้เปลี่ยนอีกครั้ง"}</small><button type="button" onClick={() => { setUserAccountForm((form) => ({ ...form, temporaryPassword: generateTemporaryPassword() })); setShowTemporaryPassword(true); }}>สร้างรหัส 10 ตัว</button></div>
                   </div>
                   <fieldset className="access-exact-role-selector wide" aria-describedby="access-role-help"><legend>เลือกบทบาทและขอบเขตสิทธิ์</legend>{([
                     { role: "admin", label: "HR / Admin", group: "คนสั่งงาน", scope: "ทั้งองค์กร", icon: "HR" },

@@ -19,12 +19,13 @@ function blockBetween(text, startPattern, endPattern) {
   return end === -1 ? remainder : remainder.slice(0, end);
 }
 
-test("employee registration accepts any nonblank password up to 15 characters", () => {
+test("employee registration accepts any 6–15 character password", () => {
   const cryptoModule = new URL("../lib/password-crypto.ts", import.meta.url).href;
   const script = `
     import { registrationPasswordValidationError } from ${JSON.stringify(cryptoModule)};
     process.stdout.write(JSON.stringify([
-      registrationPasswordValidationError("a"),
+      registrationPasswordValidationError("12345"),
+      registrationPasswordValidationError("123456"),
       registrationPasswordValidationError("A1!_รหัส"),
       registrationPasswordValidationError("123456789012345"),
       registrationPasswordValidationError("1234567890123456"),
@@ -36,7 +37,7 @@ test("employee registration accepts any nonblank password up to 15 characters", 
     encoding: "utf8",
   });
   assert.equal(result.status, 0, result.stderr);
-  assert.deepEqual(JSON.parse(result.stdout), [null, null, null, "รหัสผ่านสำหรับสมัครสมาชิกต้องไม่เกิน 15 ตัวอักษร", "กรุณากรอกรหัสผ่าน"]);
+  assert.deepEqual(JSON.parse(result.stdout), ["รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร", null, null, null, "รหัสผ่านสำหรับสมัครสมาชิกต้องไม่เกิน 15 ตัวอักษร", "กรุณากรอกรหัสผ่าน"]);
 });
 
 test("login offers a complete employee registration form and keeps approval explicit", async () => {
@@ -47,9 +48,9 @@ test("login offers a complete employee registration form and keeps approval expl
   assert.match(authUi, /สมัครสมาชิกพนักงาน/);
   assert.match(authUi, /fetch\("\/api\/auth\/register"[\s\S]*?method: "POST"/);
   assert.match(authUi, /registrationPasswordValidation\(registration\.password, registration\.confirmation\)/);
-  assert.match(authUi, /minLength=\{1\} maxLength=\{15\}/);
+  assert.match(authUi, /minLength=\{MIN_GENERAL_PASSWORD_LENGTH\} maxLength=\{MAX_NEW_PASSWORD_LENGTH\}/);
   assert.match(authUi, /ใช้ตัวอักษร ตัวเลข หรือสัญลักษณ์แบบใดก็ได้/);
-  assert.match(authUi, /ความยาวไม่เกิน 15 ตัวอักษร/);
+  assert.match(authUi, /ความยาว 6–15 ตัวอักษร/);
   assert.doesNotMatch(blockBetween(authUi, /authView === "register"/, /authView === "submitted"/), /PIN ตัวเลขอย่างเดียวอย่างน้อย 8 หลัก/);
   assert.match(authUi, /รอผู้ดูแลอนุมัติและผูกโปรไฟล์พนักงาน/);
   assert.match(authUi, /จากนั้นจึงใช้ ID และรหัสผ่านที่ตั้งไว้เข้าสู่ระบบได้/);
@@ -175,7 +176,7 @@ test("built client contains registration and admin review features", async () =>
   const assetRoot = new URL("../dist/client/assets/", import.meta.url);
   const assetNames = (await readdir(assetRoot)).filter((name) => name.endsWith(".js"));
   const client = (await Promise.all(assetNames.map((name) => source(`dist/client/assets/${name}`)))).join("\n");
-  for (const copy of ["สมัครสมาชิกพนักงาน", "อนุมัติสมาชิก", "สมาชิกที่อนุมัติแล้ว", "สิทธิ์หลังอนุมัติ", "เพิกถอนสิทธิ์", "คืนสิทธิ์", "อนุมัติและเปิดบัญชี", "ส่งออก Excel (.csv)", "ใช้ตัวอักษร ตัวเลข หรือสัญลักษณ์แบบใดก็ได้", "ความยาวไม่เกิน 15 ตัวอักษร"]) {
+  for (const copy of ["สมัครสมาชิกพนักงาน", "อนุมัติสมาชิก", "สมาชิกที่อนุมัติแล้ว", "สิทธิ์หลังอนุมัติ", "เพิกถอนสิทธิ์", "คืนสิทธิ์", "อนุมัติและเปิดบัญชี", "ส่งออก Excel (.csv)", "ใช้ตัวอักษร ตัวเลข หรือสัญลักษณ์แบบใดก็ได้", "ความยาว 6–15 ตัวอักษร"]) {
     assert.match(client, new RegExp(copy.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
   assert.match(client, /\/api\/auth\/register/);

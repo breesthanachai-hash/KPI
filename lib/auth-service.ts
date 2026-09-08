@@ -209,7 +209,7 @@ export async function credentialMutationValues(
   const loginIdCanonical = validateLoginId(loginId);
   if (!loginIdCanonical) throw new AuthInputError("ชื่อผู้ใช้ต้องยาว 3–64 ตัว และใช้เฉพาะ a-z, 0-9, จุด, ขีดกลาง หรือขีดล่าง");
   const temporaryPassword = typeof temporaryPasswordInput === "string" ? temporaryPasswordInput : "";
-  if (!existingCredential && !temporaryPassword) throw new AuthInputError("บัญชีใหม่ต้องกำหนดรหัสผ่านชั่วคราว หรือ PIN ตัวเลขอย่างน้อย 8 หลัก");
+  if (!existingCredential && !temporaryPassword) throw new AuthInputError("บัญชีใหม่ต้องกำหนดรหัสผ่านชั่วคราวอย่างน้อย 6 ตัวอักษร");
   if (temporaryPassword) {
     const validationError = passwordValidationError(temporaryPassword);
     if (validationError) throw new AuthInputError(validationError);

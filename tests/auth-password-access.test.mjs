@@ -26,7 +26,7 @@ function assertBefore(block, first, second, label) {
   assert.ok(firstIndex < secondIndex, `${label}: the guard must run before the protected operation`);
 }
 
-test("password policy accepts a memorable numeric PIN without weakening general passwords", async () => {
+test("password policy accepts any 6–15 character password across account flows", async () => {
   const [policy, cryptoSource, authUi, page, authService] = await Promise.all([
     source("lib/password-policy.js"),
     source("lib/password-crypto.ts"),
@@ -38,12 +38,12 @@ test("password policy accepts a memorable numeric PIN without weakening general 
   const script = `
     import { passwordMeetsMinimum, passwordMinimumError } from ${JSON.stringify(policyModule)};
     process.stdout.write(JSON.stringify({
-      pin8: passwordMeetsMinimum("12345678"),
-      pin7: passwordMeetsMinimum("1234567"),
-      general15: passwordMeetsMinimum("correct horse 1"),
-      general14: passwordMeetsMinimum("correct horse1"),
-      pinError: passwordMinimumError("1234567"),
-      generalError: passwordMinimumError("short-pass"),
+      pin6: passwordMeetsMinimum("123456"),
+      pin5: passwordMeetsMinimum("12345"),
+      general6: passwordMeetsMinimum("Ab!123"),
+      general5: passwordMeetsMinimum("Ab!12"),
+      pinError: passwordMinimumError("12345"),
+      generalError: passwordMinimumError("Ab!12"),
     }));
   `;
   const result = spawnSync(process.execPath, ["--experimental-strip-types", "--input-type=module", "--eval", script], {
@@ -52,18 +52,22 @@ test("password policy accepts a memorable numeric PIN without weakening general 
   });
   assert.equal(result.status, 0, result.stderr || "password policy must execute");
   assert.deepEqual(JSON.parse(result.stdout), {
-    pin8: true,
-    pin7: false,
-    general15: true,
-    general14: false,
-    pinError: "รหัสตัวเลขต้องมีอย่างน้อย 8 หลัก",
-    generalError: "รหัสผ่านทั่วไปต้องมีอย่างน้อย 15 ตัวอักษร หรือใช้ตัวเลขอย่างเดียวอย่างน้อย 8 หลัก",
+    pin6: true,
+    pin5: false,
+    general6: true,
+    general5: false,
+    pinError: "รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร",
+    generalError: "รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร",
   });
-  assert.match(policy, /MIN_NUMERIC_PIN_LENGTH = 8/);
+  assert.match(policy, /MIN_NUMERIC_PIN_LENGTH = 6/);
+  assert.match(policy, /MIN_GENERAL_PASSWORD_LENGTH = 6/);
+  assert.match(policy, /MAX_NEW_PASSWORD_LENGTH = 15/);
   assert.match(cryptoSource, /passwordMinimumError\(normalized\)/);
-  assert.match(authUi, /PIN ตัวเลขอย่างเดียวอย่างน้อย 8 หลัก/);
+  assert.match(cryptoSource, /length > MAX_NEW_PASSWORD_LENGTH/);
+  assert.match(authUi, /ความยาว 6–15 ตัวอักษร/);
   assert.match(page, /passwordMeetsMinimum\(temporaryPassword\)/);
-  assert.match(authService, /PIN ตัวเลขอย่างน้อย 8 หลัก/);
+  assert.match(page, /maxLength=\{MAX_NEW_PASSWORD_LENGTH\}/);
+  assert.match(authService, /รหัสผ่านชั่วคราวอย่างน้อย 6 ตัวอักษร/);
 });
 
 test("bootstrap output is compatible with the real PBKDF2 verifier and keeps independent secrets", { timeout: 30_000 }, async () => {
@@ -80,7 +84,7 @@ test("bootstrap output is compatible with the real PBKDF2 verifier and keeps ind
   const environment = Object.fromEntries(output.environment.map(({ key, value }) => [key, value]));
   assert.equal(output.mode, "initial-bootstrap");
   assert.equal(output.login.loginId, "owner.admin");
-  assert.match(output.login.temporaryPassword, /^[ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%]{20}$/);
+  assert.match(output.login.temporaryPassword, /^[ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%]{15}$/);
   assert.equal(output.login.mustChangePasswordOnFirstLogin, true);
   assert.equal(environment.PEOPLE_PULSE_PASSWORD_PEPPER_VERSION, "1");
   assert.ok(environment.PEOPLE_PULSE_PASSWORD_PEPPER_V1.length >= 32);

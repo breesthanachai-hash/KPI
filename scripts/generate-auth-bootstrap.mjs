@@ -18,7 +18,7 @@ function fail(message) {
   process.exitCode = 1;
 }
 
-function randomPassword(length = 20) {
+function randomPassword(length = 15) {
   const output = [];
   while (output.length < length) {
     const [value] = randomBytes(1);
