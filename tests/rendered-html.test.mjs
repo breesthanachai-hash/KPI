@@ -1336,8 +1336,8 @@ test("allows safe employee team coordination without minting points or exposing 
   // Employee GET adds creator-owned outgoing work but keeps teammate
   // submissions, HR records, evaluations and profile details out of scope.
   const visibleScopeBlock = dashboardRoute.match(/const visibleEmployeeIds = new Set[\s\S]*?(?=\n    const launchReadiness =)/)?.[0] ?? "";
-  assert.match(visibleScopeBlock, /if \(employee\.id === currentUser\.employeeId\) return true/);
-  assert.match(visibleScopeBlock, /return currentUser\.role === "manager"/);
+  assert.match(visibleScopeBlock, /if \(employee\.id === currentUser\.employeeId\) return employee\.status === "active"/);
+  assert.match(visibleScopeBlock, /return employee\.status === "active" && currentUser\.role === "manager"/);
   const scopedWorkBlock = dashboardRoute.match(/const scopedWorkItems = workItemRows[\s\S]*?(?=\n    const visibleProjectIds)/)?.[0] ?? "";
   assert.match(scopedWorkBlock, /item\.assigneeEmployeeId === currentUser\.employeeId \|\| item\.createdByEmployeeId === currentUser\.employeeId/);
   assert.match(scopedWorkBlock, /item\.points === 0 \? 0 : workPointValue/);

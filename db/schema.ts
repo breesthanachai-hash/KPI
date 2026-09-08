@@ -8,7 +8,7 @@ export const employees = sqliteTable("employees", {
   email: text("email").notNull(),
   roleId: text("role_id").notNull(),
   manager: text("manager").notNull().default(""),
-  status: text("status", { enum: ["active", "inactive"] }).notNull().default("active"),
+  status: text("status", { enum: ["active", "inactive", "resigned", "archived"] }).notNull().default("active"),
   latestScore: real("latest_score"),
   latestSkillScore: real("latest_skill_score"),
   latestPeriod: text("latest_period"),

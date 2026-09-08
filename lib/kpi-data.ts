@@ -110,7 +110,7 @@ export type EmployeeRecord = {
   email: string;
   roleId: string;
   manager: string;
-  status: "active" | "inactive";
+  status: "active" | "inactive" | "resigned" | "archived";
   latestScore: number | null;
   latestSkillScore: number | null;
   latestPeriod: string | null;

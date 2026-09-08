@@ -5704,7 +5704,28 @@ input::placeholder,textarea::placeholder { color: #526f8d !important; opacity: 1
 .access-account-actions button.revoke-account:hover:not(:disabled) { border-color: #bd3f69 !important; background: #ffe2eb !important; color: #7d173a !important; }
 .access-account-actions button.restore-account { border-color: #88c8b4 !important; background: #effbf6 !important; color: #17644f !important; }
 
+/* Employee lifecycle controls */
+.dossier-status-filter { margin: 0 16px 14px; display: grid; gap: 6px; color: #365d80; font-size: 12px; font-weight: 850; }
+.dossier-status-filter select { width: 100%; min-width: 0; min-height: 44px; border: 1px solid #bed0e3; border-radius: 11px; padding: 0 11px; background: #fff; color: #173252; font-size: 13px; }
+.dossier-people button.status-resigned,.dossier-people button.status-inactive { background: #fff8e9; }
+.dossier-people button.status-archived { opacity: .72; background: #eef2f5; }
+.dossier-roster-empty { margin: 8px; border: 1px dashed #bdcee0; border-radius: 12px; padding: 18px 12px; color: #58728b; font-size: 12px; line-height: 1.5; text-align: center; }
+.dossier-person .employee-lifecycle-badge { display: inline-flex; width: fit-content; margin-top: 7px; border: 1px solid rgba(255,255,255,.35); border-radius: 99px; padding: 5px 9px; background: rgba(255,255,255,.14); color: #fff !important; font-size: 12px !important; line-height: 1.2; font-style: normal; font-weight: 900; }
+.dossier-person .employee-lifecycle-badge.status-resigned,.dossier-person .employee-lifecycle-badge.status-inactive { border-color: #ffd49d; background: #fff0d9; color: #7b4317 !important; }
+.dossier-person .employee-lifecycle-badge.status-archived { border-color: #d3dde7; background: #edf1f5; color: #425e76 !important; }
+.dossier-lifecycle-actions { position: relative; z-index: 2; width: min(230px,100%); display: grid; gap: 8px; }
+.dossier-lifecycle-actions label { min-width: 0; display: grid; gap: 5px; }
+.dossier-lifecycle-actions label > span { color: #dceafa !important; font-size: 12px !important; font-weight: 850; }
+.dossier-lifecycle-actions select,.dossier-lifecycle-actions button { width: 100%; min-height: 44px; border: 1px solid rgba(255,255,255,.34); border-radius: 11px; padding: 0 11px; font-size: 13px; font-weight: 900; }
+.dossier-lifecycle-actions select { background: #fff; color: #173252; cursor: pointer; }
+.dossier-lifecycle-actions button { background: rgba(255,255,255,.1); color: #fff; cursor: pointer; }
+.dossier-lifecycle-actions button.archive-employee { border-color: #ffc2d4; background: #fff0f5; color: #8f2047; }
+.dossier-lifecycle-actions button.restore-employee { border-color: #9bd0bd; background: #e9f7f1; color: #176151; }
+.dossier-lifecycle-actions button:disabled { opacity: .5; cursor: not-allowed; }
+.dossier-status-filter select:focus-visible,.dossier-lifecycle-actions :is(select,button):focus-visible { outline: 3px solid #f4b942; outline-offset: 2px; }
+
 @media (max-width: 760px) {
+  .dossier-lifecycle-actions { width: 100%; }
   .auth-registration-grid { grid-template-columns: 1fr; gap: 12px; }
   .access-panel-tabs { position: static; grid-template-columns: 1fr; }
   .access-panel-tabs button { min-height: 48px; }
@@ -5722,6 +5743,6 @@ input::placeholder,textarea::placeholder { color: #526f8d !important; opacity: 1
 }
 
 @media print {
-  .access-panel-tabs,.access-account-actions,.registration-request-item > footer,.access-user-heading-actions > button { display: none !important; }
+  .access-panel-tabs,.access-account-actions,.registration-request-item > footer,.access-user-heading-actions > button,.dossier-status-filter,.dossier-lifecycle-actions { display: none !important; }
   .access-user-table-wrap { overflow: visible; }
 }

@@ -97,6 +97,7 @@ type EmployeeRegistrationRequest = {
 };
 
 type AccessPanel = "users" | "requests" | "rights";
+type DossierStatusFilter = "all" | "active" | "resigned" | "archived";
 
 type CredentialResult = {
   displayName: string;
@@ -783,6 +784,12 @@ function employmentTypeLabel(type: EmployeeProfileRecord["employmentType"]) {
   return { permanent: "พนักงานประจำ", contract: "พนักงานสัญญาจ้าง", probation: "ทดลองงาน", intern: "ฝึกงาน" }[type];
 }
 
+function employeeLifecycleLabel(status: EmployeeRecord["status"]) {
+  if (status === "active") return "ทำงานอยู่";
+  if (status === "archived") return "ลบออกจากรายชื่อแล้ว";
+  return "ลาออกแล้ว";
+}
+
 function contractStatusLabel(status: EmploymentContractRecord["status"]) {
   return { draft: "ฉบับร่าง", sent: "ส่งให้ลงนาม", viewed: "เปิดอ่านแล้ว", signed: "ลงนามแล้ว", cancelled: "ยกเลิก" }[status];
 }
@@ -937,6 +944,7 @@ export default function Home() {
   const [skillCategoryFilter, setSkillCategoryFilter] = useState<SkillCategoryId>("role");
   const [note, setNote] = useState("");
   const [search, setSearch] = useState("");
+  const [dossierStatusFilter, setDossierStatusFilter] = useState<DossierStatusFilter>("all");
   const [toast, setToast] = useState<{ message: string; tone: "success" | "error" } | null>(null);
   const toastTimerRef = useRef<number | null>(null);
   const lastFocusedElementRef = useRef<HTMLElement | null>(null);
@@ -1119,7 +1127,9 @@ export default function Home() {
         setEmployeeRecognitions(body.employeeRecognitions ?? []);
         setDataWarning("");
         const powerEmployees = body.currentUser?.role === "employee" && body.teamOverview?.employees.length ? body.teamOverview.employees : body.employees ?? [];
-        const firstEmployeeId = body.employees?.[0]?.id ?? "";
+        const firstEmployeeId = body.employees?.find((employee) => employee.status === "active")?.id
+          ?? body.employees?.find((employee) => employee.status !== "archived")?.id
+          ?? "";
         const firstPowerEmployeeId = powerEmployees[0]?.id ?? firstEmployeeId;
         const secondEmployeeId = powerEmployees[1]?.id ?? firstPowerEmployeeId;
         const firstProjectId = body.projects?.[0]?.id ?? "";
@@ -1287,6 +1297,22 @@ export default function Home() {
     });
   }, [activeDepartment, employees, search]);
 
+  const dossierEmployees = useMemo(() => {
+    const query = search.trim().toLocaleLowerCase("th");
+    return employees.filter((employee) => {
+      const role = getRole(employee.roleId);
+      const departmentMatches = activeDepartment === "all" || role.departmentId === activeDepartment;
+      const queryMatches = !query || `${employee.name} ${employee.email} ${role.name} ${role.department}`.toLocaleLowerCase("th").includes(query);
+      const isResigned = employee.status === "resigned" || employee.status === "inactive";
+      const statusMatches = dossierStatusFilter === "all"
+        ? employee.status !== "archived"
+        : dossierStatusFilter === "resigned"
+          ? isResigned
+          : employee.status === dossierStatusFilter;
+      return departmentMatches && queryMatches && statusMatches;
+    });
+  }, [activeDepartment, dossierStatusFilter, employees, search]);
+
   const evaluatedEmployees = employees.filter((employee) => evaluationsByEmployee.has(employee.id));
   const averageScore = evaluatedEmployees.length
     ? evaluatedEmployees.reduce((sum, employee) => sum + (evaluationsByEmployee.get(employee.id)?.totalScore ?? 0), 0) / evaluatedEmployees.length
@@ -1335,7 +1361,7 @@ export default function Home() {
   const safeWorkRosterById = useMemo(() => new Map(safeWorkRoster.map((employee) => [employee.id, employee])), [safeWorkRoster]);
   const activeSafeWorkRoster = safeWorkRoster.filter((employee) => employee.status === "active");
   const employeeProfilesById = useMemo(() => new Map(employeeProfiles.map((profile) => [profile.employeeId, profile])), [employeeProfiles]);
-  const profileEmployee = employeesById.get(profileEmployeeId) ?? employees[0] ?? null;
+  const profileEmployee = employeesById.get(profileEmployeeId) ?? dossierEmployees[0] ?? employees.find((employee) => employee.status !== "archived") ?? null;
   const profileRecord = profileEmployee ? employeeProfilesById.get(profileEmployee.id) ?? null : null;
   const profileDocuments = profileEmployee ? applicationDocuments.filter((document) => document.employeeId === profileEmployee.id) : [];
   const profileContractDocuments = profileDocuments.filter((document) => document.documentType === "contract").sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt));
@@ -2780,6 +2806,68 @@ export default function Home() {
     }
   };
 
+  const updateEmployeeLifecycleStatus = async (employee: EmployeeRecord, status: "active" | "resigned") => {
+    const currentStatus = employee.status === "inactive" ? "resigned" : employee.status;
+    if (currentStatus === status) return;
+    const message = status === "resigned"
+      ? `ยืนยันว่า ${employee.name} ลาออกแล้ว?\n\nระบบจะเก็บประวัติในแฟ้มไว้ แต่จะนำออกจากรายชื่อพนักงานที่ทำงานอยู่ ปิดบัญชีที่ผูกไว้ และออกจากระบบทุกอุปกรณ์ทันที`
+      : `ยืนยันคืน ${employee.name} เป็นพนักงานที่ทำงานอยู่?\n\nบัญชีเข้าสู่ระบบจะยังคงปิดอยู่จนกว่า HR จะคืนสิทธิ์ในหน้า “ผู้ใช้งานและสิทธิ์”`;
+    if (!window.confirm(message)) return;
+    setIsSaving(true);
+    try {
+      const response = await fetch("/api/dashboard", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "updateEmployeeStatus", employeeId: employee.id, status, expectedUpdatedAt: employee.updatedAt }),
+      });
+      const body = await response.json() as { employee?: EmployeeRecord; disabledUserAccountIds?: string[]; error?: string };
+      if (!response.ok || !body.employee) throw new Error(body.error ?? "อัปเดตสถานะพนักงานไม่สำเร็จ");
+      const savedEmployee = body.employee;
+      setEmployees((items) => items.map((item) => item.id === savedEmployee.id ? savedEmployee : item));
+      if (body.disabledUserAccountIds?.length) {
+        const disabledIds = new Set(body.disabledUserAccountIds);
+        setUserAccounts((items) => items.map((account) => disabledIds.has(account.id) ? { ...account, status: "inactive", updatedAt: savedEmployee.updatedAt } : account));
+      }
+      if (dossierStatusFilter === "archived") setDossierStatusFilter("all");
+      showToast(status === "resigned" ? `บันทึก ${employee.name} เป็น “ลาออกแล้ว” และปิดสิทธิ์เข้าใช้แล้ว` : `คืน ${employee.name} เป็นพนักงานที่ทำงานอยู่แล้ว`);
+    } catch (error) {
+      showErrorToast(error, "อัปเดตสถานะพนักงานไม่สำเร็จ");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const archiveEmployeeRecord = async (employee: EmployeeRecord) => {
+    if (employee.status === "active") {
+      showToast("กรุณาเลือกสถานะ “ลาออกแล้ว” ก่อนลบพนักงานออกจากรายชื่อ", "error");
+      return;
+    }
+    if (!window.confirm(`ยืนยันลบ ${employee.name} ออกจากรายชื่อพนักงาน?\n\nแฟ้มจะถูกซ่อนจากรายการใช้งาน แต่ระบบยังเก็บประวัติงาน การประเมิน สัญญา และเอกสารไว้เพื่อการตรวจสอบ สามารถกู้คืนได้ภายหลัง`)) return;
+    setIsSaving(true);
+    try {
+      const response = await fetch("/api/dashboard", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "archiveEmployee", employeeId: employee.id, expectedUpdatedAt: employee.updatedAt }),
+      });
+      const body = await response.json() as { employee?: EmployeeRecord; disabledUserAccountIds?: string[]; error?: string };
+      if (!response.ok || !body.employee) throw new Error(body.error ?? "ลบพนักงานออกจากรายชื่อไม่สำเร็จ");
+      const savedEmployee = body.employee;
+      setEmployees((items) => items.map((item) => item.id === savedEmployee.id ? savedEmployee : item));
+      if (body.disabledUserAccountIds?.length) {
+        const disabledIds = new Set(body.disabledUserAccountIds);
+        setUserAccounts((items) => items.map((account) => disabledIds.has(account.id) ? { ...account, status: "inactive", updatedAt: savedEmployee.updatedAt } : account));
+      }
+      setDossierStatusFilter("archived");
+      setProfileEmployeeId(savedEmployee.id);
+      showToast(`ลบ ${employee.name} ออกจากรายชื่อแล้ว · ประวัติยังถูกเก็บไว้อย่างปลอดภัย`);
+    } catch (error) {
+      showErrorToast(error, "ลบพนักงานออกจากรายชื่อไม่สำเร็จ");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const editUserAccount = (account: PublicUserAccount) => {
     setCredentialResult(null);
     setShowTemporaryPassword(false);
@@ -3622,24 +3710,41 @@ export default function Home() {
         {view === "profiles" && canManageEmployeeFiles && (
           <section className="dossier-layout">
             <aside className="dossier-roster">
-              <div className="dossier-roster-heading"><div><p className="eyebrow">EMPLOYEE FILES</p><h2>เลือกพนักงาน</h2></div><span>{filteredEmployees.length}</span></div>
+              <div className="dossier-roster-heading"><div><p className="eyebrow">EMPLOYEE FILES</p><h2>เลือกพนักงาน</h2></div><span>{dossierEmployees.length}</span></div>
               <label className="dossier-search"><span>⌕</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="ค้นหาชื่อหรือตำแหน่ง" /></label>
+              <label className="dossier-status-filter"><span>สถานะ</span><select value={dossierStatusFilter} onChange={(event) => {
+                const nextFilter = event.target.value as DossierStatusFilter;
+                setDossierStatusFilter(nextFilter);
+                const firstMatch = employees.find((employee) => nextFilter === "all"
+                  ? employee.status !== "archived"
+                  : nextFilter === "resigned"
+                    ? employee.status === "resigned" || employee.status === "inactive"
+                    : employee.status === nextFilter);
+                setProfileEmployeeId(firstMatch?.id ?? "");
+              }}><option value="all">ทั้งหมดที่ยังเก็บในแฟ้ม</option><option value="active">ทำงานอยู่</option><option value="resigned">ลาออกแล้ว</option><option value="archived">ลบออกจากรายชื่อแล้ว</option></select></label>
               <div className="dossier-people">
-                {filteredEmployees.map((employee) => {
+                {dossierEmployees.map((employee) => {
                   const employeeDocuments = applicationDocuments.filter((document) => document.employeeId === employee.id);
                   const verified = requiredDocumentTypes.filter((type) => employeeDocuments.some((document) => document.documentType === type && document.status === "verified")).length;
                   const signed = employmentContracts.some((contract) => contract.employeeId === employee.id && contract.status === "signed");
-                  return <button key={employee.id} className={profileEmployee?.id === employee.id ? "active" : ""} onClick={() => setProfileEmployeeId(employee.id)}><EmployeeAvatar employee={employee} profile={employeeProfilesById.get(employee.id)} className="avatar-roster" /><span><strong>{employee.name}</strong><small>{getRole(employee.roleId).shortName} · เอกสาร {verified}/{requiredDocumentTypes.length}</small></span><b className={signed ? "signed" : ""}>{signed ? "✓" : "!"}</b></button>;
+                  return <button key={employee.id} className={`${profileEmployee?.id === employee.id ? "active" : ""} status-${employee.status}`} onClick={() => setProfileEmployeeId(employee.id)}><EmployeeAvatar employee={employee} profile={employeeProfilesById.get(employee.id)} className="avatar-roster" /><span><strong>{employee.name}</strong><small>{employeeLifecycleLabel(employee.status)} · {getRole(employee.roleId).shortName} · เอกสาร {verified}/{requiredDocumentTypes.length}</small></span><b className={signed ? "signed" : ""}>{signed ? "✓" : "!"}</b></button>;
                 })}
+                {!dossierEmployees.length && <div className="dossier-roster-empty">ไม่พบพนักงานตามสถานะที่เลือก</div>}
               </div>
             </aside>
 
             {profileEmployee ? (
               <section className="dossier-main">
                 <header className="dossier-hero">
-                  <div className="dossier-person"><div className="profile-photo-control"><EmployeeAvatar employee={profileEmployee} profile={profileRecord} className="avatar-dossier" /><label>{uploadingProfileImage ? "กำลังอัปโหลด" : "เปลี่ยนรูป"}<input type="file" accept=".jpg,.jpeg,.png,.webp" disabled={uploadingProfileImage} onChange={(event) => { const file = event.target.files?.[0]; void uploadProfileImage(file); event.currentTarget.value = ""; }} /></label></div><div><p className="eyebrow">DIGITAL EMPLOYEE FILE</p><h2>{profileEmployee.name}</h2><small>{getRole(profileEmployee.roleId).name} · {getRole(profileEmployee.roleId).department}</small></div></div>
+                  <div className="dossier-person"><div className="profile-photo-control"><EmployeeAvatar employee={profileEmployee} profile={profileRecord} className="avatar-dossier" /><label>{uploadingProfileImage ? "กำลังอัปโหลด" : "เปลี่ยนรูป"}<input type="file" accept=".jpg,.jpeg,.png,.webp" disabled={uploadingProfileImage || profileEmployee.status === "archived"} onChange={(event) => { const file = event.target.files?.[0]; void uploadProfileImage(file); event.currentTarget.value = ""; }} /></label></div><div><p className="eyebrow">DIGITAL EMPLOYEE FILE</p><h2>{profileEmployee.name}</h2><small>{getRole(profileEmployee.roleId).name} · {getRole(profileEmployee.roleId).department}</small><em className={`employee-lifecycle-badge status-${profileEmployee.status}`}>{employeeLifecycleLabel(profileEmployee.status)}</em></div></div>
                   <div className="dossier-completeness"><span style={{ "--dossier-score": `${dossierCompleteness}%` } as React.CSSProperties}><b>{dossierCompleteness}%</b></span><div><strong>ความสมบูรณ์ของแฟ้ม</strong><small>{dossierCompleteness >= 85 ? "ข้อมูลพร้อมใช้งาน" : "ยังมีข้อมูลหรือเอกสารที่ต้องเติม"}</small></div></div>
-                  <button onClick={openProfileEditor}>แก้ไขข้อมูล</button>
+                  <div className="dossier-lifecycle-actions">
+                    {profileEmployee.status === "archived" ? <button type="button" className="restore-employee" disabled={isSaving} onClick={() => void updateEmployeeLifecycleStatus(profileEmployee, "resigned")}>กู้คืนแฟ้ม</button> : <>
+                      <label><span>สถานะการจ้าง</span><select value={profileEmployee.status === "active" ? "active" : "resigned"} disabled={isSaving} onChange={(event) => void updateEmployeeLifecycleStatus(profileEmployee, event.target.value as "active" | "resigned")}><option value="active">ทำงานอยู่</option><option value="resigned">ลาออกแล้ว</option></select></label>
+                      <button type="button" onClick={openProfileEditor}>แก้ไขข้อมูล</button>
+                      <button type="button" className="archive-employee" disabled={isSaving || profileEmployee.status === "active"} title={profileEmployee.status === "active" ? "เลือก “ลาออกแล้ว” ก่อนลบออกจากรายชื่อ" : "ซ่อนจากรายชื่อโดยเก็บประวัติไว้"} onClick={() => void archiveEmployeeRecord(profileEmployee)}>ลบออกจากรายชื่อ</button>
+                    </>}
+                  </div>
                 </header>
 
                 <div className="dossier-metrics">
@@ -3652,7 +3757,7 @@ export default function Home() {
 
                 <div className="dossier-content-grid">
                   <section className="profile-detail-card">
-                    <div className="dossier-section-heading"><div><p className="eyebrow">PERSONAL & EMPLOYMENT</p><h3>ข้อมูลพนักงานแบบละเอียด</h3></div><button onClick={openProfileEditor}>แก้ไข</button></div>
+                    <div className="dossier-section-heading"><div><p className="eyebrow">PERSONAL & EMPLOYMENT</p><h3>ข้อมูลพนักงานแบบละเอียด</h3></div>{profileEmployee.status !== "archived" && <button onClick={openProfileEditor}>แก้ไข</button>}</div>
                     <div className="profile-facts">
                       <span><small>อีเมลบริษัท</small><strong>{profileEmployee.email}</strong></span>
                       <span><small>อีเมลส่วนตัว</small><strong>{profileRecord?.personalEmail || "—"}</strong></span>
@@ -3679,8 +3784,8 @@ export default function Home() {
                           <b>{document ? documentStatusLabel(document.status) : "ขาดเอกสาร"}</b>
                           <div className="document-actions">
                             {document?.storageKey && <a href={`/api/documents?id=${encodeURIComponent(document.id)}`}>ดาวน์โหลด</a>}
-                            {document?.status === "pending" && <><button onClick={() => reviewEmployeeDocument(document, "verified")}>ตรวจผ่าน</button><button className="reject" onClick={() => reviewEmployeeDocument(document, "rejected")}>ให้แก้ไข</button></>}
-                            <label className="upload-document-button">{uploadingDocumentType === documentType ? "กำลังอัปโหลด..." : document ? "อัปโหลดใหม่" : "อัปโหลด"}<input type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" disabled={uploadingDocumentType !== null} onChange={(event) => { const file = event.target.files?.[0]; void uploadEmployeeDocument(documentType, file); event.currentTarget.value = ""; }} /></label>
+                            {profileEmployee.status !== "archived" && document?.status === "pending" && <><button onClick={() => reviewEmployeeDocument(document, "verified")}>ตรวจผ่าน</button><button className="reject" onClick={() => reviewEmployeeDocument(document, "rejected")}>ให้แก้ไข</button></>}
+                            {profileEmployee.status !== "archived" && <label className="upload-document-button">{uploadingDocumentType === documentType ? "กำลังอัปโหลด..." : document ? "อัปโหลดใหม่" : "อัปโหลด"}<input type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" disabled={uploadingDocumentType !== null} onChange={(event) => { const file = event.target.files?.[0]; void uploadEmployeeDocument(documentType, file); event.currentTarget.value = ""; }} /></label>}
                           </div>
                         </article>;
                       })}
@@ -3689,17 +3794,14 @@ export default function Home() {
                   </section>
 
                   {permissions.canManageEmployeeWarnings && <section className="employee-warning-card">
-                    <div className="dossier-section-heading"><div><p className="eyebrow">DISCIPLINARY RECORD</p><h3>ประวัติใบเตือน</h3></div><button type="button" className="warning-create-button" onClick={openEmployeeWarningCreator}>＋ เพิ่มใบเตือน</button></div>
+                    <div className="dossier-section-heading"><div><p className="eyebrow">DISCIPLINARY RECORD</p><h3>ประวัติใบเตือน</h3></div>{profileEmployee.status !== "archived" && <button type="button" className="warning-create-button" onClick={openEmployeeWarningCreator}>＋ เพิ่มใบเตือน</button>}</div>
                     <div className="employee-warning-list">
                       {profileWarnings.map((warning) => <article key={warning.id} className={`status-${warning.status}`}>
                         <span className="employee-file-record-mark" aria-hidden="true">!</span>
                         <div className="employee-file-record-copy"><span><b>{employeeWarningLevelLabels[warning.level]}</b><em className={warning.status}>{employeeWarningStatusLabels[warning.status]}</em></span><strong>{warning.subject}</strong><p>{warning.warningNumber} · ออกวันที่ {formatDueDate(warning.issuedDate)} · เหตุเกิด {formatDueDate(warning.incidentDate)}</p>{warning.correctiveAction && <small>แนวทางปรับปรุง: {warning.correctiveAction}</small>}</div>
                         <div className="employee-file-record-actions">
                           {warning.hasFile && <a href={`/api/employee-warnings?id=${encodeURIComponent(warning.id)}`}>ดาวน์โหลด</a>}
-                          {warning.status === "draft" && <button type="button" disabled={isSaving} onClick={() => void updateEmployeeWarningStatus(warning, "issued")}>ออกใบเตือน</button>}
-                          {warning.status === "issued" && <button type="button" disabled={isSaving} onClick={() => void updateEmployeeWarningStatus(warning, "acknowledged")}>HR บันทึกรับทราบ</button>}
-                          {(warning.status === "issued" || warning.status === "acknowledged") && <button type="button" disabled={isSaving} onClick={() => void updateEmployeeWarningStatus(warning, "resolved")}>ปิดเรื่อง</button>}
-                          {warning.status !== "withdrawn" && warning.status !== "resolved" && <button type="button" className="withdraw" disabled={isSaving} onClick={() => void updateEmployeeWarningStatus(warning, "withdrawn")}>เพิกถอน</button>}
+                          {profileEmployee.status !== "archived" && <>{warning.status === "draft" && <button type="button" disabled={isSaving} onClick={() => void updateEmployeeWarningStatus(warning, "issued")}>ออกใบเตือน</button>}{warning.status === "issued" && <button type="button" disabled={isSaving} onClick={() => void updateEmployeeWarningStatus(warning, "acknowledged")}>HR บันทึกรับทราบ</button>}{(warning.status === "issued" || warning.status === "acknowledged") && <button type="button" disabled={isSaving} onClick={() => void updateEmployeeWarningStatus(warning, "resolved")}>ปิดเรื่อง</button>}{warning.status !== "withdrawn" && warning.status !== "resolved" && <button type="button" className="withdraw" disabled={isSaving} onClick={() => void updateEmployeeWarningStatus(warning, "withdrawn")}>เพิกถอน</button>}</>}
                         </div>
                       </article>)}
                       {!profileWarnings.length && <div className="employee-file-record-empty"><span>✓</span><strong>ยังไม่มีประวัติใบเตือน</strong><p>เมื่อ HR บันทึกฉบับร่างหรือออกเอกสาร รายการจะอยู่ในแฟ้มนี้</p></div>}
@@ -3708,7 +3810,7 @@ export default function Home() {
                   </section>}
 
                   {permissions.canManageEmployeeRecognitions && <section className="employee-recognition-card">
-                    <div className="dossier-section-heading"><div><p className="eyebrow">RECOGNITION &amp; CREDENTIALS</p><h3>เกียรติบัตรและรางวัลจากผลงาน</h3></div><button type="button" className="recognition-create-button" onClick={openEmployeeRecognitionCreator}>＋ เพิ่มรายการ</button></div>
+                    <div className="dossier-section-heading"><div><p className="eyebrow">RECOGNITION &amp; CREDENTIALS</p><h3>เกียรติบัตรและรางวัลจากผลงาน</h3></div>{profileEmployee.status !== "archived" && <button type="button" className="recognition-create-button" onClick={openEmployeeRecognitionCreator}>＋ เพิ่มรายการ</button>}</div>
                     <div className="employee-recognition-list">
                       {profileRecognitions.map((recognition) => {
                         const isOverdue = recognition.status === "active" && Boolean(recognition.expiryDate) && recognition.expiryDate! < organizationDocumentToday;
@@ -3718,9 +3820,7 @@ export default function Home() {
                           <div className="employee-file-record-actions">
                             {recognition.hasFile && <a href={`/api/employee-recognitions?id=${encodeURIComponent(recognition.id)}`}>ดาวน์โหลด</a>}
                             {recognition.verificationUrl && <a href={recognition.verificationUrl} target="_blank" rel="noreferrer">ตรวจสอบลิงก์</a>}
-                            {recognition.status === "active" && recognition.expiryDate && recognition.expiryDate < organizationDocumentToday && <button type="button" disabled={isSaving} onClick={() => void updateEmployeeRecognitionStatus(recognition, "expired")}>ทำเครื่องหมายหมดอายุ</button>}
-                            {recognition.status === "expired" && <button type="button" disabled={isSaving} onClick={() => void updateEmployeeRecognitionStatus(recognition, "active")}>เปิดใช้งานอีกครั้ง</button>}
-                            {recognition.status !== "revoked" && <button type="button" className="withdraw" disabled={isSaving} onClick={() => void updateEmployeeRecognitionStatus(recognition, "revoked")}>เพิกถอน</button>}
+                            {profileEmployee.status !== "archived" && <>{recognition.status === "active" && recognition.expiryDate && recognition.expiryDate < organizationDocumentToday && <button type="button" disabled={isSaving} onClick={() => void updateEmployeeRecognitionStatus(recognition, "expired")}>ทำเครื่องหมายหมดอายุ</button>}{recognition.status === "expired" && <button type="button" disabled={isSaving} onClick={() => void updateEmployeeRecognitionStatus(recognition, "active")}>เปิดใช้งานอีกครั้ง</button>}{recognition.status !== "revoked" && <button type="button" className="withdraw" disabled={isSaving} onClick={() => void updateEmployeeRecognitionStatus(recognition, "revoked")}>เพิกถอน</button>}</>}
                           </div>
                         </article>;
                       })}
@@ -3729,11 +3829,11 @@ export default function Home() {
                   </section>}
 
                   <section className="contracts-card">
-                    <div className="dossier-section-heading"><div><p className="eyebrow">EMPLOYMENT CONTRACTS</p><h3>สัญญาจ้างและการลงนาม</h3></div><button className="contract-create-button" onClick={openContractCreator}>＋ สร้างสัญญา</button></div>
+                    <div className="dossier-section-heading"><div><p className="eyebrow">EMPLOYMENT CONTRACTS</p><h3>สัญญาจ้างและการลงนาม</h3></div>{profileEmployee.status !== "archived" && <button className="contract-create-button" onClick={openContractCreator}>＋ สร้างสัญญา</button>}</div>
                     <div className="contract-file-strip">
                       <span>▤</span><div><strong>ไฟล์ต้นฉบับสัญญา</strong><small>{profileContractDocuments[0]?.fileName ?? "อัปโหลด PDF หรือ Word ก่อนผูกกับสัญญา"}</small></div>
                       {profileContractDocuments[0]?.storageKey && <a href={`/api/documents?id=${encodeURIComponent(profileContractDocuments[0].id)}`}>ดาวน์โหลด</a>}
-                      <label>{uploadingDocumentType === "contract" ? "กำลังอัปโหลด..." : "อัปโหลดไฟล์"}<input type="file" accept=".pdf,.doc,.docx" disabled={uploadingDocumentType !== null} onChange={(event) => { const file = event.target.files?.[0]; void uploadEmployeeDocument("contract", file); event.currentTarget.value = ""; }} /></label>
+                      {profileEmployee.status !== "archived" && <label>{uploadingDocumentType === "contract" ? "กำลังอัปโหลด..." : "อัปโหลดไฟล์"}<input type="file" accept=".pdf,.doc,.docx" disabled={uploadingDocumentType !== null} onChange={(event) => { const file = event.target.files?.[0]; void uploadEmployeeDocument("contract", file); event.currentTarget.value = ""; }} /></label>}
                     </div>
                     <div className="contract-list">
                       {profileContracts.map((contract, index) => {
@@ -3741,10 +3841,10 @@ export default function Home() {
                         return <article key={contract.id} className={contract.status}>
                           <span className="contract-sequence">{String(profileContracts.length - index).padStart(2, "0")}</span>
                           <div className="contract-copy"><span><b className={`contract-status ${contract.status}`}>{contractStatusLabel(contract.status)}</b><small>เวอร์ชัน {contract.version}</small></span><strong>{contract.title}</strong><p>มีผล {new Date(`${contract.effectiveDate}T00:00:00`).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" })}{contract.expiryDate ? ` ถึง ${new Date(`${contract.expiryDate}T00:00:00`).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" })}` : " · ไม่มีกำหนด"}</p>{contract.status === "signed" && <em>ลงนามโดย {contract.signedName} · {formatUpdatedAt(contract.signedAt ?? contract.updatedAt)} · {contract.signerEmail}</em>}</div>
-                          <div className="contract-actions">{linkedDocument?.storageKey && <a href={`/api/documents?id=${encodeURIComponent(linkedDocument.id)}`}>เปิดไฟล์</a>}{contract.status === "draft" && <button onClick={() => void sendEmploymentContract(contract)}>ส่งให้ลงนาม</button>}{(contract.status === "sent" || contract.status === "viewed") && <span>รอพนักงานลงนาม</span>}{contract.status === "signed" && <span>✓ หลักฐานครบ</span>}</div>
+                          <div className="contract-actions">{linkedDocument?.storageKey && <a href={`/api/documents?id=${encodeURIComponent(linkedDocument.id)}`}>เปิดไฟล์</a>}{profileEmployee.status !== "archived" && contract.status === "draft" && <button onClick={() => void sendEmploymentContract(contract)}>ส่งให้ลงนาม</button>}{(contract.status === "sent" || contract.status === "viewed") && <span>รอพนักงานลงนาม</span>}{contract.status === "signed" && <span>✓ หลักฐานครบ</span>}</div>
                         </article>;
                       })}
-                      {!profileContracts.length && <div className="contract-empty"><span>✎</span><div><strong>ยังไม่มีสัญญาจ้าง</strong><p>อัปโหลดไฟล์ต้นฉบับ แล้วสร้างสัญญาเพื่อส่งให้พนักงานลงนาม</p></div><button onClick={openContractCreator}>เริ่มสร้างสัญญา</button></div>}
+                      {!profileContracts.length && <div className="contract-empty"><span>✎</span><div><strong>ยังไม่มีสัญญาจ้าง</strong><p>{profileEmployee.status === "archived" ? "แฟ้มนี้ถูกลบออกจากรายชื่อและเปิดดูได้แบบอ่านอย่างเดียว" : "อัปโหลดไฟล์ต้นฉบับ แล้วสร้างสัญญาเพื่อส่งให้พนักงานลงนาม"}</p></div>{profileEmployee.status !== "archived" && <button onClick={openContractCreator}>เริ่มสร้างสัญญา</button>}</div>}
                     </div>
                     <div className="signature-trust-note"><span>i</span><p><strong>ขอบเขต Pilot:</strong> ขั้นตอนนี้ใช้ทดสอบ workflow และเก็บชื่อ บัญชี คำยินยอม และเวลาเท่านั้น ยังไม่ผูก hash กับไฟล์เอกสาร และยังไม่ใช่ลายเซ็นอิเล็กทรอนิกส์สำหรับใช้ยืนยันผลทางกฎหมาย</p></div>
                   </section>

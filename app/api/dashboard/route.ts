@@ -1,7 +1,7 @@
-import { and, eq, notExists, sql } from "drizzle-orm";
+import { and, eq, isNull, notExists, sql } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { ensureDatabase } from "../../../db/initialize";
-import { applicationDocuments, attendanceRecords, authCredentials, authEvents, employeeProfiles, employeeRecognitions, employeeRegistrationRequests, employeeSelfAssessments, employees, employeeWarningEvents, employeeWarnings, employmentContracts, evaluations, hrProfiles, notificationReads, organizationDocuments, organizationPolicies, organizationPolicyPublishClaims, pointCapClaims, pointEvents, pointLedger, pointMutationClaims, policyAcknowledgements, projects, rewardRedemptionClaims, rewardRedemptions, rewards, skillAchievements, talentActions, userAccounts, workItems, workSubmissions } from "../../../db/schema";
+import { applicationDocuments, attendanceRecords, authCredentials, authEvents, authSessions, employeeProfiles, employeeRecognitions, employeeRegistrationRequests, employeeSelfAssessments, employees, employeeWarningEvents, employeeWarnings, employmentContracts, evaluations, hrProfiles, notificationReads, organizationDocuments, organizationPolicies, organizationPolicyPublishClaims, pointCapClaims, pointEvents, pointLedger, pointMutationClaims, policyAcknowledgements, projects, rewardRedemptionClaims, rewardRedemptions, rewards, skillAchievements, talentActions, userAccounts, workItems, workSubmissions } from "../../../db/schema";
 import { authenticatedRequestGate, canAccessEmployee, ensureBootstrapAccounts, recordAuthEvent, revokeAllSessionsForAccount, type CurrentUser } from "../../../lib/access-control";
 import { AuthInputError, credentialMutationValues, getAccountCredential, publicUserAccountDto, publicUserAccountDtos, requestSourceHash } from "../../../lib/auth-service";
 import { internalApiError } from "../../../lib/api-errors";
@@ -504,8 +504,8 @@ export async function GET(request: Request) {
     }
     const visibleEmployeeIds = new Set(employeeRows.filter((employee) => {
       if (currentUser.role === "admin") return true;
-      if (employee.id === currentUser.employeeId) return true;
-      return currentUser.role === "manager" && Boolean(currentUser.departmentId) && getRole(employee.roleId).departmentId === currentUser.departmentId;
+      if (employee.id === currentUser.employeeId) return employee.status === "active";
+      return employee.status === "active" && currentUser.role === "manager" && Boolean(currentUser.departmentId) && getRole(employee.roleId).departmentId === currentUser.departmentId;
     }).map((employee) => employee.id));
     const signedInEmployee = currentUser.employeeId ? employeeRows.find((employee) => employee.id === currentUser.employeeId) ?? null : null;
     const signedInEmployeeProfile = signedInEmployee ? employeeProfileRows.find((profile) => profile.employeeId === signedInEmployee.id) ?? null : null;
@@ -677,6 +677,13 @@ type EmployeePayload = {
   email?: string;
   roleId?: string;
   manager?: string;
+};
+
+type UpdateEmployeeStatusPayload = {
+  action: "updateEmployeeStatus" | "archiveEmployee";
+  employeeId?: string;
+  status?: "active" | "resigned";
+  expectedUpdatedAt?: string;
 };
 
 type EvaluationPayload = {
@@ -916,10 +923,10 @@ export async function POST(request: Request) {
     const currentUser = authentication.currentUser;
     await ensureSeedData();
     const db = getDb();
-    const payload = await request.json() as EmployeePayload | EvaluationPayload | SelfAssessmentPayload | HrPlanPayload | CompleteTalentActionPayload | AttendancePayload | AttendanceApprovalPayload | SkillAchievementPayload | ProjectPayload | WorkItemPayload | ReviewWorkSubmissionPayload | RecordPointEventPayload | RunMonthlyPointCyclePayload | RedeemRewardPayload | UpdateRewardRedemptionPayload | EmployeeProfilePayload | DocumentStatusPayload | ContractPayload | SignContractPayload | SendContractPayload | UserAccountPayload | DeleteUserAccountPayload | ReviewEmployeeRegistrationPayload | MarkNotificationsReadPayload | SaveOrganizationPolicyPayload | PublishOrganizationPolicyPayload | AcknowledgeOrganizationPolicyPayload;
+    const payload = await request.json() as EmployeePayload | UpdateEmployeeStatusPayload | EvaluationPayload | SelfAssessmentPayload | HrPlanPayload | CompleteTalentActionPayload | AttendancePayload | AttendanceApprovalPayload | SkillAchievementPayload | ProjectPayload | WorkItemPayload | ReviewWorkSubmissionPayload | RecordPointEventPayload | RunMonthlyPointCyclePayload | RedeemRewardPayload | UpdateRewardRedemptionPayload | EmployeeProfilePayload | DocumentStatusPayload | ContractPayload | SignContractPayload | SendContractPayload | UserAccountPayload | DeleteUserAccountPayload | ReviewEmployeeRegistrationPayload | MarkNotificationsReadPayload | SaveOrganizationPolicyPayload | PublishOrganizationPolicyPayload | AcknowledgeOrganizationPolicyPayload;
     const pointPolicyRows = await db.select().from(organizationPolicies);
     const { policy: activePointPolicy, rules: activePointRules } = pointPolicyFromRows(pointPolicyRows);
-    const adminOnlyActions = new Set(["createEmployee", "saveHrPlan", "verifySkillAchievement", "runMonthlyPointCycle", "saveEmployeeProfile", "updateDocumentStatus", "createContract", "sendContract", "saveUserAccount", "deleteUserAccount", "approveEmployeeRegistration", "rejectEmployeeRegistration", "saveOrganizationPolicy", "publishOrganizationPolicy", "updateRewardRedemption"]);
+    const adminOnlyActions = new Set(["createEmployee", "updateEmployeeStatus", "archiveEmployee", "saveHrPlan", "verifySkillAchievement", "runMonthlyPointCycle", "saveEmployeeProfile", "updateDocumentStatus", "createContract", "sendContract", "saveUserAccount", "deleteUserAccount", "approveEmployeeRegistration", "rejectEmployeeRegistration", "saveOrganizationPolicy", "publishOrganizationPolicy", "updateRewardRedemption"]);
     const teamActions = new Set(["saveEvaluation", "completeTalentAction", "approveAttendance", "saveProject", "reviewWorkSubmission", "recordPointEvent"]);
     const employeePortalActions = new Set(["markNotificationsRead", "saveWorkItem", "saveSelfAssessment", "redeemReward", "acknowledgeOrganizationPolicy", "signContract"]);
     if (currentUser.role === "employee" && !employeePortalActions.has(payload.action)) return Response.json({ error: "สิทธิ์พนักงานใช้ได้เฉพาะงานของฉัน การแจ้งเตือน การแลกรางวัล การรับทราบกฎองค์กร และการลงนามสัญญาของตนเอง" }, { status: 403 });
@@ -1198,7 +1205,7 @@ export async function POST(request: Request) {
       if (role !== "admin" && !employeeId) return Response.json({ error: "บัญชีพนักงานและหัวหน้าทีมต้องผูกกับโปรไฟล์พนักงาน" }, { status: 400 });
       const [linkedEmployee] = employeeId ? await db.select().from(employees).where(eq(employees.id, employeeId)).limit(1) : [];
       if (employeeId && !linkedEmployee) return Response.json({ error: "ไม่พบโปรไฟล์พนักงานที่เลือก" }, { status: 404 });
-      if (status === "active" && linkedEmployee?.status === "inactive") return Response.json({ error: "ไม่สามารถเปิดใช้บัญชีที่ผูกกับพนักงานสถานะไม่ใช้งาน" }, { status: 409 });
+      if (status === "active" && employeeId && linkedEmployee?.status !== "active") return Response.json({ error: "ไม่สามารถเปิดใช้บัญชีที่ผูกกับพนักงานที่ลาออกหรือถูกลบจากรายชื่อแล้ว" }, { status: 409 });
       const existingCredential = existing ? await getAccountCredential(existing.id) : null;
       const credentialChange = await credentialMutationValues(accountId, payload.loginId, payload.temporaryPassword, existingCredential);
       const [loginOwner] = await db.select({ userAccountId: authCredentials.userAccountId }).from(authCredentials).where(eq(authCredentials.loginIdCanonical, credentialChange.values.loginIdCanonical)).limit(1);
@@ -1272,6 +1279,62 @@ export async function POST(request: Request) {
       }
       const savedCredential = await getAccountCredential(accountId);
       return Response.json({ userAccount: publicUserAccountDto(userAccount, savedCredential) }, { status: existing ? 200 : 201 });
+    }
+
+    if (payload.action === "updateEmployeeStatus" || payload.action === "archiveEmployee") {
+      const employeeId = payload.employeeId?.trim().slice(0, 120) ?? "";
+      const expectedUpdatedAt = payload.expectedUpdatedAt?.trim() ?? "";
+      const nextStatus = payload.action === "archiveEmployee" ? "archived" as const : payload.status;
+      if (!employeeId || !expectedUpdatedAt || (nextStatus !== "active" && nextStatus !== "resigned" && nextStatus !== "archived")) {
+        return Response.json({ error: "ข้อมูลสถานะพนักงานไม่ครบ กรุณาโหลดแฟ้มใหม่แล้วลองอีกครั้ง" }, { status: 400 });
+      }
+      if (currentUser.employeeId === employeeId) {
+        return Response.json({ error: "ไม่สามารถเปลี่ยนสถานะหรือลบแฟ้มของบัญชีที่กำลังใช้งานอยู่" }, { status: 409 });
+      }
+
+      const [employee] = await db.select().from(employees).where(eq(employees.id, employeeId)).limit(1);
+      if (!employee) return Response.json({ error: "ไม่พบแฟ้มพนักงานที่เลือก" }, { status: 404 });
+      if (employee.updatedAt !== expectedUpdatedAt) {
+        return Response.json({ error: "แฟ้มนี้ถูกแก้ไขจากอีกหน้าจอ กรุณาโหลดข้อมูลล่าสุด" }, { status: 409 });
+      }
+      if (payload.action === "archiveEmployee" && employee.status === "active") {
+        return Response.json({ error: "กรุณาเปลี่ยนสถานะเป็น “ลาออกแล้ว” ก่อนลบออกจากรายชื่อ" }, { status: 409 });
+      }
+
+      const now = new Date(Math.max(Date.now(), Date.parse(employee.updatedAt) + 1)).toISOString();
+      const employeeMutation = db.update(employees)
+        .set({ status: nextStatus, updatedAt: now })
+        .where(and(eq(employees.id, employeeId), eq(employees.updatedAt, expectedUpdatedAt)));
+      const [linkedAccount] = await db.select({ id: userAccounts.id }).from(userAccounts).where(eq(userAccounts.employeeId, employeeId)).limit(1);
+      const disablesAccess = nextStatus !== "active";
+
+      if (disablesAccess && linkedAccount) {
+        await db.batch([
+          employeeMutation,
+          db.update(userAccounts).set({ status: "inactive", updatedAt: now }).where(eq(userAccounts.id, linkedAccount.id)),
+          db.update(authSessions).set({ revokedAt: now, revokeReason: `employee-${nextStatus}` }).where(and(eq(authSessions.userAccountId, linkedAccount.id), isNull(authSessions.revokedAt))),
+          db.insert(authEvents).values({
+            id: `auth-event-${crypto.randomUUID()}`,
+            userAccountId: linkedAccount.id,
+            eventType: "sessions_revoked",
+            sourceHash: await requestSourceHash(request),
+            detail: `employee:${employeeId};status:${nextStatus};actor:${currentUser.id}`,
+            createdAt: now,
+          }),
+        ]);
+      } else {
+        await employeeMutation;
+      }
+
+      const [savedEmployee] = await db.select().from(employees).where(eq(employees.id, employeeId)).limit(1);
+      if (!savedEmployee || savedEmployee.updatedAt !== now || savedEmployee.status !== nextStatus) {
+        return Response.json({ error: "แฟ้มนี้ถูกแก้ไขจากอีกหน้าจอ กรุณาโหลดข้อมูลล่าสุด" }, { status: 409 });
+      }
+      return Response.json({
+        employee: savedEmployee,
+        disabledUserAccountIds: disablesAccess && linkedAccount ? [linkedAccount.id] : [],
+        archived: nextStatus === "archived",
+      });
     }
 
     if (payload.action === "createEmployee") {
