@@ -64,6 +64,18 @@ export function passwordInputIsWithinLimit(password: string) {
 export async function hashPassword(password: string): Promise<PasswordVerifier> {
   const validationError = passwordValidationError(password);
   if (validationError) throw new RangeError(validationError);
+  return createPasswordVerifier(password);
+}
+
+export async function hashTemporaryOwnerRecoveryPassword(password: string): Promise<PasswordVerifier> {
+  const normalized = password.normalize("NFC");
+  if (!/^\d{4}$/.test(normalized)) {
+    throw new RangeError("รหัสกู้บัญชีเจ้าของต้องเป็นตัวเลข 4 หลักและใช้ได้เพียงครั้งเดียว");
+  }
+  return createPasswordVerifier(normalized);
+}
+
+async function createPasswordVerifier(password: string): Promise<PasswordVerifier> {
   const pepperVersion = currentPepperVersion();
   const passwordSalt = randomToken(PASSWORD_SALT_BYTES);
   const passwordHash = await derivePasswordHash(password, passwordSalt, PASSWORD_ALGORITHM, PASSWORD_ITERATIONS, pepperVersion);

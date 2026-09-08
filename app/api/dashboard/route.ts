@@ -57,7 +57,7 @@ function apiError(error: unknown) {
     return Response.json({ error: "คำขอนี้ได้รับการตรวจแล้ว กรุณาโหลดข้อมูลล่าสุด" }, { status: 409 });
   }
   if (message.includes("auth_credentials.login_id_canonical")) {
-    return Response.json({ error: "รหัสผู้ใช้นี้มีผู้ใช้งานแล้ว กรุณาเลือกรหัสอื่น" }, { status: 409 });
+    return Response.json({ error: "ชื่อผู้ใช้นี้มีผู้ใช้งานแล้ว กรุณาเลือกชื่ออื่น" }, { status: 409 });
   }
   if (message.includes("UNIQUE constraint failed")) {
     return Response.json({ error: "อีเมลนี้มีอยู่ในระบบแล้ว" }, { status: 409 });
@@ -1202,7 +1202,7 @@ export async function POST(request: Request) {
       const existingCredential = existing ? await getAccountCredential(existing.id) : null;
       const credentialChange = await credentialMutationValues(accountId, payload.loginId, payload.temporaryPassword, existingCredential);
       const [loginOwner] = await db.select({ userAccountId: authCredentials.userAccountId }).from(authCredentials).where(eq(authCredentials.loginIdCanonical, credentialChange.values.loginIdCanonical)).limit(1);
-      if (loginOwner && loginOwner.userAccountId !== accountId) return Response.json({ error: "รหัสผู้ใช้นี้มีผู้ใช้งานแล้ว กรุณาเลือกรหัสอื่น" }, { status: 409 });
+      if (loginOwner && loginOwner.userAccountId !== accountId) return Response.json({ error: "ชื่อผู้ใช้นี้มีผู้ใช้งานแล้ว กรุณาเลือกชื่ออื่น" }, { status: 409 });
       const requestedDisplayName = typeof payload.displayName === "string" ? payload.displayName.trim().slice(0, 120) : "";
       const displayName = requestedDisplayName || linkedEmployee?.name || existing?.displayName || "";
       if (!displayName) return Response.json({ error: "กรุณาระบุชื่อที่แสดง" }, { status: 400 });

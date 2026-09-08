@@ -1,4 +1,4 @@
-import { and, eq, gt, isNull, sql } from "drizzle-orm";
+import { and, eq, gt, isNull, ne, sql } from "drizzle-orm";
 import { getDb } from "../db";
 import { ensureDatabase } from "../db/initialize";
 import { authCredentials, authEvents, authRateLimits, authSessions, employees, userAccounts } from "../db/schema";
@@ -8,6 +8,7 @@ import {
   PASSWORD_ALGORITHM,
   PASSWORD_ITERATIONS,
   hashPassword,
+  hashTemporaryOwnerRecoveryPassword,
   hashOpaqueToken,
   parsePasswordVerifier,
   passwordValidationError,
@@ -85,16 +86,19 @@ export async function ensureOwnerRecoveryCredential() {
   const recoveryId = process.env.PEOPLE_PULSE_OWNER_RECOVERY_ID?.trim() ?? "";
   const recoveryPassword = process.env.PEOPLE_PULSE_OWNER_RECOVERY_PASSWORD ?? "";
   const recoveryExpiresAt = process.env.PEOPLE_PULSE_OWNER_RECOVERY_EXPIRES_AT?.trim() ?? "";
-  const hasAnyRecoveryConfig = Boolean(recoveryId || recoveryPassword || recoveryExpiresAt);
+  const purgeOtherUsersValue = process.env.PEOPLE_PULSE_OWNER_RECOVERY_PURGE_OTHER_USERS?.trim() ?? "";
+  const purgeOtherUsers = purgeOtherUsersValue === "true";
+  const hasAnyRecoveryConfig = Boolean(recoveryId || recoveryPassword || recoveryExpiresAt || purgeOtherUsersValue);
   if (!hasAnyRecoveryConfig) return;
-  if (!/^[a-z0-9]{16,64}$/i.test(recoveryId) || !recoveryExpiresAt) {
+  if (!/^[a-z0-9]{16,64}$/i.test(recoveryId) || !recoveryExpiresAt || (purgeOtherUsersValue && !purgeOtherUsers)) {
     throw new Error("Owner recovery configuration is incomplete or invalid.");
   }
   const expiresAtTime = Date.parse(recoveryExpiresAt);
   if (!Number.isFinite(expiresAtTime) || expiresAtTime <= Date.now()) {
     throw new Error("Owner recovery configuration has expired.");
   }
-  const validationError = passwordValidationError(recoveryPassword);
+  const usesTemporaryFourDigitPin = /^\d{4}$/.test(recoveryPassword.normalize("NFC"));
+  const validationError = usesTemporaryFourDigitPin ? "" : passwordValidationError(recoveryPassword);
   if (validationError) throw new Error("Owner recovery password does not meet the active password policy.");
 
   const db = getDb();
@@ -111,9 +115,13 @@ export async function ensureOwnerRecoveryCredential() {
     throw new Error("Owner recovery requires an active owner administrator credential.");
   }
 
-  const verifier = await hashPassword(recoveryPassword);
+  const verifier = usesTemporaryFourDigitPin
+    ? await hashTemporaryOwnerRecoveryPassword(recoveryPassword)
+    : await hashPassword(recoveryPassword);
   const now = new Date().toISOString();
   const loginRateKey = await privateLookupHash("login-rate-login-id", credential.loginIdCanonical);
+  const ownerLoginId = purgeOtherUsers ? "admin" : credential.loginId;
+  const ownerLoginIdCanonical = purgeOtherUsers ? "admin" : credential.loginIdCanonical;
   try {
     await db.batch([
       db.insert(authEvents).values({
@@ -124,8 +132,21 @@ export async function ensureOwnerRecoveryCredential() {
         detail: String(credential.credentialVersion),
         createdAt: now,
       }),
+      ...(purgeOtherUsers ? [
+        db.delete(userAccounts).where(ne(userAccounts.id, owner.id)),
+        db.update(userAccounts).set({
+          authUserId: "",
+          role: "admin",
+          employeeId: null,
+          departmentId: "",
+          status: "active",
+          updatedAt: now,
+        }).where(eq(userAccounts.id, owner.id)),
+      ] : []),
       db.update(authCredentials).set({
         ...verifier,
+        loginId: ownerLoginId,
+        loginIdCanonical: ownerLoginIdCanonical,
         credentialVersion: credential.credentialVersion + 1,
         mustChangePassword: true,
         failedAttempts: 0,

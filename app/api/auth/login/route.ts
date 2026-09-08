@@ -16,7 +16,7 @@ export async function POST(request: Request) {
     if (!result.ok) {
       const headers = new Headers(privateNoStoreHeaders);
       if (result.retryAfterSeconds) headers.set("retry-after", String(result.retryAfterSeconds));
-      return Response.json({ error: "รหัสผู้ใช้หรือรหัสผ่านไม่ถูกต้อง" }, { status: result.status, headers });
+      return Response.json({ error: "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง" }, { status: result.status, headers });
     }
     const headers = new Headers(privateNoStoreHeaders);
     headers.append("set-cookie", result.session.cookie);

@@ -2789,7 +2789,7 @@ export default function Home() {
     const existingAccount = userAccounts.find((account) => account.id === userAccountForm.accountId);
     const temporaryPasswordRequired = !userAccountForm.accountId || existingAccount?.hasPassword === false;
     if (!loginId) {
-      showToast("กรุณากรอกรหัสผู้ใช้", "error");
+      showToast("กรุณากรอกชื่อผู้ใช้", "error");
       return;
     }
     if (temporaryPasswordRequired && !temporaryPassword) {
@@ -2822,7 +2822,7 @@ export default function Home() {
     const actionLabel = nextStatus === "inactive" ? "เพิกถอนสิทธิ์" : "คืนสิทธิ์";
     const consequence = nextStatus === "inactive"
       ? "ผู้ใช้นี้จะออกจากระบบทุกอุปกรณ์ทันที และจะเข้าใช้งานไม่ได้จนกว่า HR / Admin จะคืนสิทธิ์"
-      : "ผู้ใช้นี้จะกลับมาเข้าสู่ระบบได้ด้วยรหัสผู้ใช้และรหัสผ่านเดิม";
+      : "ผู้ใช้นี้จะกลับมาเข้าสู่ระบบได้ด้วยชื่อผู้ใช้และรหัสผ่านเดิม";
     if (!window.confirm(`${actionLabel}ของ “${account.displayName}” ใช่หรือไม่?\n\n${consequence}`)) return;
     setIsSaving(true);
     try {
@@ -3072,7 +3072,7 @@ export default function Home() {
     },
     {
       title: "สร้างบัญชีให้ตรงกับพนักงานและตั้งรหัสชั่วคราว",
-      detail: `ผูกบัญชีใช้งานแล้ว ${launchReadiness.activeLinkedAccountCount}/${launchReadiness.activeEmployeeCount} คน · ส่งรหัสผู้ใช้และรหัสชั่วคราวทางช่องทางส่วนตัว`,
+      detail: `ผูกบัญชีใช้งานแล้ว ${launchReadiness.activeLinkedAccountCount}/${launchReadiness.activeEmployeeCount} คน · ส่งชื่อผู้ใช้และรหัสชั่วคราวทางช่องทางส่วนตัว`,
       ready: launchReadiness.activeEmployeeCount > 0 && launchReadiness.activeLinkedAccountCount >= launchReadiness.activeEmployeeCount,
     },
     {
@@ -3321,7 +3321,7 @@ export default function Home() {
           <i aria-hidden="true">⌄</i>
         </button>
         {showUserMenu && <aside className="top-profile-menu" aria-label="จัดการโปรไฟล์">
-          <div className="top-profile-menu-head"><span>{currentUser?.displayName ? makeInitials(currentUser.displayName) : "PP"}</span><p><strong>{currentUser?.displayName ?? "ผู้ใช้งาน"}</strong><small>รหัสผู้ใช้ {currentUser?.loginId || "—"}</small><b>{currentUserRoleLabel}</b></p></div>
+          <div className="top-profile-menu-head"><span>{currentUser?.displayName ? makeInitials(currentUser.displayName) : "PP"}</span><p><strong>{currentUser?.displayName ?? "ผู้ใช้งาน"}</strong><small>ชื่อผู้ใช้ {currentUser?.loginId || "—"}</small><b>{currentUserRoleLabel}</b></p></div>
           {currentUserEmployee && <div className="top-profile-work-summary"><span><small>ตำแหน่ง</small><strong>{getRole(currentUserEmployee.roleId).name}</strong></span><span><small>Points คงเหลือ</small><strong>{formatMoney(pointBalances.get(currentUserEmployee.id) ?? 0)}</strong></span></div>}
           <nav>
             <button type="button" onClick={() => { setShowUserMenu(false); if (isAdmin) { if (currentUser?.employeeId) setProfileEmployeeId(currentUser.employeeId); setView("profiles"); } else { setPortfolioEmployeeId(currentUser?.employeeId ?? "all"); setView("portfolio"); } }}><span>▣</span><p><strong>{isAdmin ? "จัดการโปรไฟล์" : "แฟ้มผลงานของฉัน"}</strong><small>{isAdmin ? "ข้อมูล เอกสาร และสัญญา" : "ดูผลงานและหลักฐานที่ส่งไว้"}</small></p></button>
@@ -4311,11 +4311,11 @@ export default function Home() {
 
             <div hidden={accessPanel !== "users"} className="access-main-grid">
               <form className="access-form-card" id="user-access-form" aria-labelledby="user-access-form-title" onSubmit={saveUserAccount}>
-                <div className="access-card-heading"><div><p className="eyebrow">ACCOUNT SETUP</p><h2 id="user-access-form-title">{userAccountForm.accountId ? "แก้ไขบัญชีและสิทธิ์" : "สร้างบัญชีผู้ใช้งาน"}</h2><p>กำหนดรหัสผู้ใช้ บทบาท และรหัสชั่วคราวจากหน้านี้ได้เลย</p></div><span>{userAccountForm.accountId ? "แก้ไข" : "ใหม่"}</span></div>
+                <div className="access-card-heading"><div><p className="eyebrow">ACCOUNT SETUP</p><h2 id="user-access-form-title">{userAccountForm.accountId ? "แก้ไขบัญชีและสิทธิ์" : "สร้างบัญชีผู้ใช้งาน"}</h2><p>กำหนดชื่อผู้ใช้ บทบาท และรหัสชั่วคราวจากหน้านี้ได้เลย</p></div><span>{userAccountForm.accountId ? "แก้ไข" : "ใหม่"}</span></div>
                 <div className="form-grid access-form-grid">
                   <label className="wide"><span>ชื่อที่แสดง</span><input required name="displayName" autoComplete="name" value={userAccountForm.displayName} onChange={(event) => setUserAccountForm((form) => ({ ...form, displayName: event.target.value }))} placeholder="ชื่อ–นามสกุล" /></label>
                   <label className="wide"><span>ชื่อเล่น (ไม่บังคับ)</span><input name="nickname" autoComplete="nickname" maxLength={40} value={userAccountForm.nickname} onChange={(event) => setUserAccountForm((form) => ({ ...form, nickname: event.target.value }))} placeholder="เช่น นัท" /></label>
-                  <label className="wide"><span>รหัสผู้ใช้สำหรับเข้าสู่ระบบ</span><input required name="username" autoComplete="username" autoCapitalize="none" spellCheck={false} maxLength={64} value={userAccountForm.loginId} onChange={(event) => setUserAccountForm((form) => ({ ...form, loginId: event.target.value }))} placeholder="เช่น EMP001 หรือ niran.k" /><small>ต้องไม่ซ้ำกับผู้อื่น และไม่ต้องตรงกับอีเมล</small></label>
+                  <label className="wide"><span>ชื่อผู้ใช้สำหรับเข้าสู่ระบบ</span><input required name="username" autoComplete="username" autoCapitalize="none" spellCheck={false} maxLength={64} value={userAccountForm.loginId} onChange={(event) => setUserAccountForm((form) => ({ ...form, loginId: event.target.value }))} placeholder="เช่น EMP001 หรือ niran.k" /><small>ต้องไม่ซ้ำกับผู้อื่น และไม่ต้องตรงกับอีเมล</small></label>
                   <div className="access-temporary-password wide">
                     <label htmlFor="temporary-password"><span>{userAccountRequiresTemporaryPassword ? "รหัสผ่านชั่วคราว" : "ตั้งรหัสผ่านชั่วคราวใหม่ (ไม่บังคับ)"}</span></label>
                     <div className="temporary-password-input">
@@ -4337,7 +4337,7 @@ export default function Home() {
                 <div className="access-form-actions">{userAccountForm.accountId && <button type="button" onClick={() => { setUserAccountForm(blankUserAccountForm()); setShowTemporaryPassword(false); }}>ยกเลิกการแก้ไข</button>}<button className="primary" disabled={isSaving}>{isSaving ? "กำลังบันทึก..." : userAccountForm.accountId ? "บันทึกบัญชี" : "สร้างบัญชีและรหัสชั่วคราว"}</button></div>
                 {credentialResult && <section className="credential-result-panel" role="status" aria-live="polite" aria-labelledby="credential-result-title">
                   <header><span aria-hidden="true">✓</span><div><strong id="credential-result-title">สร้างข้อมูลเข้าใช้เรียบร้อย</strong><small>แสดงรหัสผ่านครั้งนี้ครั้งเดียว กรุณาส่งให้ {credentialResult.displayName} ทางช่องทางส่วนตัว</small></div><button type="button" onClick={() => setCredentialResult(null)} aria-label="ปิดข้อมูลรหัสชั่วคราว">×</button></header>
-                  <dl><div><dt>รหัสผู้ใช้</dt><dd><code>{credentialResult.loginId}</code><button type="button" onClick={() => void copyCredential(credentialResult.loginId, "รหัสผู้ใช้")}>คัดลอก</button></dd></div><div><dt>รหัสผ่านชั่วคราว</dt><dd><code>{credentialResult.temporaryPassword}</code><button type="button" onClick={() => void copyCredential(credentialResult.temporaryPassword, "รหัสผ่านชั่วคราว")}>คัดลอก</button></dd></div></dl>
+                  <dl><div><dt>ชื่อผู้ใช้</dt><dd><code>{credentialResult.loginId}</code><button type="button" onClick={() => void copyCredential(credentialResult.loginId, "ชื่อผู้ใช้")}>คัดลอก</button></dd></div><div><dt>รหัสผ่านชั่วคราว</dt><dd><code>{credentialResult.temporaryPassword}</code><button type="button" onClick={() => void copyCredential(credentialResult.temporaryPassword, "รหัสผ่านชั่วคราว")}>คัดลอก</button></dd></div></dl>
                   <p><b>สำคัญ:</b> อย่าส่งรหัสผ่านในกลุ่มแชท ผู้ใช้จะถูกบังคับให้ตั้งรหัสใหม่ก่อนเห็นข้อมูลในระบบ</p>
                 </section>}
               </form>
@@ -4355,7 +4355,7 @@ export default function Home() {
                     </tbody>
                   </table>
                 </div>
-                <div className="access-invite-note"><span>i</span><p><strong>ส่งข้อมูลเข้าใช้อย่างปลอดภัย</strong> ส่งรหัสผู้ใช้และรหัสชั่วคราวให้เจ้าของบัญชีทางช่องทางส่วนตัว จากนั้นให้ทดลองเข้าใช้และตั้งรหัสใหม่ทันที</p></div>
+                <div className="access-invite-note"><span>i</span><p><strong>ส่งข้อมูลเข้าใช้อย่างปลอดภัย</strong> ส่งชื่อผู้ใช้และรหัสชั่วคราวให้เจ้าของบัญชีทางช่องทางส่วนตัว จากนั้นให้ทดลองเข้าใช้และตั้งรหัสใหม่ทันที</p></div>
               </aside>
             </div>
 
@@ -4369,7 +4369,7 @@ export default function Home() {
                   const availableEmployees = employees.filter((employee) => employee.status === "active" && !userAccounts.some((account) => account.employeeId === employee.id));
                   return <article key={registrationRequest.id} className="registration-request-item">
                     <header><span className="access-account-avatar">{makeInitials(`${registrationRequest.firstName} ${registrationRequest.lastName}`)}</span><div><strong>{registrationRequest.firstName} {registrationRequest.lastName}</strong><small>ชื่อเล่น {registrationRequest.nickname} · ส่งเมื่อ {formatUpdatedAt(registrationRequest.submittedAt)}</small></div><b>รออนุมัติ</b></header>
-                    <dl><div><dt>รหัสผู้ใช้</dt><dd><code>{registrationRequest.loginId}</code></dd></div><div><dt>อีเมล</dt><dd>{registrationRequest.email}</dd></div><div><dt>รหัสผ่าน</dt><dd>ตั้งแล้ว · ไม่แสดงข้อมูลลับ</dd></div></dl>
+                    <dl><div><dt>ชื่อผู้ใช้</dt><dd><code>{registrationRequest.loginId}</code></dd></div><div><dt>อีเมล</dt><dd>{registrationRequest.email}</dd></div><div><dt>รหัสผ่าน</dt><dd>ตั้งแล้ว · ไม่แสดงข้อมูลลับ</dd></div></dl>
                     <label><span>สิทธิ์หลังอนุมัติ</span><select value={selectedRole} onChange={(event) => setRegistrationRoleSelections((items) => ({ ...items, [registrationRequest.id]: event.target.value as UserAccountRecord["role"] }))}><option value="employee">พนักงาน — ดูและจัดการข้อมูลของตนเอง</option><option value="manager">หัวหน้าทีม — จัดการงานและประเมินทีม</option><option value="admin">HR / Admin — จัดการข้อมูลทั้งองค์กร</option></select><small>{selectedRole === "admin" ? "สิทธิ์ระดับสูง: เข้าถึงบัญชี ข้อมูล HR และการตั้งค่าทั้งองค์กร" : selectedRole === "manager" ? "ขอบเขตทีมจะยึดตามแผนกของโปรไฟล์พนักงานที่เลือก" : "เหมาะสำหรับสมาชิกทั่วไปและไม่มีสิทธิ์อนุมัติงานของตนเอง"}</small></label>
                     <label><span>ผูกกับโปรไฟล์พนักงาน</span><select value={selectedEmployeeId} onChange={(event) => setRegistrationEmployeeSelections((items) => ({ ...items, [registrationRequest.id]: event.target.value }))}><option value="">เลือกโปรไฟล์พนักงาน</option>{availableEmployees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name} · {getRole(employee.roleId).name}{employee.email.toLowerCase() === registrationRequest.email.toLowerCase() ? " · อีเมลตรงกัน" : ""}</option>)}</select><small>หากยังไม่มีโปรไฟล์ ให้เพิ่มพนักงานในทะเบียนก่อน แล้วกลับมาอนุมัติ</small></label>
                     <label><span>เหตุผลกรณีปฏิเสธ</span><input maxLength={500} value={registrationRejectionReasons[registrationRequest.id] ?? ""} onChange={(event) => setRegistrationRejectionReasons((items) => ({ ...items, [registrationRequest.id]: event.target.value }))} placeholder="เช่น ข้อมูลไม่ตรงกับทะเบียนพนักงาน" /></label>
@@ -4378,7 +4378,7 @@ export default function Home() {
                 })}
                 {!pendingRegistrationRequests.length && <div className="registration-empty"><span aria-hidden="true">✓</span><strong>ตรวจครบแล้ว</strong><p>ยังไม่มีคำขอสมัครสมาชิกใหม่ที่รออนุมัติ</p></div>}
               </div>
-              {reviewedRegistrationRequests.length > 0 && <div className="registration-history"><h3>ประวัติคำขอที่ตรวจแล้ว</h3><div className="access-user-table-wrap"><table className="access-user-table"><thead><tr><th>ผู้สมัคร</th><th>รหัสผู้ใช้</th><th>บทบาทที่อนุมัติ</th><th>ผลตรวจ</th><th>ผู้ตรวจ</th><th>วันที่ตรวจ</th></tr></thead><tbody>{reviewedRegistrationRequests.map((registrationRequest) => { const approvedAccount = registrationRequest.approvedUserAccountId ? userAccounts.find((account) => account.id === registrationRequest.approvedUserAccountId) : null; return <tr key={registrationRequest.id}><td><strong>{registrationRequest.firstName} {registrationRequest.lastName}</strong><small>{registrationRequest.email}</small></td><td><code>{registrationRequest.loginId}</code></td><td>{approvedAccount ? <span className={`access-role-pill ${approvedAccount.role}`}>{approvedAccount.role === "admin" ? "HR / Admin" : approvedAccount.role === "manager" ? "หัวหน้าทีม" : "พนักงาน"}</span> : "—"}</td><td><span className={`registration-status ${registrationRequest.status}`}>{registrationRequest.status === "approved" ? "อนุมัติแล้ว" : "ปฏิเสธ"}</span>{registrationRequest.rejectionReason && <small>{registrationRequest.rejectionReason}</small>}</td><td>{registrationRequest.reviewedByName || "—"}</td><td>{registrationRequest.reviewedAt ? formatUpdatedAt(registrationRequest.reviewedAt) : "—"}</td></tr>; })}</tbody></table></div></div>}
+              {reviewedRegistrationRequests.length > 0 && <div className="registration-history"><h3>ประวัติคำขอที่ตรวจแล้ว</h3><div className="access-user-table-wrap"><table className="access-user-table"><thead><tr><th>ผู้สมัคร</th><th>ชื่อผู้ใช้</th><th>บทบาทที่อนุมัติ</th><th>ผลตรวจ</th><th>ผู้ตรวจ</th><th>วันที่ตรวจ</th></tr></thead><tbody>{reviewedRegistrationRequests.map((registrationRequest) => { const approvedAccount = registrationRequest.approvedUserAccountId ? userAccounts.find((account) => account.id === registrationRequest.approvedUserAccountId) : null; return <tr key={registrationRequest.id}><td><strong>{registrationRequest.firstName} {registrationRequest.lastName}</strong><small>{registrationRequest.email}</small></td><td><code>{registrationRequest.loginId}</code></td><td>{approvedAccount ? <span className={`access-role-pill ${approvedAccount.role}`}>{approvedAccount.role === "admin" ? "HR / Admin" : approvedAccount.role === "manager" ? "หัวหน้าทีม" : "พนักงาน"}</span> : "—"}</td><td><span className={`registration-status ${registrationRequest.status}`}>{registrationRequest.status === "approved" ? "อนุมัติแล้ว" : "ปฏิเสธ"}</span>{registrationRequest.rejectionReason && <small>{registrationRequest.rejectionReason}</small>}</td><td>{registrationRequest.reviewedByName || "—"}</td><td>{registrationRequest.reviewedAt ? formatUpdatedAt(registrationRequest.reviewedAt) : "—"}</td></tr>; })}</tbody></table></div></div>}
             </section>
 
             <section hidden={accessPanel !== "users"} className="access-account-card">

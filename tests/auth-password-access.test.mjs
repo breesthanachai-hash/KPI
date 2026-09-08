@@ -70,9 +70,10 @@ test("password policy accepts any 6–15 character password across account flows
   assert.match(authService, /รหัสผ่านชั่วคราวอย่างน้อย 6 ตัวอักษร/);
 });
 
-test("owner recovery is expiring, single-use and revokes sessions without exposing the secret", async () => {
-  const [accessControl, loginRoute, readme] = await Promise.all([
+test("owner recovery is expiring, single-use and can safely reset to one owner account", async () => {
+  const [accessControl, cryptoSource, loginRoute, readme] = await Promise.all([
     source("lib/access-control.ts"),
+    source("lib/password-crypto.ts"),
     source("app/api/auth/login/route.ts"),
     source("README.md"),
   ]);
@@ -83,6 +84,7 @@ test("owner recovery is expiring, single-use and revokes sessions without exposi
   assert.match(recovery, /PEOPLE_PULSE_OWNER_RECOVERY_ID/);
   assert.match(recovery, /PEOPLE_PULSE_OWNER_RECOVERY_PASSWORD/);
   assert.match(recovery, /PEOPLE_PULSE_OWNER_RECOVERY_EXPIRES_AT/);
+  assert.match(recovery, /PEOPLE_PULSE_OWNER_RECOVERY_PURGE_OTHER_USERS/);
   assert.match(recovery, /expiresAtTime <= Date\.now\(\)/);
   assert.match(recovery, /credential-mutation:owner-recovery:/);
   assert.match(recovery, /eq\(authEvents\.id, claimId\)/);
@@ -92,6 +94,12 @@ test("owner recovery is expiring, single-use and revokes sessions without exposi
   assert.match(recovery, /lockedUntil: null/);
   assert.match(recovery, /revokeReason: "owner-password-recovery"/);
   assert.match(recovery, /db\.delete\(authRateLimits\)/);
+  assert.match(recovery, /hashTemporaryOwnerRecoveryPassword\(recoveryPassword\)/);
+  assert.match(recovery, /db\.delete\(userAccounts\)\.where\(ne\(userAccounts\.id, owner\.id\)\)/);
+  assert.match(recovery, /loginId: ownerLoginId/);
+  assert.match(recovery, /loginIdCanonical: ownerLoginIdCanonical/);
+  assert.doesNotMatch(recovery, /db\.delete\(employees\)/, "account cleanup must preserve employee and work history");
+  assert.match(cryptoSource, /export async function hashTemporaryOwnerRecoveryPassword[\s\S]*?\/\^\\d\{4\}\$\//);
   assert.doesNotMatch(recovery, /Response\.json|console\.|temporaryPassword/);
   assertBefore(loginRoute, /ensureOwnerRecoveryCredential\(\)/, /readBoundedLoginPayload\(request\)/, "owner recovery");
   assert.match(readme, /กู้บัญชีแบบครั้งเดียว/);
@@ -556,7 +564,9 @@ test("public DTOs and the client bundle contain no authentication secrets or leg
   assert.match(authUi, /fetch\("\/api\/auth\/login"/);
   assert.match(authUi, /name="username"/);
   assert.match(authUi, /autoComplete="current-password"/);
-  assert.match(page, /รหัสผู้ใช้สำหรับเข้าสู่ระบบ/);
+  assert.match(authUi, /<span>ชื่อผู้ใช้<\/span>/);
+  assert.match(page, /ชื่อผู้ใช้สำหรับเข้าสู่ระบบ/);
+  assert.doesNotMatch(authUi, /<span>รหัสผู้ใช้<\/span>/);
   assert.match(page, /รหัสผ่านชั่วคราว/);
   assert.match(page, /ผูกกับโปรไฟล์พนักงาน/);
   assert.doesNotMatch(firstPartyUi, /signin-with-chatgpt|oai-authenticated-user-id|เข้าสู่ระบบด้วย ChatGPT/i);
@@ -1236,7 +1246,7 @@ test("README defines ID/password onboarding and keeps public access behind a tes
     "credential.user_account_id = 'user-owner'",
     "credential.must_change_password <> 0",
     "คืน 0 แถว",
-    "รหัสผู้ใช้ + รหัสผ่านชั่วคราว + บทบาท + โปรไฟล์พนักงาน",
+    "ชื่อผู้ใช้ + รหัสผ่านชั่วคราว + บทบาท + โปรไฟล์พนักงาน",
     "public cutover gate",
     "เปลี่ยน access policy กลับเป็น `custom/private`",
   ]) assert.ok(readme.includes(copy), `README must include: ${copy}`);

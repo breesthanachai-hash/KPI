@@ -148,7 +148,7 @@ export function AuthScreen({ initialMode, displayName = "", loginId: initialLogi
         setMode("change");
         return;
       }
-      if (response.status === 401) throw new Error("รหัสผู้ใช้หรือรหัสผ่านไม่ถูกต้อง");
+      if (response.status === 401) throw new Error("ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง");
       if (response.status === 403) throw new Error("บัญชีนี้ยังใช้งานไม่ได้ กรุณาติดต่อ HR หรือผู้ดูแลระบบ");
       if (!response.ok) throw new Error("ระบบเข้าสู่ระบบยังไม่พร้อม กรุณาลองใหม่หรือติดต่อผู้ดูแลระบบ");
       if (body.mustChangePassword) {
@@ -265,11 +265,11 @@ export function AuthScreen({ initialMode, displayName = "", loginId: initialLogi
             <header>
               <p>พื้นที่ทำงานของทีม</p>
               <h1 id="auth-title">เข้าสู่ระบบ People Pulse</h1>
-              <span>ใช้รหัสผู้ใช้และรหัสผ่านที่ HR หรือผู้ดูแลระบบมอบให้</span>
+              <span>ใช้ชื่อผู้ใช้และรหัสผ่านที่ HR หรือผู้ดูแลระบบมอบให้</span>
             </header>
             {error && <div ref={errorRef} className="auth-error" role="alert" tabIndex={-1}><b>!</b><span>{error}</span></div>}
             <label className="auth-field" htmlFor="people-pulse-login-id">
-              <span>รหัสผู้ใช้</span>
+              <span>ชื่อผู้ใช้</span>
               <input
                 id="people-pulse-login-id"
                 name="username"
@@ -303,7 +303,7 @@ export function AuthScreen({ initialMode, displayName = "", loginId: initialLogi
               <label className="auth-field" htmlFor="registration-nickname"><span>ชื่อเล่น</span><input id="registration-nickname" name="nickname" autoComplete="nickname" maxLength={40} required value={registration.nickname} onChange={(event) => setRegistration((current) => ({ ...current, nickname: event.target.value }))} /></label>
               <label className="auth-field" htmlFor="registration-email"><span>อีเมล</span><input id="registration-email" name="email" type="email" autoComplete="email" maxLength={254} required value={registration.email} onChange={(event) => setRegistration((current) => ({ ...current, email: event.target.value }))} /></label>
             </div>
-            <label className="auth-field" htmlFor="registration-login-id"><span>รหัสผู้ใช้ (ID)</span><input id="registration-login-id" name="username" autoComplete="username" autoCapitalize="none" spellCheck={false} minLength={3} maxLength={64} required placeholder="เช่น EMP001 หรือ niran.k" value={registration.loginId} onChange={(event) => setRegistration((current) => ({ ...current, loginId: event.target.value }))} /><small>ใช้ a-z, 0-9, จุด ขีดกลาง หรือขีดล่าง และต้องไม่ซ้ำกับผู้อื่น</small></label>
+            <label className="auth-field" htmlFor="registration-login-id"><span>ชื่อผู้ใช้ (Username)</span><input id="registration-login-id" name="username" autoComplete="username" autoCapitalize="none" spellCheck={false} minLength={3} maxLength={64} required placeholder="เช่น EMP001 หรือ niran.k" value={registration.loginId} onChange={(event) => setRegistration((current) => ({ ...current, loginId: event.target.value }))} /><small>ใช้ a-z, 0-9, จุด ขีดกลาง หรือขีดล่าง และต้องไม่ซ้ำกับผู้อื่น</small></label>
             <PasswordControl id={registrationPasswordId} name="password" label="รหัสผ่าน" value={registration.password} onChange={(value) => setRegistration((current) => ({ ...current, password: value }))} autoComplete="new-password" describedBy="registration-password-rules" minLength={MIN_GENERAL_PASSWORD_LENGTH} maxLength={MAX_NEW_PASSWORD_LENGTH} />
             <PasswordControl id={registrationConfirmationId} name="confirmation" label="ยืนยันรหัสผ่าน" value={registration.confirmation} onChange={(value) => setRegistration((current) => ({ ...current, confirmation: value }))} autoComplete="new-password" describedBy="registration-password-rules" minLength={MIN_GENERAL_PASSWORD_LENGTH} maxLength={MAX_NEW_PASSWORD_LENGTH} />
             <div id="registration-password-rules" className="auth-password-rules"><b>ตั้งรหัสผ่านของคุณเอง</b><span className={passwordMeetsMinimum(registration.password) && [...registration.password.normalize("NFC")].length <= MAX_NEW_PASSWORD_LENGTH ? "passed" : ""}>ใช้ตัวอักษร ตัวเลข หรือสัญลักษณ์แบบใดก็ได้</span><span>ความยาว 6–15 ตัวอักษร และต้องกรอกให้ตรงกันทั้งสองช่อง</span></div>
@@ -325,7 +325,7 @@ export function AuthScreen({ initialMode, displayName = "", loginId: initialLogi
               <h1 id="auth-title">ตั้งรหัสผ่านใหม่ก่อนเริ่มใช้งาน</h1>
               <span>รหัสที่ได้รับเป็นรหัสชั่วคราว ต้องเปลี่ยนก่อนเปิดข้อมูลพนักงาน</span>
             </header>
-            {(knownDisplayName || loginId) && <div className="auth-identity"><span>{knownDisplayName.slice(0, 1) || "P"}</span><p><strong>{knownDisplayName || "ผู้ใช้งาน"}</strong><small>รหัสผู้ใช้ {loginId || "—"}</small></p></div>}
+            {(knownDisplayName || loginId) && <div className="auth-identity"><span>{knownDisplayName.slice(0, 1) || "P"}</span><p><strong>{knownDisplayName || "ผู้ใช้งาน"}</strong><small>ชื่อผู้ใช้ {loginId || "—"}</small></p></div>}
             {error && <div ref={errorRef} className="auth-error" role="alert" tabIndex={-1}><b>!</b><span>{error}</span></div>}
             <PasswordControl id={newPasswordId} name="newPassword" label="รหัสผ่านใหม่" value={newPassword} onChange={setNewPassword} autoComplete="new-password" describedBy="forced-password-rules" maxLength={MAX_NEW_PASSWORD_LENGTH} autoFocus />
             <PasswordControl id={confirmationId} name="confirmation" label="ยืนยันรหัสผ่านใหม่" value={confirmation} onChange={setConfirmation} autoComplete="new-password" describedBy="forced-password-rules" maxLength={MAX_NEW_PASSWORD_LENGTH} />

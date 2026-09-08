@@ -20,7 +20,7 @@ export async function POST(request: Request) {
       return Response.json({ error: error.message }, { status: error.status, headers });
     }
     if (error instanceof Error && /UNIQUE constraint failed/i.test(error.message)) {
-      return Response.json({ error: "รหัสผู้ใช้หรืออีเมลนี้มีคำขออยู่แล้ว" }, { status: 409, headers: privateNoStoreHeaders });
+      return Response.json({ error: "ชื่อผู้ใช้หรืออีเมลนี้มีคำขออยู่แล้ว" }, { status: 409, headers: privateNoStoreHeaders });
     }
     return internalApiError(error, "ส่งคำขอสมัครสมาชิกไม่สำเร็จ", "auth-register");
   }
