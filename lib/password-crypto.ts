@@ -11,6 +11,7 @@ export const MAX_PASSWORD_ITERATIONS = PASSWORD_ITERATIONS;
 export const MIN_PASSWORD_LENGTH = MIN_GENERAL_PASSWORD_LENGTH;
 export const MAX_PASSWORD_LENGTH = 256;
 export const MAX_PASSWORD_BYTES = 1024;
+export const MAX_REGISTRATION_PASSWORD_LENGTH = 15;
 
 const PASSWORD_HASH_BYTES = 32;
 const PASSWORD_SALT_BYTES = 16;
@@ -60,6 +61,22 @@ export function passwordInputIsWithinLimit(password: string) {
 
 export async function hashPassword(password: string): Promise<PasswordVerifier> {
   const validationError = passwordValidationError(password);
+  if (validationError) throw new RangeError(validationError);
+  const pepperVersion = currentPepperVersion();
+  const passwordSalt = randomToken(PASSWORD_SALT_BYTES);
+  const passwordHash = await derivePasswordHash(password, passwordSalt, PASSWORD_ALGORITHM, PASSWORD_ITERATIONS, pepperVersion);
+  return { passwordHash, passwordSalt, passwordAlgorithm: PASSWORD_ALGORITHM, passwordIterations: PASSWORD_ITERATIONS, pepperVersion };
+}
+
+export function registrationPasswordValidationError(password: string) {
+  const normalized = password.normalize("NFC");
+  if (!normalized.trim()) return "กรุณากรอกรหัสผ่าน";
+  if ([...normalized].length > MAX_REGISTRATION_PASSWORD_LENGTH) return "รหัสผ่านสำหรับสมัครสมาชิกต้องไม่เกิน 15 ตัวอักษร";
+  return null;
+}
+
+export async function hashRegistrationPassword(password: string): Promise<PasswordVerifier> {
+  const validationError = registrationPasswordValidationError(password);
   if (validationError) throw new RangeError(validationError);
   const pepperVersion = currentPepperVersion();
   const passwordSalt = randomToken(PASSWORD_SALT_BYTES);

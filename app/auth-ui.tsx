@@ -41,6 +41,13 @@ function passwordValidation(password: string, confirmation: string) {
   return "";
 }
 
+function registrationPasswordValidation(password: string, confirmation: string) {
+  if (!password.trim()) return "กรุณากรอกรหัสผ่าน";
+  if ([...password.normalize("NFC")].length > 15) return "รหัสผ่านสำหรับสมัครสมาชิกต้องไม่เกิน 15 ตัวอักษร";
+  if (password !== confirmation) return "รหัสผ่านทั้งสองช่องไม่ตรงกัน";
+  return "";
+}
+
 function PasswordControl({
   id,
   name,
@@ -51,6 +58,8 @@ function PasswordControl({
   describedBy,
   required = true,
   autoFocus = false,
+  minLength,
+  maxLength = 128,
 }: {
   id: string;
   name: string;
@@ -61,6 +70,8 @@ function PasswordControl({
   describedBy?: string;
   required?: boolean;
   autoFocus?: boolean;
+  minLength?: number;
+  maxLength?: number;
 }) {
   const [visible, setVisible] = useState(false);
   return (
@@ -76,8 +87,8 @@ function PasswordControl({
           onChange={(event) => onChange(event.target.value)}
           aria-describedby={describedBy}
           required={required}
-          minLength={autoComplete === "new-password" ? MIN_NUMERIC_PIN_LENGTH : undefined}
-          maxLength={128}
+          minLength={minLength ?? (autoComplete === "new-password" ? MIN_NUMERIC_PIN_LENGTH : undefined)}
+          maxLength={maxLength}
           autoFocus={autoFocus}
         />
         <button
@@ -191,7 +202,7 @@ export function AuthScreen({ initialMode, displayName = "", loginId: initialLogi
   const submitRegistration = async (event: React.FormEvent) => {
     event.preventDefault();
     if (busy) return;
-    const validationError = passwordValidation(registration.password, registration.confirmation);
+    const validationError = registrationPasswordValidation(registration.password, registration.confirmation);
     if (validationError) {
       setError(validationError);
       return;
@@ -291,9 +302,9 @@ export function AuthScreen({ initialMode, displayName = "", loginId: initialLogi
               <label className="auth-field" htmlFor="registration-email"><span>อีเมล</span><input id="registration-email" name="email" type="email" autoComplete="email" maxLength={254} required value={registration.email} onChange={(event) => setRegistration((current) => ({ ...current, email: event.target.value }))} /></label>
             </div>
             <label className="auth-field" htmlFor="registration-login-id"><span>รหัสผู้ใช้ (ID)</span><input id="registration-login-id" name="username" autoComplete="username" autoCapitalize="none" spellCheck={false} minLength={3} maxLength={64} required placeholder="เช่น EMP001 หรือ niran.k" value={registration.loginId} onChange={(event) => setRegistration((current) => ({ ...current, loginId: event.target.value }))} /><small>ใช้ a-z, 0-9, จุด ขีดกลาง หรือขีดล่าง และต้องไม่ซ้ำกับผู้อื่น</small></label>
-            <PasswordControl id={registrationPasswordId} name="password" label="รหัสผ่าน" value={registration.password} onChange={(value) => setRegistration((current) => ({ ...current, password: value }))} autoComplete="new-password" describedBy="registration-password-rules" />
-            <PasswordControl id={registrationConfirmationId} name="confirmation" label="ยืนยันรหัสผ่าน" value={registration.confirmation} onChange={(value) => setRegistration((current) => ({ ...current, confirmation: value }))} autoComplete="new-password" describedBy="registration-password-rules" />
-            <div id="registration-password-rules" className="auth-password-rules"><b>ตั้งรหัสผ่านของคุณเอง</b><span className={passwordMeetsMinimum(registration.password) ? "passed" : ""}>PIN ตัวเลขอย่างเดียวอย่างน้อย 8 หลัก</span><span>หรือรหัสผ่านทั่วไปอย่างน้อย 15 ตัวอักษร และไม่เกิน 128 ตัว</span></div>
+            <PasswordControl id={registrationPasswordId} name="password" label="รหัสผ่าน" value={registration.password} onChange={(value) => setRegistration((current) => ({ ...current, password: value }))} autoComplete="new-password" describedBy="registration-password-rules" minLength={1} maxLength={15} />
+            <PasswordControl id={registrationConfirmationId} name="confirmation" label="ยืนยันรหัสผ่าน" value={registration.confirmation} onChange={(value) => setRegistration((current) => ({ ...current, confirmation: value }))} autoComplete="new-password" describedBy="registration-password-rules" minLength={1} maxLength={15} />
+            <div id="registration-password-rules" className="auth-password-rules"><b>ตั้งรหัสผ่านของคุณเอง</b><span className={registration.password.trim() && [...registration.password.normalize("NFC")].length <= 15 ? "passed" : ""}>ใช้ตัวอักษร ตัวเลข หรือสัญลักษณ์แบบใดก็ได้</span><span>ความยาวไม่เกิน 15 ตัวอักษร และต้องกรอกให้ตรงกันทั้งสองช่อง</span></div>
             <div className="auth-registration-note"><b>หลังส่งคำขอ</b><span>บัญชียังเข้าใช้งานไม่ได้จนกว่าผู้ดูแลระบบจะตรวจสอบและอนุมัติ</span></div>
             <button className="auth-primary" disabled={busy || !registration.email.trim() || !registration.loginId.trim() || !registration.firstName.trim() || !registration.lastName.trim() || !registration.nickname.trim() || !registration.password || !registration.confirmation}>{busy ? "กำลังส่งคำขอ..." : "ส่งคำขอสมัครสมาชิก"}</button>
             <button className="auth-text-button" type="button" disabled={busy} onClick={() => { setError(""); setAuthView("login"); }}>กลับไปหน้าเข้าสู่ระบบ</button>

@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFile, readdir } from "node:fs/promises";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 const projectRoot = new URL("../", import.meta.url);
 
@@ -17,6 +19,26 @@ function blockBetween(text, startPattern, endPattern) {
   return end === -1 ? remainder : remainder.slice(0, end);
 }
 
+test("employee registration accepts any nonblank password up to 15 characters", () => {
+  const cryptoModule = new URL("../lib/password-crypto.ts", import.meta.url).href;
+  const script = `
+    import { registrationPasswordValidationError } from ${JSON.stringify(cryptoModule)};
+    process.stdout.write(JSON.stringify([
+      registrationPasswordValidationError("a"),
+      registrationPasswordValidationError("A1!_รหัส"),
+      registrationPasswordValidationError("123456789012345"),
+      registrationPasswordValidationError("1234567890123456"),
+      registrationPasswordValidationError("   "),
+    ]));
+  `;
+  const result = spawnSync(process.execPath, ["--experimental-strip-types", "--input-type=module", "--eval", script], {
+    cwd: fileURLToPath(projectRoot),
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), [null, null, null, "รหัสผ่านสำหรับสมัครสมาชิกต้องไม่เกิน 15 ตัวอักษร", "กรุณากรอกรหัสผ่าน"]);
+});
+
 test("login offers a complete employee registration form and keeps approval explicit", async () => {
   const authUi = await source("app/auth-ui.tsx");
   for (const field of ["given-name", "family-name", "nickname", "email", "username", "password", "confirmation"]) {
@@ -24,7 +46,11 @@ test("login offers a complete employee registration form and keeps approval expl
   }
   assert.match(authUi, /สมัครสมาชิกพนักงาน/);
   assert.match(authUi, /fetch\("\/api\/auth\/register"[\s\S]*?method: "POST"/);
-  assert.match(authUi, /passwordValidation\(registration\.password, registration\.confirmation\)/);
+  assert.match(authUi, /registrationPasswordValidation\(registration\.password, registration\.confirmation\)/);
+  assert.match(authUi, /minLength=\{1\} maxLength=\{15\}/);
+  assert.match(authUi, /ใช้ตัวอักษร ตัวเลข หรือสัญลักษณ์แบบใดก็ได้/);
+  assert.match(authUi, /ความยาวไม่เกิน 15 ตัวอักษร/);
+  assert.doesNotMatch(blockBetween(authUi, /authView === "register"/, /authView === "submitted"/), /PIN ตัวเลขอย่างเดียวอย่างน้อย 8 หลัก/);
   assert.match(authUi, /รอผู้ดูแลอนุมัติและผูกโปรไฟล์พนักงาน/);
   assert.match(authUi, /จากนั้นจึงใช้ ID และรหัสผ่านที่ตั้งไว้เข้าสู่ระบบได้/);
   assert.doesNotMatch(authUi, /ส่ง(?:รหัสผ่าน|password)(?:ให้|ไปยัง)ผู้ดูแล/i);
@@ -41,7 +67,9 @@ test("public registration is origin-checked, bounded, rate-limited, hashed and r
   assert.match(route, /byteLength > 8192/);
   assert.match(route, /status: 201, headers: privateNoStoreHeaders/);
   assert.match(service, /reserveRegistrationAttempt\(sourceHash, loginIdCanonical\)/);
-  assert.ok(service.indexOf("reserveRegistrationAttempt(sourceHash, loginIdCanonical)") < service.indexOf("const verifier = await hashPassword(password)"));
+  assert.match(service, /registrationPasswordValidationError\(password\)/);
+  assert.match(service, /hashRegistrationPassword\(password\)/);
+  assert.ok(service.indexOf("reserveRegistrationAttempt(sourceHash, loginIdCanonical)") < service.indexOf("const verifier = await hashRegistrationPassword(password)"));
   assert.match(service, /REGISTRATION_LOGIN_LIMIT = 3/);
   assert.match(service, /REGISTRATION_SOURCE_LIMIT = 8/);
 
@@ -136,7 +164,7 @@ test("built client contains registration and admin review features", async () =>
   const assetRoot = new URL("../dist/client/assets/", import.meta.url);
   const assetNames = (await readdir(assetRoot)).filter((name) => name.endsWith(".js"));
   const client = (await Promise.all(assetNames.map((name) => source(`dist/client/assets/${name}`)))).join("\n");
-  for (const copy of ["สมัครสมาชิกพนักงาน", "คำขอสมัครใหม่", "ข้อมูลผู้ใช้งานทั้งหมด", "อนุมัติและเปิดบัญชี", "ส่งออก Excel (.csv)"]) {
+  for (const copy of ["สมัครสมาชิกพนักงาน", "คำขอสมัครใหม่", "ข้อมูลผู้ใช้งานทั้งหมด", "อนุมัติและเปิดบัญชี", "ส่งออก Excel (.csv)", "ใช้ตัวอักษร ตัวเลข หรือสัญลักษณ์แบบใดก็ได้", "ความยาวไม่เกิน 15 ตัวอักษร"]) {
     assert.match(client, new RegExp(copy.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
   assert.match(client, /\/api\/auth\/register/);

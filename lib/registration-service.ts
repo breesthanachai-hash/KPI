@@ -13,9 +13,9 @@ import { type CurrentUser } from "./access-control";
 import { publicUserAccountDto } from "./auth-service";
 import { getRole } from "./kpi-data";
 import {
-  hashPassword,
-  passwordValidationError,
+  hashRegistrationPassword,
   privateLookupHash,
+  registrationPasswordValidationError,
   validateLoginId,
 } from "./password-crypto";
 
@@ -76,7 +76,7 @@ export async function submitEmployeeRegistration(request: Request, input: Record
 
   if (!email) throw new RegistrationInputError("กรุณากรอกอีเมลที่ถูกต้อง");
   if (!loginIdCanonical) throw new RegistrationInputError("รหัสผู้ใช้ต้องยาว 3–64 ตัว และใช้เฉพาะ a-z, 0-9, จุด, ขีดกลาง หรือขีดล่าง");
-  const passwordError = passwordValidationError(password);
+  const passwordError = registrationPasswordValidationError(password);
   if (passwordError) throw new RegistrationInputError(passwordError);
   if (!firstName || !lastName || !nickname) throw new RegistrationInputError("กรุณากรอกชื่อ นามสกุล และชื่อเล่นให้ครบ");
 
@@ -105,7 +105,7 @@ export async function submitEmployeeRegistration(request: Request, input: Record
     throw new RegistrationInputError("รหัสผู้ใช้หรืออีเมลนี้ถูกใช้ หรือมีคำขอรออนุมัติแล้ว", 409);
   }
 
-  const verifier = await hashPassword(password);
+  const verifier = await hashRegistrationPassword(password);
   const now = new Date().toISOString();
   const record: typeof employeeRegistrationRequests.$inferInsert = {
     id: `registration-${crypto.randomUUID()}`,
