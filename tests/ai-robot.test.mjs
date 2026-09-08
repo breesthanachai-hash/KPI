@@ -41,6 +41,7 @@ test("renders the requested speech exactly once on a real accessible AI button",
   assert.match(robotSource, /aria-controls="people-ai-panel"/);
   assert.match(robotSource, /aria-describedby="people-ai-robot-description"/);
   assert.match(robotSource, /id="people-ai-robot-description" className="sr-only"/);
+  assert.match(robotSource, /className="ai-robot-hide" onClick=\{onHide\} aria-label="ซ่อนหุ่น AI ผู้ช่วย"/);
   assert.match(robotSource, /hidden=\{open \|\| suspended\}/, "the roaming control must leave the screen while a dialog is open");
 });
 
@@ -52,10 +53,22 @@ test("wires the mascot to the existing People AI open state without overlapping 
   assert.match(openHandler, /setShowNotifications\(false\)/);
   assert.match(openHandler, /setShowUserMenu\(false\)/);
   assert.match(openHandler, /setShowAiAssistant\(true\)/);
-  assert.match(pageSource, /<AiRobotMascot open=\{showAiAssistant\} suspended=\{hasBlockingOverlay\} onOpen=\{openPeopleAi\} \/>/);
+  assert.match(pageSource, /showAiMascot && <AiRobotMascot open=\{showAiAssistant\} suspended=\{hasBlockingOverlay\} onOpen=\{openPeopleAi\} onHide=\{hideAiMascot\} \/>/);
   assert.match(pageSource, /onClick=\{openPeopleAi\}[\s\S]*?<b>ผู้ช่วย AI<\/b>/);
   assert.match(pageSource, /<AiAssistant open=\{showAiAssistant\}/);
   assert.match(pageSource, /!isEmployeeUser && <>[\s\S]*?<AiRobotMascot[\s\S]*?<AiAssistant[\s\S]*?<\/>}/);
+});
+
+test("offers a persistent visible toggle and keeps the roaming mascot off by default", () => {
+  assert.match(pageSource, /AI_MASCOT_VISIBILITY_STORAGE_KEY = "people-pulse-ai-mascot-visible:v1"/);
+  assert.match(pageSource, /const \[showAiMascot, setShowAiMascot\] = useState\(false\)/);
+  assert.match(pageSource, /localStorage\.getItem\(AI_MASCOT_VISIBILITY_STORAGE_KEY\) === "shown"/);
+  assert.match(pageSource, /localStorage\.setItem\(AI_MASCOT_VISIBILITY_STORAGE_KEY, visible \? "shown" : "hidden"\)/);
+  assert.match(pageSource, /className="profile-ai-toggle" role="switch" aria-checked=\{showAiMascot\}/);
+  assert.match(pageSource, /<strong>แสดงหุ่น AI ผู้ช่วย<\/strong>/);
+  assert.match(pageSource, /ซ่อนหุ่น AI แล้ว เปิดกลับได้จากเมนูโปรไฟล์/);
+  assert.match(cssSource, /\.profile-ai-toggle\[aria-checked="true"\] > \.profile-ai-switch/);
+  assert.match(cssSource, /\.ai-robot-hide[\s\S]*?pointer-events:\s*auto/);
 });
 
 test("includes People AI in the shared focus trap, scroll lock, Escape close and focus restore", () => {
@@ -163,5 +176,7 @@ test("ships the robot and its exact message in the built client bundle", async (
   assert.match(bundle, /สงสัยถามกูได้นะไอ้สัส/);
   assert.match(bundle, /ai-robot-mascot/);
   assert.match(bundle, /ai-robot-launcher/);
+  assert.match(bundle, /แสดงหุ่น AI ผู้ช่วย/);
+  assert.match(bundle, /people-pulse-ai-mascot-visible:v1/);
   assert.match(bundle, /people-ai-panel/);
 });

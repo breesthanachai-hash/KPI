@@ -49,6 +49,7 @@ import {
 } from "../lib/kpi-data";
 
 const Office3D = lazy(() => import("./office-3d"));
+const AI_MASCOT_VISIBILITY_STORAGE_KEY = "people-pulse-ai-mascot-visible:v1";
 
 type View = "overview" | "employees" | "profiles" | "organizationDocs" | "skills" | "power" | "peopleOps" | "hr" | "portfolio" | "work" | "office" | "access";
 
@@ -940,6 +941,7 @@ export default function Home() {
   const toastTimerRef = useRef<number | null>(null);
   const lastFocusedElementRef = useRef<HTMLElement | null>(null);
   const [showAiAssistant, setShowAiAssistant] = useState(false);
+  const [showAiMascot, setShowAiMascot] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showChangePassword, setShowChangePassword] = useState(false);
@@ -1181,6 +1183,16 @@ export default function Home() {
   }, [canManageEmployeeFiles, view]);
 
   const hasBlockingOverlay = Boolean(selectedEmployee || skillProfileEmployee || hrEmployee || showAddEmployee || showWorkForm || showProjectForm || submissionWorkItem || rewardToRedeem || showProfileEditor || showContractForm || contractToSign || showOrganizationDocumentForm || showEmployeeWarningForm || showEmployeeRecognitionForm || showNotifications || showUserMenu || showChangePassword);
+
+  useEffect(() => {
+    let mascotShouldBeVisible = false;
+    try {
+      mascotShouldBeVisible = window.localStorage.getItem(AI_MASCOT_VISIBILITY_STORAGE_KEY) === "shown";
+    } catch {}
+
+    const visibilityTimer = window.setTimeout(() => setShowAiMascot(mascotShouldBeVisible), 0);
+    return () => window.clearTimeout(visibilityTimer);
+  }, []);
 
   useEffect(() => {
     const hasOpenOverlay = Boolean(hasBlockingOverlay || showAiAssistant);
@@ -3187,6 +3199,20 @@ export default function Home() {
     setShowAiAssistant(true);
   };
 
+  const updateAiMascotVisibility = (visible: boolean) => {
+    setShowAiMascot(visible);
+    try {
+      window.localStorage.setItem(AI_MASCOT_VISIBILITY_STORAGE_KEY, visible ? "shown" : "hidden");
+    } catch {
+      // The preference is optional; hiding still works for the current page.
+    }
+  };
+
+  const hideAiMascot = () => {
+    updateAiMascotVisibility(false);
+    showToast("ซ่อนหุ่น AI แล้ว เปิดกลับได้จากเมนูโปรไฟล์");
+  };
+
   const handlePeopleAiAction = (action: PeopleAiActionId) => {
     if (action === "open_today") {
       setView("work");
@@ -3329,6 +3355,7 @@ export default function Home() {
             <button type="button" onClick={() => { setShowUserMenu(false); setView("work"); setWorkSection("points"); setPointPanel("policies"); }}><span>§</span><p><strong>กฎองค์กร</strong><small>{isAdmin ? "ร่าง ประกาศ และติดตามการรับทราบ" : "อ่านกฎที่ประกาศใช้และยืนยันรับทราบ"}</small></p></button>
             {isEmployeeUser && <button type="button" onClick={() => { setShowUserMenu(false); setView("peopleOps"); }}><span>↗</span><p><strong>การเติบโตและเงินเดือน</strong><small>ดูเป้าหมาย สกิล และค่าตอบแทนของฉัน</small></p></button>}
             {isEmployeeUser && <button type="button" onClick={() => { setShowUserMenu(false); setView("work"); setWorkSection("points"); setPointPanel("overview"); }}><span>★</span><p><strong>Points และรางวัล</strong><small>ดูยอด Points และเลือกรางวัล</small></p></button>}
+            {!isEmployeeUser && <button type="button" className="profile-ai-toggle" role="switch" aria-checked={showAiMascot} onClick={() => updateAiMascotVisibility(!showAiMascot)}><span aria-hidden="true">AI</span><p><strong>แสดงหุ่น AI ผู้ช่วย</strong><small>{showAiMascot ? "เปิดอยู่ · กดเพื่อซ่อนจากหน้าเว็บ" : "ปิดอยู่ · กดเมื่อต้องการให้หุ่นกลับมา"}</small></p><i className="profile-ai-switch" aria-hidden="true" /></button>}
             {isEmployeePreview ? <button type="button" onClick={() => window.location.assign("/")}><span>←</span><p><strong>กลับมุมมองผู้ดูแล</strong><small>ออกจากโหมดทดลองพนักงาน</small></p></button> : <>
               <button type="button" onClick={() => { setShowUserMenu(false); setShowChangePassword(true); }}><span>⌁</span><p><strong>เปลี่ยนรหัสผ่าน</strong><small>ยืนยันรหัสปัจจุบันและตั้งรหัสใหม่</small></p></button>
               <button type="button" disabled={isLoggingOut} onClick={() => void logout(false)}><span>↗</span><p><strong>ออกจากระบบ</strong><small>ออกจากอุปกรณ์เครื่องนี้</small></p></button>
@@ -5226,7 +5253,7 @@ export default function Home() {
       )}
 
       {!isEmployeeUser && <>
-        <AiRobotMascot open={showAiAssistant} suspended={hasBlockingOverlay} onOpen={openPeopleAi} />
+        {showAiMascot && <AiRobotMascot open={showAiAssistant} suspended={hasBlockingOverlay} onOpen={openPeopleAi} onHide={hideAiMascot} />}
         <AiAssistant open={showAiAssistant} context={peopleAiContext} onClose={() => setShowAiAssistant(false)} onSystemAction={handlePeopleAiAction} />
       </>}
       <div className={`toast ${toast ? `show ${toast.tone}` : ""}`} role={toast?.tone === "error" ? "alert" : "status"} aria-live={toast?.tone === "error" ? "assertive" : "polite"} aria-atomic="true"><span>{toast?.tone === "error" ? "!" : "✓"}</span>{toast?.message}</div>

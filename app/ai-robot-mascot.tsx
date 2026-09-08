@@ -58,7 +58,7 @@ function safeEdgeTarget(current: RobotPosition, robotRoot: HTMLElement | null): 
   return positionIsSafe(current) ? current : null;
 }
 
-export default function AiRobotMascot({ open, suspended, onOpen }: { open: boolean; suspended: boolean; onOpen: () => void }) {
+export default function AiRobotMascot({ open, suspended, onOpen, onHide }: { open: boolean; suspended: boolean; onOpen: () => void; onHide: () => void }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const positionRef = useRef<RobotPosition>({ x: 18, y: 118 });
   const pausedRef = useRef(false);
@@ -184,6 +184,7 @@ export default function AiRobotMascot({ open, suspended, onOpen }: { open: boole
     >
       <span className="ai-robot-speech" aria-hidden="true">สงสัยถามกูได้นะไอ้สัส</span>
       <span id="people-ai-robot-description" className="sr-only">หุ่นยนต์ผู้ช่วย AI กดเพื่อถามเรื่องงาน KPI และการใช้งานระบบ</span>
+      <button type="button" className="ai-robot-hide" onClick={onHide} aria-label="ซ่อนหุ่น AI ผู้ช่วย" title="ซ่อนหุ่น AI">×</button>
       <button
         type="button"
         className="ai-robot-launcher"
