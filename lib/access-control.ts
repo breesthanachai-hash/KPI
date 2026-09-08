@@ -1,14 +1,17 @@
 import { and, eq, gt, isNull, sql } from "drizzle-orm";
 import { getDb } from "../db";
 import { ensureDatabase } from "../db/initialize";
-import { authCredentials, authEvents, authSessions, employees, userAccounts } from "../db/schema";
+import { authCredentials, authEvents, authRateLimits, authSessions, employees, userAccounts } from "../db/schema";
 import { getRole, type UserAccountRecord } from "./kpi-data";
 import {
   LEGACY_PASSWORD_ITERATIONS,
   PASSWORD_ALGORITHM,
   PASSWORD_ITERATIONS,
+  hashPassword,
   hashOpaqueToken,
   parsePasswordVerifier,
+  passwordValidationError,
+  privateLookupHash,
   randomToken,
   validateLoginId,
 } from "./password-crypto";
@@ -76,6 +79,77 @@ export function ensureBootstrapAccounts() {
     throw error;
   });
   return bootstrapInitialization;
+}
+
+export async function ensureOwnerRecoveryCredential() {
+  const recoveryId = process.env.PEOPLE_PULSE_OWNER_RECOVERY_ID?.trim() ?? "";
+  const recoveryPassword = process.env.PEOPLE_PULSE_OWNER_RECOVERY_PASSWORD ?? "";
+  const recoveryExpiresAt = process.env.PEOPLE_PULSE_OWNER_RECOVERY_EXPIRES_AT?.trim() ?? "";
+  const hasAnyRecoveryConfig = Boolean(recoveryId || recoveryPassword || recoveryExpiresAt);
+  if (!hasAnyRecoveryConfig) return;
+  if (!/^[a-z0-9]{16,64}$/i.test(recoveryId) || !recoveryExpiresAt) {
+    throw new Error("Owner recovery configuration is incomplete or invalid.");
+  }
+  const expiresAtTime = Date.parse(recoveryExpiresAt);
+  if (!Number.isFinite(expiresAtTime) || expiresAtTime <= Date.now()) {
+    throw new Error("Owner recovery configuration has expired.");
+  }
+  const validationError = passwordValidationError(recoveryPassword);
+  if (validationError) throw new Error("Owner recovery password does not meet the active password policy.");
+
+  const db = getDb();
+  const claimId = `credential-mutation:owner-recovery:${recoveryId}`;
+  const [ownerRows, credentialRows, claimRows] = await db.batch([
+    db.select().from(userAccounts).where(eq(userAccounts.id, "user-owner")).limit(1),
+    db.select().from(authCredentials).where(eq(authCredentials.userAccountId, "user-owner")).limit(1),
+    db.select({ id: authEvents.id }).from(authEvents).where(eq(authEvents.id, claimId)).limit(1),
+  ]);
+  if (claimRows.length) return;
+  const owner = ownerRows[0];
+  const credential = credentialRows[0];
+  if (!owner || owner.role !== "admin" || owner.status !== "active" || !credential) {
+    throw new Error("Owner recovery requires an active owner administrator credential.");
+  }
+
+  const verifier = await hashPassword(recoveryPassword);
+  const now = new Date().toISOString();
+  const loginRateKey = await privateLookupHash("login-rate-login-id", credential.loginIdCanonical);
+  try {
+    await db.batch([
+      db.insert(authEvents).values({
+        id: claimId,
+        userAccountId: owner.id,
+        eventType: "credential_reset",
+        sourceHash: "",
+        detail: String(credential.credentialVersion),
+        createdAt: now,
+      }),
+      db.update(authCredentials).set({
+        ...verifier,
+        credentialVersion: credential.credentialVersion + 1,
+        mustChangePassword: true,
+        failedAttempts: 0,
+        lockedUntil: null,
+        passwordChangedAt: now,
+        updatedAt: now,
+      }).where(and(
+        eq(authCredentials.userAccountId, owner.id),
+        eq(authCredentials.credentialVersion, credential.credentialVersion),
+      )),
+      db.update(authSessions).set({
+        revokedAt: now,
+        revokeReason: "owner-password-recovery",
+      }).where(and(
+        eq(authSessions.userAccountId, owner.id),
+        isNull(authSessions.revokedAt),
+      )),
+      db.delete(authRateLimits).where(eq(authRateLimits.keyHash, loginRateKey)),
+    ]);
+  } catch (error) {
+    const [completedClaim] = await db.select({ id: authEvents.id }).from(authEvents).where(eq(authEvents.id, claimId)).limit(1);
+    if (completedClaim) return;
+    throw error;
+  }
 }
 
 async function initializeBootstrapAccounts() {

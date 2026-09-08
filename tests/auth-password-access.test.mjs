@@ -70,6 +70,33 @@ test("password policy accepts any 6–15 character password across account flows
   assert.match(authService, /รหัสผ่านชั่วคราวอย่างน้อย 6 ตัวอักษร/);
 });
 
+test("owner recovery is expiring, single-use and revokes sessions without exposing the secret", async () => {
+  const [accessControl, loginRoute, readme] = await Promise.all([
+    source("lib/access-control.ts"),
+    source("app/api/auth/login/route.ts"),
+    source("README.md"),
+  ]);
+  const recovery = accessControl.slice(
+    accessControl.indexOf("export async function ensureOwnerRecoveryCredential"),
+    accessControl.indexOf("async function initializeBootstrapAccounts"),
+  );
+  assert.match(recovery, /PEOPLE_PULSE_OWNER_RECOVERY_ID/);
+  assert.match(recovery, /PEOPLE_PULSE_OWNER_RECOVERY_PASSWORD/);
+  assert.match(recovery, /PEOPLE_PULSE_OWNER_RECOVERY_EXPIRES_AT/);
+  assert.match(recovery, /expiresAtTime <= Date\.now\(\)/);
+  assert.match(recovery, /credential-mutation:owner-recovery:/);
+  assert.match(recovery, /eq\(authEvents\.id, claimId\)/);
+  assert.match(recovery, /eq\(authCredentials\.credentialVersion, credential\.credentialVersion\)/);
+  assert.match(recovery, /mustChangePassword: true/);
+  assert.match(recovery, /failedAttempts: 0/);
+  assert.match(recovery, /lockedUntil: null/);
+  assert.match(recovery, /revokeReason: "owner-password-recovery"/);
+  assert.match(recovery, /db\.delete\(authRateLimits\)/);
+  assert.doesNotMatch(recovery, /Response\.json|console\.|temporaryPassword/);
+  assertBefore(loginRoute, /ensureOwnerRecoveryCredential\(\)/, /readBoundedLoginPayload\(request\)/, "owner recovery");
+  assert.match(readme, /กู้บัญชีแบบครั้งเดียว/);
+});
+
 test("bootstrap output is compatible with the real PBKDF2 verifier and keeps independent secrets", { timeout: 30_000 }, async () => {
   const bootstrapScript = await source("scripts/generate-auth-bootstrap.mjs");
   const generated = spawnSync(process.execPath, [
