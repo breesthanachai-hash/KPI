@@ -182,7 +182,9 @@ function isUniqueConstraintError(error: unknown) {
 
 function isRedemptionConflictError(error: unknown) {
   if (!(error instanceof Error)) return false;
-  return isUniqueConstraintError(error) || error.message.includes("REDEMPTION_");
+  return isUniqueConstraintError(error)
+    || error.message.includes("REDEMPTION_")
+    || error.message.includes("NOT NULL constraint failed: rewards.title");
 }
 
 async function initializeSeedData() {
@@ -507,6 +509,10 @@ export async function GET(request: Request) {
       if (employee.id === currentUser.employeeId) return employee.status === "active";
       return employee.status === "active" && currentUser.role === "manager" && Boolean(currentUser.departmentId) && getRole(employee.roleId).departmentId === currentUser.departmentId;
     }).map((employee) => employee.id));
+    const visibleRewardRedemptions = redemptionRows.filter((redemption) => visibleEmployeeIds.has(redemption.employeeId));
+    const visibleRewards = currentUser.role === "admin"
+      ? rewardRows
+      : rewardRows.filter((reward) => reward.isActive);
     const signedInEmployee = currentUser.employeeId ? employeeRows.find((employee) => employee.id === currentUser.employeeId) ?? null : null;
     const signedInEmployeeProfile = signedInEmployee ? employeeProfileRows.find((profile) => profile.employeeId === signedInEmployee.id) ?? null : null;
     if (currentUser.role === "employee" && (!signedInEmployee || signedInEmployee.status !== "active")) {
@@ -641,14 +647,14 @@ export async function GET(request: Request) {
       projects: projectRows.filter((row) => visibleProjectIds.has(row.id)),
       workItems: scopedWorkItems,
       workSubmissions: workSubmissionRows.filter((row) => visibleEmployeeIds.has(row.employeeId)),
-      rewards: rewardRows,
+      rewards: visibleRewards,
       pointLedger: pointRows
         .filter((row) => visibleEmployeeIds.has(row.employeeId))
         .map((row) => ({ ...row, note: withPointsDisplayTerminology(row.note) })),
       pointEvents: pointEventRows
         .filter((row) => visibleEmployeeIds.has(row.employeeId))
         .map((row) => ({ ...row, note: withPointsDisplayTerminology(row.note) })),
-      rewardRedemptions: redemptionRows.filter((row) => visibleEmployeeIds.has(row.employeeId)),
+      rewardRedemptions: visibleRewardRedemptions,
       employeeProfiles: currentUser.role === "admin" ? employeeProfileRows.filter((row) => visibleEmployeeIds.has(row.employeeId)).map(employeeProfileWithValidImage) : visibleProfileImages,
       applicationDocuments: visibleApplicationDocuments,
       employmentContracts: visibleEmploymentContracts,
@@ -816,6 +822,28 @@ type UpdateRewardRedemptionPayload = {
   status?: "approved" | "fulfilled" | "cancelled";
 };
 
+type SaveRewardPayload = {
+  action: "saveReward";
+  rewardId?: string;
+  title?: string;
+  description?: string;
+  category?: "perk" | "learning" | "wellbeing" | "recognition";
+  costPoints?: number;
+  stock?: number;
+  icon?: string;
+  isActive?: boolean;
+  expectedInventoryVersion?: number;
+  expectedUpdatedAt?: string;
+};
+
+type DeleteRewardPayload = {
+  action: "deleteReward";
+  rewardId?: string;
+  confirmation?: string;
+  expectedInventoryVersion?: number;
+  expectedUpdatedAt?: string;
+};
+
 type EmployeeProfilePayload = {
   action: "saveEmployeeProfile";
   employeeId?: string;
@@ -930,10 +958,10 @@ export async function POST(request: Request) {
     const currentUser = authentication.currentUser;
     await ensureSeedData();
     const db = getDb();
-    const payload = await request.json() as EmployeePayload | UpdateEmployeeStatusPayload | DeleteEmployeePermanentlyPayload | EvaluationPayload | SelfAssessmentPayload | HrPlanPayload | CompleteTalentActionPayload | AttendancePayload | AttendanceApprovalPayload | SkillAchievementPayload | ProjectPayload | WorkItemPayload | ReviewWorkSubmissionPayload | RecordPointEventPayload | RunMonthlyPointCyclePayload | RedeemRewardPayload | UpdateRewardRedemptionPayload | EmployeeProfilePayload | DocumentStatusPayload | ContractPayload | SignContractPayload | SendContractPayload | UserAccountPayload | DeleteUserAccountPayload | ReviewEmployeeRegistrationPayload | MarkNotificationsReadPayload | SaveOrganizationPolicyPayload | PublishOrganizationPolicyPayload | AcknowledgeOrganizationPolicyPayload;
+    const payload = await request.json() as EmployeePayload | UpdateEmployeeStatusPayload | DeleteEmployeePermanentlyPayload | EvaluationPayload | SelfAssessmentPayload | HrPlanPayload | CompleteTalentActionPayload | AttendancePayload | AttendanceApprovalPayload | SkillAchievementPayload | ProjectPayload | WorkItemPayload | ReviewWorkSubmissionPayload | RecordPointEventPayload | RunMonthlyPointCyclePayload | RedeemRewardPayload | UpdateRewardRedemptionPayload | SaveRewardPayload | DeleteRewardPayload | EmployeeProfilePayload | DocumentStatusPayload | ContractPayload | SignContractPayload | SendContractPayload | UserAccountPayload | DeleteUserAccountPayload | ReviewEmployeeRegistrationPayload | MarkNotificationsReadPayload | SaveOrganizationPolicyPayload | PublishOrganizationPolicyPayload | AcknowledgeOrganizationPolicyPayload;
     const pointPolicyRows = await db.select().from(organizationPolicies);
     const { policy: activePointPolicy, rules: activePointRules } = pointPolicyFromRows(pointPolicyRows);
-    const adminOnlyActions = new Set(["createEmployee", "updateEmployeeStatus", "archiveEmployee", "deleteEmployeePermanently", "saveHrPlan", "verifySkillAchievement", "runMonthlyPointCycle", "saveEmployeeProfile", "updateDocumentStatus", "createContract", "sendContract", "saveUserAccount", "deleteUserAccount", "approveEmployeeRegistration", "rejectEmployeeRegistration", "saveOrganizationPolicy", "publishOrganizationPolicy", "updateRewardRedemption"]);
+    const adminOnlyActions = new Set(["createEmployee", "updateEmployeeStatus", "archiveEmployee", "deleteEmployeePermanently", "saveHrPlan", "verifySkillAchievement", "runMonthlyPointCycle", "saveEmployeeProfile", "updateDocumentStatus", "createContract", "sendContract", "saveUserAccount", "deleteUserAccount", "approveEmployeeRegistration", "rejectEmployeeRegistration", "saveOrganizationPolicy", "publishOrganizationPolicy", "saveReward", "deleteReward", "updateRewardRedemption"]);
     const teamActions = new Set(["saveEvaluation", "completeTalentAction", "approveAttendance", "saveProject", "reviewWorkSubmission", "recordPointEvent"]);
     const employeePortalActions = new Set(["markNotificationsRead", "saveWorkItem", "saveSelfAssessment", "redeemReward", "acknowledgeOrganizationPolicy", "signContract"]);
     if (currentUser.role === "employee" && !employeePortalActions.has(payload.action)) return Response.json({ error: "สิทธิ์พนักงานใช้ได้เฉพาะงานของฉัน การแจ้งเตือน การแลกรางวัล การรับทราบกฎองค์กร และการลงนามสัญญาของตนเอง" }, { status: 403 });
@@ -2373,6 +2401,134 @@ export async function POST(request: Request) {
       return Response.json({ pointEvents: pointEventRows, pointEntries: pointEntryRows, month, count: pendingEligible.length });
     }
 
+    if (payload.action === "saveReward") {
+      const rewardId = typeof payload.rewardId === "string" ? payload.rewardId.trim().slice(0, 160) : "";
+      const [sourceReward] = rewardId
+        ? await db.select().from(rewards).where(eq(rewards.id, rewardId)).limit(1)
+        : [];
+      if (rewardId && !sourceReward) return Response.json({ error: "ไม่พบรางวัลที่เลือก" }, { status: 404 });
+
+      const title = typeof payload.title === "string" ? payload.title.trim() : "";
+      const description = typeof payload.description === "string" ? payload.description.trim() : "";
+      const category = payload.category;
+      const icon = typeof payload.icon === "string" ? payload.icon.trim() || "★" : "★";
+      const costPoints = payload.costPoints;
+      const stock = payload.stock;
+      const rewardCategories = new Set(["perk", "learning", "wellbeing", "recognition"]);
+      if (!title || Array.from(title).length > 160) {
+        return Response.json({ error: "กรุณาระบุชื่อรางวัลไม่เกิน 160 ตัวอักษร" }, { status: 400 });
+      }
+      if (Array.from(description).length > 2_000) {
+        return Response.json({ error: "รายละเอียดรางวัลต้องไม่เกิน 2,000 ตัวอักษร" }, { status: 400 });
+      }
+      if (!category || !rewardCategories.has(category)) {
+        return Response.json({ error: "กรุณาเลือกหมวดรางวัลที่ถูกต้อง" }, { status: 400 });
+      }
+      if (Array.from(icon).length > 16) {
+        return Response.json({ error: "สัญลักษณ์รางวัลต้องไม่เกิน 16 ตัวอักษร" }, { status: 400 });
+      }
+      if (typeof costPoints !== "number" || !Number.isInteger(costPoints) || costPoints < 1 || costPoints > 10_000_000) {
+        return Response.json({ error: "Points ที่ใช้แลกต้องเป็นจำนวนเต็มตั้งแต่ 1 ถึง 10,000,000" }, { status: 400 });
+      }
+      if (typeof stock !== "number" || !Number.isInteger(stock) || stock < 0 || stock > 1_000_000) {
+        return Response.json({ error: "จำนวนสิทธิ์ต้องเป็นจำนวนเต็มตั้งแต่ 0 ถึง 1,000,000" }, { status: 400 });
+      }
+      if (typeof payload.isActive !== "boolean") {
+        return Response.json({ error: "กรุณาระบุสถานะการแสดงรางวัล" }, { status: 400 });
+      }
+
+      if (!sourceReward) {
+        const now = new Date().toISOString();
+        const reward = {
+          id: `reward-${crypto.randomUUID()}`,
+          title,
+          description,
+          category,
+          costPoints,
+          stock,
+          inventoryVersion: 0,
+          icon,
+          isActive: payload.isActive,
+          createdAt: now,
+          updatedAt: now,
+        };
+        const [createdReward] = await db.insert(rewards).values(reward).returning();
+        return Response.json({ reward: createdReward }, { status: 201 });
+      }
+
+      const expectedUpdatedAt = typeof payload.expectedUpdatedAt === "string" ? payload.expectedUpdatedAt : "";
+      const expectedInventoryVersion = payload.expectedInventoryVersion;
+      if (!expectedUpdatedAt || typeof expectedInventoryVersion !== "number" || !Number.isInteger(expectedInventoryVersion) || expectedInventoryVersion < 0) {
+        return Response.json({ error: "ข้อมูลเวอร์ชันรางวัลไม่ครบ กรุณาโหลดข้อมูลล่าสุดแล้วลองใหม่" }, { status: 400 });
+      }
+      if (sourceReward.updatedAt !== expectedUpdatedAt || sourceReward.inventoryVersion !== expectedInventoryVersion) {
+        return Response.json({ error: "รางวัลหรือจำนวนคงเหลือถูกแก้ไขจากอีกหน้าจอ กรุณาโหลดข้อมูลล่าสุด" }, { status: 409 });
+      }
+      const sourceUpdatedAt = Date.parse(sourceReward.updatedAt);
+      const now = new Date(Math.max(Date.now(), Number.isFinite(sourceUpdatedAt) ? sourceUpdatedAt + 1 : 0)).toISOString();
+      const [savedReward] = await db.update(rewards).set({
+        title,
+        description,
+        category,
+        costPoints,
+        stock,
+        inventoryVersion: sourceReward.inventoryVersion + 1,
+        icon,
+        isActive: payload.isActive,
+        updatedAt: now,
+      }).where(and(
+        eq(rewards.id, sourceReward.id),
+        eq(rewards.updatedAt, expectedUpdatedAt),
+        eq(rewards.inventoryVersion, expectedInventoryVersion),
+      )).returning();
+      if (!savedReward) {
+        return Response.json({ error: "รางวัลหรือจำนวนคงเหลือถูกแก้ไขจากอีกหน้าจอ กรุณาโหลดข้อมูลล่าสุด" }, { status: 409 });
+      }
+      return Response.json({ reward: savedReward });
+    }
+
+    if (payload.action === "deleteReward") {
+      const rewardId = typeof payload.rewardId === "string" ? payload.rewardId.trim().slice(0, 160) : "";
+      if (!rewardId) return Response.json({ error: "กรุณาเลือกรางวัลที่ต้องการลบ" }, { status: 400 });
+      const [sourceReward] = await db.select().from(rewards).where(eq(rewards.id, rewardId)).limit(1);
+      if (!sourceReward) return Response.json({ error: "ไม่พบรางวัลที่เลือก" }, { status: 404 });
+
+      const expectedUpdatedAt = typeof payload.expectedUpdatedAt === "string" ? payload.expectedUpdatedAt : "";
+      const expectedInventoryVersion = payload.expectedInventoryVersion;
+      if (!expectedUpdatedAt || typeof expectedInventoryVersion !== "number" || !Number.isInteger(expectedInventoryVersion) || expectedInventoryVersion < 0) {
+        return Response.json({ error: "ข้อมูลเวอร์ชันรางวัลไม่ครบ กรุณาโหลดข้อมูลล่าสุดแล้วลองใหม่" }, { status: 400 });
+      }
+      if (sourceReward.updatedAt !== expectedUpdatedAt || sourceReward.inventoryVersion !== expectedInventoryVersion) {
+        return Response.json({ error: "รางวัลหรือจำนวนคงเหลือถูกแก้ไขจากอีกหน้าจอ กรุณาโหลดข้อมูลล่าสุด" }, { status: 409 });
+      }
+      const requiredConfirmation = `ลบรางวัล ${sourceReward.title}`;
+      if (typeof payload.confirmation !== "string" || payload.confirmation !== requiredConfirmation) {
+        return Response.json({ error: `กรุณาพิมพ์ “${requiredConfirmation}” ให้ถูกต้อง` }, { status: 400 });
+      }
+
+      const sourceUpdatedAt = Date.parse(sourceReward.updatedAt);
+      const now = new Date(Math.max(Date.now(), Number.isFinite(sourceUpdatedAt) ? sourceUpdatedAt + 1 : 0)).toISOString();
+      const [deactivatedReward] = await db.update(rewards).set({
+        isActive: false,
+        inventoryVersion: sourceReward.inventoryVersion + 1,
+        updatedAt: now,
+      }).where(and(
+        eq(rewards.id, sourceReward.id),
+        eq(rewards.updatedAt, expectedUpdatedAt),
+        eq(rewards.inventoryVersion, expectedInventoryVersion),
+      )).returning();
+      if (!deactivatedReward) {
+        return Response.json({ error: "รางวัลหรือจำนวนคงเหลือถูกแก้ไขจากอีกหน้าจอ กรุณาโหลดข้อมูลล่าสุด" }, { status: 409 });
+      }
+      return Response.json({
+        deletedRewardId: sourceReward.id,
+        reward: deactivatedReward,
+        disposition: "deactivated",
+        deleted: false,
+        deactivated: true,
+      });
+    }
+
     if (payload.action === "updateRewardRedemption") {
       const redemptionId = payload.redemptionId?.trim() ?? "";
       const targetStatus = payload.status;
@@ -2524,6 +2680,11 @@ export async function POST(request: Request) {
           db.insert(rewardRedemptionClaims).values(redemptionClaim),
           db.insert(pointLedger).values(pointEntry),
           db.update(rewards).set({ stock: reward.stock - 1, inventoryVersion: reward.inventoryVersion + 1, updatedAt: now }).where(and(eq(rewards.id, rewardId), eq(rewards.inventoryVersion, reward.inventoryVersion), eq(rewards.stock, reward.stock))),
+          // Abort and roll back the whole D1 batch when the inventory CAS above matched no row.
+          // This closes the race where HR edits/deactivates a reward after the employee loaded it.
+          db.update(rewards).set({
+            title: sql<string>`CASE WHEN changes() = 1 THEN ${rewards.title} ELSE NULL END`,
+          }).where(eq(rewards.id, rewardId)),
         ]);
       } catch (error) {
         if (isRedemptionConflictError(error)) return Response.json({ error: "สิทธิ์ ยอด Points หรือสต็อกมีการเปลี่ยนแปลงพร้อมกัน กรุณาโหลดข้อมูลล่าสุดแล้วลองใหม่" }, { status: 409 });

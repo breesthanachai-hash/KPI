@@ -178,6 +178,8 @@ type WorkSection = "tasks" | "projects" | "points" | "rewards";
 
 type PointPanel = "overview" | "policies" | "adjust" | "history";
 
+type RewardFormState = Pick<RewardRecord, "title" | "description" | "category" | "icon" | "costPoints" | "stock" | "isActive">;
+
 type OrganizationPolicyStatus = "draft" | "published";
 type OrganizationPolicyCategory = "work_rules" | "points_rewards" | "ai_data" | "other";
 
@@ -305,6 +307,13 @@ const notificationKindMeta: Record<NotificationKind, { label: string; icon: stri
   deadline: { label: "กำหนดส่ง", icon: "!" },
   review: { label: "รอตรวจ", icon: "✓" },
   reward: { label: "รางวัล", icon: "★" },
+};
+
+const rewardCategoryMeta: Record<RewardRecord["category"], { label: string; defaultIcon: string }> = {
+  perk: { label: "สิทธิพิเศษ", defaultIcon: "🎁" },
+  learning: { label: "การเรียนรู้", defaultIcon: "📚" },
+  wellbeing: { label: "สุขภาพและความเป็นอยู่", defaultIcon: "♥" },
+  recognition: { label: "การยกย่อง", defaultIcon: "★" },
 };
 
 type TalentDimensionId = "analysis" | "communication" | "problemSolving" | "leadership" | "execution";
@@ -886,6 +895,18 @@ function blankUserAccountForm(): UserAccountFormState {
   };
 }
 
+function blankRewardForm(): RewardFormState {
+  return {
+    title: "",
+    description: "",
+    category: "perk",
+    icon: rewardCategoryMeta.perk.defaultIcon,
+    costPoints: 100,
+    stock: 1,
+    isActive: true,
+  };
+}
+
 function accountCredentialState(account: PublicUserAccount): AccountCredentialState {
   if (account.status !== "active") return { id: "inactive", label: "พักสิทธิ์", detail: "บัญชีถูกระงับการเข้าใช้" };
   const lockedUntilTime = account.lockedUntil ? Date.parse(account.lockedUntil) : Number.NaN;
@@ -967,6 +988,9 @@ export default function Home() {
   const [submissionFile, setSubmissionFile] = useState<File | null>(null);
   const [reviewerNote, setReviewerNote] = useState("");
   const [rewardToRedeem, setRewardToRedeem] = useState<RewardRecord | null>(null);
+  const [showRewardForm, setShowRewardForm] = useState(false);
+  const [editingReward, setEditingReward] = useState<RewardRecord | null>(null);
+  const [rewardForm, setRewardForm] = useState<RewardFormState>(() => blankRewardForm());
   const [profileEmployeeId, setProfileEmployeeId] = useState("");
   const [showProfileEditor, setShowProfileEditor] = useState(false);
   const [showContractForm, setShowContractForm] = useState(false);
@@ -1192,7 +1216,7 @@ export default function Home() {
     return () => window.clearTimeout(timer);
   }, [canManageEmployeeFiles, view]);
 
-  const hasBlockingOverlay = Boolean(selectedEmployee || skillProfileEmployee || hrEmployee || showAddEmployee || showWorkForm || showProjectForm || submissionWorkItem || rewardToRedeem || showProfileEditor || showContractForm || contractToSign || showOrganizationDocumentForm || showEmployeeWarningForm || showEmployeeRecognitionForm || showNotifications || showUserMenu || showChangePassword);
+  const hasBlockingOverlay = Boolean(selectedEmployee || skillProfileEmployee || hrEmployee || showAddEmployee || showWorkForm || showProjectForm || submissionWorkItem || rewardToRedeem || showRewardForm || showProfileEditor || showContractForm || contractToSign || showOrganizationDocumentForm || showEmployeeWarningForm || showEmployeeRecognitionForm || showNotifications || showUserMenu || showChangePassword);
 
   useEffect(() => {
     let mascotShouldBeVisible = false;
@@ -1245,6 +1269,8 @@ export default function Home() {
         setShowProjectForm(false);
         setSubmissionWorkItem(null);
         setRewardToRedeem(null);
+        setShowRewardForm(false);
+        setEditingReward(null);
         setShowProfileEditor(false);
         setShowContractForm(false);
         setContractToSign(null);
@@ -1265,7 +1291,7 @@ export default function Home() {
       lastFocusedElementRef.current?.focus();
       lastFocusedElementRef.current = null;
     };
-  }, [hasBlockingOverlay, selectedEmployee, skillProfileEmployee, hrEmployee, showAddEmployee, showWorkForm, showProjectForm, submissionWorkItem, rewardToRedeem, showProfileEditor, showContractForm, contractToSign, showOrganizationDocumentForm, showEmployeeWarningForm, showEmployeeRecognitionForm, showNotifications, showUserMenu, showChangePassword, showAiAssistant]);
+  }, [hasBlockingOverlay, selectedEmployee, skillProfileEmployee, hrEmployee, showAddEmployee, showWorkForm, showProjectForm, submissionWorkItem, rewardToRedeem, showRewardForm, showProfileEditor, showContractForm, contractToSign, showOrganizationDocumentForm, showEmployeeWarningForm, showEmployeeRecognitionForm, showNotifications, showUserMenu, showChangePassword, showAiAssistant]);
 
   const evaluationsByEmployee = useMemo(
     () => new Map(evaluations.filter((evaluation) => evaluation.period === period).map((evaluation) => [evaluation.employeeId, evaluation])),
@@ -1505,6 +1531,16 @@ export default function Home() {
   const employeeAssignedTodayCount = employeeAssignedWorkItems.filter((item) => item.status !== "done" && item.dueDate === todayDate).length;
   const employeeAssignedReviewCount = employeeAssignedWorkItems.filter((item) => item.status === "review").length;
   const notificationReadIds = useMemo(() => new Set(notificationReads.map((item) => item.notificationId)), [notificationReads]);
+  const historicalRewardTitlesByRedemption = useMemo(() => {
+    const titles = new Map<string, string>();
+    const notePrefix = "แลกรางวัล: ";
+    accessiblePointLedger.forEach((entry) => {
+      if (entry.sourceType !== "redemption" || entry.points >= 0 || !entry.note.startsWith(notePrefix) || titles.has(entry.sourceId)) return;
+      const historicalTitle = entry.note.slice(notePrefix.length).trim();
+      if (historicalTitle) titles.set(entry.sourceId, historicalTitle);
+    });
+    return titles;
+  }, [accessiblePointLedger]);
   const notifications = useMemo<AppNotification[]>(() => {
     const items: AppNotification[] = [];
     workItems.forEach((item) => {
@@ -1566,17 +1602,18 @@ export default function Home() {
       .forEach((redemption) => {
         const employeeName = employeesById.get(redemption.employeeId)?.name ?? "พนักงาน";
         const reward = rewards.find((item) => item.id === redemption.rewardId);
+        const historicalRewardTitle = historicalRewardTitlesByRedemption.get(redemption.id) ?? reward?.title ?? "รางวัล";
         items.push({
           id: `reward:${redemption.id}`,
           kind: "reward",
           title: currentUser?.role === "admin" ? `มีคำขอแลกรางวัลจาก ${employeeName}` : "คำขอแลกรางวัลกำลังรออนุมัติ",
-          message: `${reward?.title ?? "รางวัล"} · ใช้ ${formatMoney(redemption.pointsSpent)} Points`,
+          message: `${historicalRewardTitle} · ใช้ ${formatMoney(redemption.pointsSpent)} Points`,
           createdAt: redemption.createdAt,
           actionLabel: "ดูรางวัล",
         });
       });
     return items.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  }, [currentUser?.employeeId, currentUser?.role, employeesById, permissions.canReviewWork, projectsById, rewardRedemptions, rewards, todayDate, workItems, workSubmissions]);
+  }, [currentUser?.employeeId, currentUser?.role, employeesById, historicalRewardTitlesByRedemption, permissions.canReviewWork, projectsById, rewardRedemptions, rewards, todayDate, workItems, workSubmissions]);
   const unreadNotifications = notifications.filter((item) => !notificationReadIds.has(item.id));
   const questNotificationCount = notifications.filter((item) => item.kind === "quest").length;
   const visibleNotifications = notifications.filter((item) => notificationFilter === "all" || (notificationFilter === "unread" && !notificationReadIds.has(item.id)) || (notificationFilter === "quest" && item.kind === "quest"));
@@ -2388,6 +2425,118 @@ export default function Home() {
     }
   };
 
+  const closeRewardEditor = () => {
+    setShowRewardForm(false);
+    setEditingReward(null);
+    setRewardForm(blankRewardForm());
+  };
+
+  const openRewardEditor = (reward?: RewardRecord) => {
+    if (currentUser?.role !== "admin" || isEmployeePreview) return;
+    setSelectedEmployee(null);
+    setSkillProfileEmployee(null);
+    setHrEmployee(null);
+    setShowAddEmployee(false);
+    setShowWorkForm(false);
+    setEditingWorkItem(null);
+    setShowProjectForm(false);
+    setSubmissionWorkItem(null);
+    setRewardToRedeem(null);
+    setShowProfileEditor(false);
+    setShowContractForm(false);
+    setContractToSign(null);
+    setShowOrganizationDocumentForm(false);
+    setShowEmployeeWarningForm(false);
+    setShowEmployeeRecognitionForm(false);
+    setShowNotifications(false);
+    setShowUserMenu(false);
+    setShowChangePassword(false);
+    setShowAiAssistant(false);
+    setEditingReward(reward ?? null);
+    setRewardForm(reward ? {
+      title: reward.title,
+      description: reward.description,
+      category: reward.category,
+      icon: reward.icon,
+      costPoints: reward.costPoints,
+      stock: reward.stock,
+      isActive: reward.isActive,
+    } : blankRewardForm());
+    setShowRewardForm(true);
+  };
+
+  const saveReward = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (currentUser?.role !== "admin" || isEmployeePreview) return showToast("เฉพาะ HR / Admin เท่านั้นที่จัดการรางวัลได้", "error");
+    const normalizedReward = {
+      ...rewardForm,
+      title: rewardForm.title.trim(),
+      description: rewardForm.description.trim(),
+      icon: rewardForm.icon.trim(),
+      costPoints: Math.trunc(Number(rewardForm.costPoints)),
+      stock: Math.trunc(Number(rewardForm.stock)),
+    };
+    if (!normalizedReward.title || !normalizedReward.description || !normalizedReward.icon) return showToast("กรอกชื่อ รายละเอียด และไอคอนรางวัลให้ครบ", "error");
+    if (!Number.isSafeInteger(normalizedReward.costPoints) || normalizedReward.costPoints < 1 || normalizedReward.costPoints > 10_000_000) return showToast("ราคา Points ต้องเป็นจำนวนเต็มตั้งแต่ 1 ถึง 10,000,000", "error");
+    if (!Number.isSafeInteger(normalizedReward.stock) || normalizedReward.stock < 0 || normalizedReward.stock > 1_000_000) return showToast("สต็อกต้องเป็นจำนวนเต็มตั้งแต่ 0 ถึง 1,000,000", "error");
+    setIsSaving(true);
+    try {
+      const response = await fetch("/api/dashboard", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "saveReward",
+          rewardId: editingReward?.id,
+          expectedUpdatedAt: editingReward?.updatedAt,
+          expectedInventoryVersion: editingReward ? editingReward.inventoryVersion ?? 0 : undefined,
+          ...normalizedReward,
+        }),
+      });
+      const body = await response.json() as { reward?: RewardRecord; error?: string };
+      if (!response.ok || !body.reward) throw new Error(body.error ?? "บันทึกรางวัลไม่สำเร็จ");
+      const savedReward = body.reward;
+      setRewards((items) => items.some((item) => item.id === savedReward.id)
+        ? items.map((item) => item.id === savedReward.id ? savedReward : item)
+        : [savedReward, ...items]);
+      closeRewardEditor();
+      showToast(editingReward ? `บันทึกการแก้ไข “${savedReward.title}” แล้ว` : `สร้างรางวัล “${savedReward.title}” แล้ว`);
+    } catch (error) {
+      showErrorToast(error, "บันทึกรางวัลไม่สำเร็จ");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const deleteReward = async (reward: RewardRecord) => {
+    if (currentUser?.role !== "admin" || isEmployeePreview || !reward.isActive) return;
+    const confirmed = window.confirm(`ลบ “${reward.title}” ออกจากร้านรางวัลใช่หรือไม่?\n\nพนักงานจะแลกรางวัลนี้ไม่ได้อีก แต่ระบบจะเก็บประวัติคำขอเดิมไว้ตรวจสอบ`);
+    if (!confirmed) return;
+    setIsSaving(true);
+    try {
+      const response = await fetch("/api/dashboard", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "deleteReward",
+          rewardId: reward.id,
+          expectedUpdatedAt: reward.updatedAt,
+          expectedInventoryVersion: reward.inventoryVersion ?? 0,
+          confirmation: `ลบรางวัล ${reward.title}`,
+        }),
+      });
+      const body = await response.json() as { reward?: RewardRecord; disposition?: "deactivated"; deactivated?: boolean; error?: string };
+      if (!response.ok || !body.reward || body.disposition !== "deactivated" || body.deactivated !== true) throw new Error(body.error ?? "ลบรางวัลไม่สำเร็จ");
+      const deactivatedReward = body.reward;
+      setRewards((items) => items.map((item) => item.id === deactivatedReward.id ? deactivatedReward : item));
+      if (editingReward?.id === deactivatedReward.id) closeRewardEditor();
+      showToast(`นำ “${deactivatedReward.title}” ออกจากร้านแล้ว · เก็บประวัติการแลกเดิมไว้`);
+    } catch (error) {
+      showErrorToast(error, "ลบรางวัลไม่สำเร็จ");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const redeemReward = async (event: React.FormEvent) => {
     event.preventDefault();
     if (guardEmployeePreviewMutation("ส่งคำขอแลกรางวัล")) return;
@@ -3174,6 +3323,8 @@ export default function Home() {
 
   const isAdmin = currentUser?.role === "admin";
   const isEmployeeUser = currentUser?.role === "employee";
+  const canManageRewardCatalog = Boolean(isAdmin && !isEmployeePreview);
+  const rewardCatalog = canManageRewardCatalog ? rewards : rewards.filter((reward) => reward.isActive);
   const isEmployeeCoordinationCreate = Boolean(isEmployeeUser && !editingWorkItem);
   const assigningUserAccounts = userAccounts.filter((account) => account.role === "admin" || account.role === "manager");
   const workingUserAccounts = userAccounts.filter((account) => account.role === "employee");
@@ -4894,17 +5045,27 @@ export default function Home() {
             </section>}
 
             {workSection === "rewards" && <section className="reward-center-card">
-              <div className="reward-center-heading"><div><p className="eyebrow">REWARD STORE</p><h2>สะสม Points แลกกิฟต์วอเชอร์และรางวัล</h2><p>ราคา สต็อก โควตารายเดือน ระยะเว้น และยอดคงเหลือจะตรวจตามกติกาฉบับที่มีผลก่อนส่งคำขอ</p></div><span><strong>{formatMoney(totalPoints)}</strong> Points ในระบบ</span></div>
+              <div className="reward-center-heading">
+                <div><p className="eyebrow">REWARD STORE</p><h2>{canManageRewardCatalog ? "จัดการรางวัลขององค์กร" : "สะสม Points แลกกิฟต์วอเชอร์และรางวัล"}</h2><p>{canManageRewardCatalog ? "สร้างและกำหนดราคา Points จำนวนสิทธิ์ หมวด และสถานะของรางวัล ส่วนรายการที่นำออกจะยังเก็บประวัติคำขอเดิมไว้" : "ราคา สต็อก โควตารายเดือน ระยะเว้น และยอดคงเหลือจะตรวจตามกติกาฉบับที่มีผลก่อนส่งคำขอ"}</p></div>
+                <div className="reward-center-heading-actions"><span><strong>{formatMoney(totalPoints)}</strong> Points ในระบบ</span>{canManageRewardCatalog && <button type="button" onClick={() => openRewardEditor()}><span aria-hidden="true">＋</span> สร้างรางวัล</button>}</div>
+              </div>
               <div className="reward-center-grid">
                 <div className="reward-catalog">
-                  {rewards.filter((reward) => reward.isActive).map((reward) => <article key={reward.id}><span className={`reward-icon ${reward.category}`}>{reward.icon}</span><div><b>{reward.title}</b><p>{reward.description}</p><small>เหลือ {reward.stock} สิทธิ์</small></div><div className="reward-cost"><strong>{formatMoney(reward.costPoints)}</strong><small>Points</small><button disabled={isEmployeePreview || reward.stock <= 0} onClick={() => { setRewardToRedeem(reward); setRewardEmployeeId(isAdmin ? leaderboard[0]?.employee.id ?? employees[0]?.id ?? "" : currentUser?.employeeId ?? ""); }}>{isEmployeePreview ? "ทดลองดู" : reward.stock > 0 ? "แลกรางวัล" : "หมดแล้ว"}</button></div></article>)}
+                  {rewardCatalog.map((reward) => <article key={reward.id} className={reward.isActive ? "" : "inactive"}>
+                    <span className={`reward-icon ${reward.category}`}>{reward.icon}</span>
+                    <div><b>{reward.title}</b><p>{reward.description}</p><small>{reward.isActive ? `เหลือ ${reward.stock} สิทธิ์` : "นำออกจากร้านแล้ว"}{canManageRewardCatalog ? ` · ${rewardCategoryMeta[reward.category].label}` : ""}</small></div>
+                    <div className="reward-cost"><strong>{formatMoney(reward.costPoints)}</strong><small>Points</small><button type="button" disabled={isEmployeePreview || !reward.isActive || reward.stock <= 0} onClick={() => { setRewardToRedeem(reward); setRewardEmployeeId(isAdmin ? leaderboard[0]?.employee.id ?? employees[0]?.id ?? "" : currentUser?.employeeId ?? ""); }}>{isEmployeePreview ? "ทดลองดู" : !reward.isActive ? "ปิดใช้งาน" : reward.stock > 0 ? "แลกรางวัล" : "หมดแล้ว"}</button></div>
+                    {canManageRewardCatalog && <div className="reward-admin-actions" aria-label={`จัดการรางวัล ${reward.title}`}><button type="button" onClick={() => openRewardEditor(reward)}>แก้ไข</button><button type="button" className="delete" disabled={isSaving || !reward.isActive} onClick={() => void deleteReward(reward)}>{reward.isActive ? "ลบรางวัล" : "นำออกแล้ว"}</button></div>}
+                  </article>)}
+                  {!rewardCatalog.length && <div className="reward-catalog-empty"><span aria-hidden="true">★</span><strong>{canManageRewardCatalog ? "ยังไม่มีรางวัลในระบบ" : "ยังไม่มีรางวัลที่เปิดให้แลก"}</strong><p>{canManageRewardCatalog ? "กด “สร้างรางวัล” เพื่อกำหนดราคา Points และจำนวนสิทธิ์" : "HR / Admin จะประกาศรางวัลใหม่ในหน้านี้"}</p></div>}
                 </div>
                 <aside className="redemption-history">
                   <div><p className="eyebrow">REDEMPTION REQUESTS</p><h3>{isAdmin ? "ตรวจและอัปเดตคำขอ" : "สถานะคำขอของฉัน"}</h3><small>{isAdmin ? "ยกเลิกแล้วระบบจะคืน Points และสต็อกตามกติกา" : "ติดตามตั้งแต่รออนุมัติจนส่งมอบรางวัล"}</small></div>
                   {rewardRedemptions.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 8).map((redemption) => {
                     const employee = employeesById.get(redemption.employeeId);
                     const reward = rewards.find((item) => item.id === redemption.rewardId);
-                    return <article key={redemption.id} className={`redemption-request status-${redemption.status}`}><span>{reward?.icon ?? "★"}</span><p><strong>{reward?.title ?? "รางวัล"}</strong><small>{employee?.name ?? "พนักงาน"} · {formatUpdatedAt(redemption.createdAt)}</small></p><div className="redemption-request-state"><b>{redemption.status === "cancelled" ? `คืน +${formatMoney(redemption.pointsSpent)}` : `-${formatMoney(redemption.pointsSpent)}`}</b><em>{rewardRedemptionStatusLabel(redemption.status)}</em></div>{isAdmin && (redemption.status === "requested" || redemption.status === "approved") && <div className="redemption-request-actions">{redemption.status === "requested" && <button type="button" disabled={isSaving} onClick={() => void updateRewardRedemption(redemption, "approved")}>อนุมัติคำขอ</button>}{redemption.status === "approved" && <button type="button" disabled={isSaving} onClick={() => void updateRewardRedemption(redemption, "fulfilled")}>ยืนยันส่งมอบแล้ว</button>}<button type="button" className="cancel" disabled={isSaving} onClick={() => void updateRewardRedemption(redemption, "cancelled")}>ยกเลิก / คืน Points</button></div>}</article>;
+                    const historicalRewardTitle = historicalRewardTitlesByRedemption.get(redemption.id) ?? reward?.title ?? "รางวัล";
+                    return <article key={redemption.id} className={`redemption-request status-${redemption.status}`}><span>★</span><p><strong>{historicalRewardTitle}</strong><small>{employee?.name ?? "พนักงาน"} · {formatUpdatedAt(redemption.createdAt)}</small></p><div className="redemption-request-state"><b>{redemption.status === "cancelled" ? `คืน +${formatMoney(redemption.pointsSpent)}` : `-${formatMoney(redemption.pointsSpent)}`}</b><em>{rewardRedemptionStatusLabel(redemption.status)}</em></div>{isAdmin && (redemption.status === "requested" || redemption.status === "approved") && <div className="redemption-request-actions">{redemption.status === "requested" && <button type="button" disabled={isSaving} onClick={() => void updateRewardRedemption(redemption, "approved")}>อนุมัติคำขอ</button>}{redemption.status === "approved" && <button type="button" disabled={isSaving} onClick={() => void updateRewardRedemption(redemption, "fulfilled")}>ยืนยันส่งมอบแล้ว</button>}<button type="button" className="cancel" disabled={isSaving} onClick={() => void updateRewardRedemption(redemption, "cancelled")}>ยกเลิก / คืน Points</button></div>}</article>;
                   })}
                   {!rewardRedemptions.length && <div className="reward-empty"><span>★</span><strong>ยังไม่มีคำขอแลก</strong><p>เลือกรางวัล แล้วระบุพนักงานที่ต้องการใช้ Points</p></div>}
                 </aside>
@@ -5161,6 +5322,35 @@ export default function Home() {
               <label><span>สีประจำโปรเจกต์</span><select value={projectForm.color} onChange={(event) => setProjectForm((form) => ({ ...form, color: event.target.value }))}><option value="forest">เขียวเข้ม</option><option value="mustard">ทอง</option><option value="terra">ส้มอิฐ</option><option value="sage">เขียวอ่อน</option></select></label>
             </div>
             <div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setShowProjectForm(false)}>ยกเลิก</button><button className="primary-button" disabled={isSaving}>{isSaving ? "กำลังสร้าง..." : "สร้างโปรเจกต์"}</button></div>
+          </form>
+        </div>
+      )}
+
+      {showRewardForm && isAdmin && !isEmployeePreview && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && closeRewardEditor()}>
+          <form className="reward-modal reward-management-modal" onSubmit={saveReward} role="dialog" aria-modal="true" aria-labelledby="reward-management-title" aria-describedby="reward-management-description">
+            <div className="reward-modal-hero reward-management-hero">
+              <span className={`reward-icon ${rewardForm.category}`} aria-hidden="true">{rewardForm.icon || "★"}</span>
+              <div><p className="eyebrow">REWARD MANAGEMENT</p><h2 id="reward-management-title">{editingReward ? "แก้ไขรางวัล" : "สร้างรางวัลใหม่"}</h2><p id="reward-management-description">กำหนดรายละเอียด ราคา Points จำนวนสิทธิ์ และสถานะที่พนักงานจะเห็นในร้านรางวัล</p></div>
+              <button type="button" className="modal-close dark" onClick={closeRewardEditor} aria-label="ปิดหน้าต่างจัดการรางวัล">×</button>
+            </div>
+            <div className="reward-modal-body reward-management-body">
+              <div className="reward-management-grid">
+                <label className="wide"><span>ชื่อรางวัล</span><input autoFocus required maxLength={160} value={rewardForm.title} onChange={(event) => setRewardForm((form) => ({ ...form, title: event.target.value }))} placeholder="เช่น บัตรของขวัญร้านอาหาร 500 บาท" /></label>
+                <label className="wide"><span>รายละเอียด</span><textarea required maxLength={2000} value={rewardForm.description} onChange={(event) => setRewardForm((form) => ({ ...form, description: event.target.value }))} placeholder="อธิบายสิ่งที่จะได้รับ เงื่อนไข และวิธีรับรางวัลให้ชัดเจน" /></label>
+                <label><span>หมวดรางวัล</span><select value={rewardForm.category} onChange={(event) => { const category = event.target.value as RewardRecord["category"]; setRewardForm((form) => ({ ...form, category, icon: form.icon === rewardCategoryMeta[form.category].defaultIcon ? rewardCategoryMeta[category].defaultIcon : form.icon })); }}>{(Object.entries(rewardCategoryMeta) as [RewardRecord["category"], (typeof rewardCategoryMeta)[RewardRecord["category"]]][]).map(([category, meta]) => <option key={category} value={category}>{meta.label}</option>)}</select></label>
+                <label><span>ไอคอน</span><input required maxLength={16} value={rewardForm.icon} onChange={(event) => setRewardForm((form) => ({ ...form, icon: event.target.value }))} placeholder="เช่น 🎁 หรือ ★" aria-describedby="reward-icon-help" /><small id="reward-icon-help">ใช้อีโมจิหรืออักษรสั้น ๆ</small></label>
+                <label><span>ราคา (Points)</span><input required type="number" inputMode="numeric" min={1} max={10000000} step={1} value={rewardForm.costPoints} onChange={(event) => setRewardForm((form) => ({ ...form, costPoints: Number(event.target.value) }))} /></label>
+                <label><span>สต็อก (จำนวนสิทธิ์)</span><input required type="number" inputMode="numeric" min={0} max={1000000} step={1} value={rewardForm.stock} onChange={(event) => setRewardForm((form) => ({ ...form, stock: Number(event.target.value) }))} /><small>ตั้งเป็น 0 เมื่อรางวัลหมดชั่วคราว</small></label>
+                <label className={`wide reward-active-toggle ${rewardForm.isActive ? "active" : "inactive"}`}><input type="checkbox" checked={rewardForm.isActive} onChange={(event) => setRewardForm((form) => ({ ...form, isActive: event.target.checked }))} /><span><strong>{rewardForm.isActive ? "เปิดให้แลกรางวัล" : "ปิดรางวัลไว้"}</strong><small>{rewardForm.isActive ? "พนักงานและหัวหน้าจะเห็นรางวัลนี้ในร้าน" : "มีเฉพาะ HR / Admin ที่เห็นและสามารถเปิดกลับมาได้"}</small></span></label>
+              </div>
+              <div className="reward-management-note" role="note"><span aria-hidden="true">i</span><p><strong>ประวัติการแลกจะไม่หาย</strong><small>ปุ่มลบรางวัลจะนำรายการออกจากร้าน แต่ยังเก็บคำขอเดิมไว้สำหรับตรวจสอบ Points และการส่งมอบย้อนหลัง</small></p></div>
+            </div>
+            <div className="modal-actions reward-management-actions">
+              <div>{editingReward?.isActive && <button type="button" className="reward-delete-button" disabled={isSaving} onClick={() => void deleteReward(editingReward)}>ลบรางวัล</button>}</div>
+              <button type="button" className="secondary-button" onClick={closeRewardEditor}>ยกเลิก</button>
+              <button className="primary-button" disabled={isSaving}>{isSaving ? "กำลังบันทึก..." : editingReward ? "บันทึกการแก้ไข" : "สร้างรางวัล"}</button>
+            </div>
           </form>
         </div>
       )}
