@@ -1,7 +1,7 @@
 import { and, eq, isNull, notExists, or, sql } from "drizzle-orm";
 import { getD1, getDb, getFilesBucket } from "../../../db";
 import { ensureDatabase } from "../../../db/initialize";
-import { applicationDocuments, attendanceRecords, authCredentials, authEvents, authSessions, employeeProfiles, employeeRecognitions, employeeRegistrationRequests, employeeSelfAssessments, employees, employeeWarningEvents, employeeWarnings, employmentContracts, evaluations, hrProfiles, notificationReads, organizationDocuments, organizationPolicies, organizationPolicyPublishClaims, pointCapClaims, pointEvents, pointLedger, pointMutationClaims, policyAcknowledgements, projects, rewardRedemptionClaims, rewardRedemptions, rewards, skillAchievements, talentActions, userAccounts, workItems, workSubmissions } from "../../../db/schema";
+import { applicationDocuments, attendanceRecords, authCredentials, authEvents, authSessions, employeeProfiles, employeeRecognitions, employeeRegistrationRequests, employeeSelfAssessments, employees, employeeWarningEvents, employeeWarnings, employmentContracts, evaluations, hrProfiles, notificationReads, organizationDocuments, organizationPolicies, organizationPolicyPublishClaims, pointCapClaims, pointEvents, pointLedger, pointMutationClaims, policyAcknowledgements, projects, questCompletions, quests, questTargets, rewardRedemptionClaims, rewardRedemptions, rewards, skillAchievements, talentActions, userAccounts, workItems, workSubmissions } from "../../../db/schema";
 import { authenticatedRequestGate, canAccessEmployee, ensureBootstrapAccounts, recordAuthEvent, revokeAllSessionsForAccount, type CurrentUser } from "../../../lib/access-control";
 import { AuthInputError, credentialMutationValues, getAccountCredential, publicUserAccountDto, publicUserAccountDtos, requestSourceHash } from "../../../lib/auth-service";
 import { internalApiError } from "../../../lib/api-errors";
@@ -405,6 +405,15 @@ function isSafeOptionalUrl(value: string) {
   }
 }
 
+function isSafeHttpsUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && !url.username && !url.password;
+  } catch {
+    return false;
+  }
+}
+
 function isPolicyEffective(policy: OrganizationPolicyRow, day: string) {
   return policy.status === "published" && policy.effectiveDate <= day && (!policy.effectiveTo || policy.effectiveTo >= day);
 }
@@ -414,6 +423,44 @@ function pointPolicyFromRows(policyRows: OrganizationPolicyRow[], day = bangkokI
     .filter((row) => row.code === "points-and-rewards" && row.category === "points_rewards" && row.scopeType === "all" && isPolicyEffective(row, day))
     .sort((a, b) => b.version - a.version)[0] ?? null;
   return { policy, rules: resolvePointPolicyRules(policy?.rules ?? defaultPointPolicyRules) };
+}
+
+type QuestRow = typeof quests.$inferSelect;
+type QuestTargetRow = typeof questTargets.$inferSelect;
+type QuestCompletionRow = typeof questCompletions.$inferSelect;
+
+function questDto(quest: QuestRow, targetRows: QuestTargetRow[], includeAdminMetadata = false) {
+  const ownTargets = targetRows.filter((target) => target.questId === quest.id);
+  const targetEmployees = ownTargets
+    .filter((target) => target.targetType === "employee")
+    .map((target) => ({ id: target.targetKey, label: target.targetLabelSnapshot || target.targetKey }))
+    .sort((a, b) => a.label.localeCompare(b.label, "th"));
+  const targetDepartments = ownTargets
+    .filter((target) => target.targetType === "department")
+    .map((target) => ({ id: target.targetKey, label: target.targetLabelSnapshot || target.targetKey }))
+    .sort((a, b) => a.label.localeCompare(b.label, "th"));
+  const { createdByUserId, createdByName, updatedByUserId, updatedByName, ...publicQuest } = quest;
+  return {
+    ...publicQuest,
+    ...(includeAdminMetadata ? { createdByUserId, createdByName, updatedByUserId, updatedByName } : {}),
+    targetEmployeeIds: targetEmployees.map((target) => target.id),
+    targetDepartmentIds: targetDepartments.map((target) => target.id),
+    targetEmployees,
+    targetDepartments,
+    pointsAwardMode: "admin_verified_completion" as const,
+    rewardFulfillmentMode: quest.rewardId ? "admin_verified_completion" as const : "none" as const,
+    fulfillmentNotice: quest.rewardId
+      ? "HR / Admin ต้องตรวจหลักฐานแล้วใช้ “ตรวจผลและมอบสิทธิ์” ระบบจึงจะบันทึก Points และตัดสต็อกรางวัลพร้อมกันเพียงครั้งเดียว"
+      : "HR / Admin ต้องตรวจหลักฐานแล้วใช้ “ตรวจผลและมอบสิทธิ์” ระบบจึงจะบันทึก Points เพียงครั้งเดียว",
+  };
+}
+
+function questCompletionDto(completion: QuestCompletionRow, includeAdminMetadata = false) {
+  const { completedByUserId, ...publicCompletion } = completion;
+  return {
+    ...publicCompletion,
+    ...(includeAdminMetadata ? { completedByUserId } : {}),
+  };
 }
 
 function policyAppliesToEmployee(
@@ -445,7 +492,7 @@ export async function GET(request: Request) {
     const requestedPreviewEmployeeId = url.searchParams.get("previewEmployeeId")?.trim() ?? "";
     const isEmployeePreviewRequest = authenticatedUser.role === "admin" && Boolean(requestedPreviewEmployeeId);
     const db = getDb();
-    const [employeeRows, evaluationRows, selfAssessmentRows, hrProfileRows, attendanceRows, skillAchievementRows, talentActionRows, projectRows, workItemRows, workSubmissionRows, rewardRows, pointRows, pointEventRows, redemptionRows, employeeProfileRows, applicationDocumentRows, employmentContractRows, organizationPolicyRows, policyAcknowledgementRows, organizationDocumentRows, employeeWarningRows, employeeWarningEventRows, employeeRecognitionRows, userAccountRows, registrationRequestRows, notificationReadRows] = await Promise.all([
+    const [employeeRows, evaluationRows, selfAssessmentRows, hrProfileRows, attendanceRows, skillAchievementRows, talentActionRows, projectRows, workItemRows, workSubmissionRows, questRows, questTargetRows, questCompletionRows, rewardRows, pointRows, pointEventRows, redemptionRows, employeeProfileRows, applicationDocumentRows, employmentContractRows, organizationPolicyRows, policyAcknowledgementRows, organizationDocumentRows, employeeWarningRows, employeeWarningEventRows, employeeRecognitionRows, userAccountRows, registrationRequestRows, notificationReadRows] = await Promise.all([
       db.select().from(employees),
       db.select().from(evaluations).where(eq(evaluations.period, period)),
       db.select().from(employeeSelfAssessments).where(eq(employeeSelfAssessments.period, period)),
@@ -456,6 +503,9 @@ export async function GET(request: Request) {
       db.select().from(projects),
       db.select().from(workItems),
       db.select().from(workSubmissions),
+      db.select().from(quests),
+      db.select().from(questTargets),
+      db.select().from(questCompletions),
       db.select().from(rewards),
       db.select().from(pointLedger),
       db.select().from(pointEvents),
@@ -519,6 +569,27 @@ export async function GET(request: Request) {
       return Response.json({ error: "บัญชีพนักงานยังไม่ได้ผูกกับโปรไฟล์ที่ใช้งานอยู่", accessDenied: true }, { status: 403 });
     }
     const employeeDepartmentId = currentUser.departmentId || (signedInEmployee ? getRole(signedInEmployee.roleId).departmentId : "");
+    const visibleQuests = questRows
+      .filter((quest) => {
+        if (currentUser.role === "admin") return true;
+        if (quest.status !== "active") return false;
+        if (quest.type === "activity") return true;
+        const ownTargets = questTargetRows.filter((target) => target.questId === quest.id);
+        if (quest.type === "team") {
+          return Boolean(employeeDepartmentId) && ownTargets.some((target) => target.targetType === "department" && target.targetKey === employeeDepartmentId);
+        }
+        if (currentUser.role === "manager") {
+          return ownTargets.some((target) => target.targetType === "employee" && visibleEmployeeIds.has(target.targetKey));
+        }
+        return Boolean(currentUser.employeeId)
+          && ownTargets.some((target) => target.targetType === "employee" && target.targetKey === currentUser.employeeId);
+      })
+      .sort((a, b) => Number(b.isFeatured) - Number(a.isFeatured) || a.endDate.localeCompare(b.endDate) || b.updatedAt.localeCompare(a.updatedAt))
+      .map((quest) => questDto(quest, questTargetRows, currentUser.role === "admin"));
+    const visibleQuestCompletions = questCompletionRows
+      .filter((completion) => currentUser.role === "admin" || visibleEmployeeIds.has(completion.employeeId))
+      .sort((a, b) => b.completionDate.localeCompare(a.completionDate) || b.completedAt.localeCompare(a.completedAt))
+      .map((completion) => questCompletionDto(completion, currentUser.role === "admin"));
     const teamOverviewEmployeeIds = new Set(employeeRows.filter((employee) => {
       if (currentUser.role !== "employee") return visibleEmployeeIds.has(employee.id);
       return employee.status === "active" && Boolean(employeeDepartmentId) && getRole(employee.roleId).departmentId === employeeDepartmentId;
@@ -597,6 +668,7 @@ export async function GET(request: Request) {
       canManageOrganizationDocuments: currentUser.role === "admin",
       canManageEmployeeWarnings: currentUser.role === "admin",
       canManageEmployeeRecognitions: currentUser.role === "admin",
+      canManageQuests: currentUser.role === "admin",
       canAcknowledgePolicies: Boolean(currentUser.employeeId) && !employeePreview,
     };
     const visibleProfileImages = employeeProfileRows
@@ -647,6 +719,8 @@ export async function GET(request: Request) {
       projects: projectRows.filter((row) => visibleProjectIds.has(row.id)),
       workItems: scopedWorkItems,
       workSubmissions: workSubmissionRows.filter((row) => visibleEmployeeIds.has(row.employeeId)),
+      quests: visibleQuests,
+      questCompletions: visibleQuestCompletions,
       rewards: visibleRewards,
       pointLedger: pointRows
         .filter((row) => visibleEmployeeIds.has(row.employeeId))
@@ -844,6 +918,44 @@ type DeleteRewardPayload = {
   expectedUpdatedAt?: string;
 };
 
+type SaveQuestPayload = {
+  action: "saveQuest";
+  questId?: string;
+  type?: "individual" | "team" | "activity";
+  title?: string;
+  description?: string;
+  status?: "draft" | "active" | "completed";
+  progress?: number;
+  pointsReward?: number;
+  rewardId?: string | null;
+  isFeatured?: boolean;
+  startDate?: string;
+  endDate?: string;
+  targetEmployeeIds?: string[];
+  targetDepartmentIds?: string[];
+  expectedRevision?: number;
+  expectedUpdatedAt?: string;
+};
+
+type DeleteQuestPayload = {
+  action: "deleteQuest";
+  questId?: string;
+  confirmation?: string;
+  expectedRevision?: number;
+  expectedUpdatedAt?: string;
+};
+
+type CompleteQuestForEmployeePayload = {
+  action: "completeQuestForEmployee";
+  questId?: string;
+  employeeId?: string;
+  completionDate?: string;
+  evidenceUrl?: string;
+  note?: string;
+  expectedRevision?: number;
+  expectedUpdatedAt?: string;
+};
+
 type EmployeeProfilePayload = {
   action: "saveEmployeeProfile";
   employeeId?: string;
@@ -958,10 +1070,10 @@ export async function POST(request: Request) {
     const currentUser = authentication.currentUser;
     await ensureSeedData();
     const db = getDb();
-    const payload = await request.json() as EmployeePayload | UpdateEmployeeStatusPayload | DeleteEmployeePermanentlyPayload | EvaluationPayload | SelfAssessmentPayload | HrPlanPayload | CompleteTalentActionPayload | AttendancePayload | AttendanceApprovalPayload | SkillAchievementPayload | ProjectPayload | WorkItemPayload | ReviewWorkSubmissionPayload | RecordPointEventPayload | RunMonthlyPointCyclePayload | RedeemRewardPayload | UpdateRewardRedemptionPayload | SaveRewardPayload | DeleteRewardPayload | EmployeeProfilePayload | DocumentStatusPayload | ContractPayload | SignContractPayload | SendContractPayload | UserAccountPayload | DeleteUserAccountPayload | ReviewEmployeeRegistrationPayload | MarkNotificationsReadPayload | SaveOrganizationPolicyPayload | PublishOrganizationPolicyPayload | AcknowledgeOrganizationPolicyPayload;
+    const payload = await request.json() as EmployeePayload | UpdateEmployeeStatusPayload | DeleteEmployeePermanentlyPayload | EvaluationPayload | SelfAssessmentPayload | HrPlanPayload | CompleteTalentActionPayload | AttendancePayload | AttendanceApprovalPayload | SkillAchievementPayload | ProjectPayload | WorkItemPayload | ReviewWorkSubmissionPayload | RecordPointEventPayload | RunMonthlyPointCyclePayload | RedeemRewardPayload | UpdateRewardRedemptionPayload | SaveRewardPayload | DeleteRewardPayload | SaveQuestPayload | DeleteQuestPayload | CompleteQuestForEmployeePayload | EmployeeProfilePayload | DocumentStatusPayload | ContractPayload | SignContractPayload | SendContractPayload | UserAccountPayload | DeleteUserAccountPayload | ReviewEmployeeRegistrationPayload | MarkNotificationsReadPayload | SaveOrganizationPolicyPayload | PublishOrganizationPolicyPayload | AcknowledgeOrganizationPolicyPayload;
     const pointPolicyRows = await db.select().from(organizationPolicies);
     const { policy: activePointPolicy, rules: activePointRules } = pointPolicyFromRows(pointPolicyRows);
-    const adminOnlyActions = new Set(["createEmployee", "updateEmployeeStatus", "archiveEmployee", "deleteEmployeePermanently", "saveHrPlan", "verifySkillAchievement", "runMonthlyPointCycle", "saveEmployeeProfile", "updateDocumentStatus", "createContract", "sendContract", "saveUserAccount", "deleteUserAccount", "approveEmployeeRegistration", "rejectEmployeeRegistration", "saveOrganizationPolicy", "publishOrganizationPolicy", "saveReward", "deleteReward", "updateRewardRedemption"]);
+    const adminOnlyActions = new Set(["createEmployee", "updateEmployeeStatus", "archiveEmployee", "deleteEmployeePermanently", "saveHrPlan", "verifySkillAchievement", "runMonthlyPointCycle", "saveEmployeeProfile", "updateDocumentStatus", "createContract", "sendContract", "saveUserAccount", "deleteUserAccount", "approveEmployeeRegistration", "rejectEmployeeRegistration", "saveOrganizationPolicy", "publishOrganizationPolicy", "saveReward", "deleteReward", "saveQuest", "deleteQuest", "completeQuestForEmployee", "updateRewardRedemption"]);
     const teamActions = new Set(["saveEvaluation", "completeTalentAction", "approveAttendance", "saveProject", "reviewWorkSubmission", "recordPointEvent"]);
     const employeePortalActions = new Set(["markNotificationsRead", "saveWorkItem", "saveSelfAssessment", "redeemReward", "acknowledgeOrganizationPolicy", "signContract"]);
     if (currentUser.role === "employee" && !employeePortalActions.has(payload.action)) return Response.json({ error: "สิทธิ์พนักงานใช้ได้เฉพาะงานของฉัน การแจ้งเตือน การแลกรางวัล การรับทราบกฎองค์กร และการลงนามสัญญาของตนเอง" }, { status: 403 });
@@ -2257,6 +2369,9 @@ export async function POST(request: Request) {
       const eventPointEconomyPolicy = eventPointPolicyRules.economy;
       const eventMonth = eventDate.slice(0, 7);
       if (!eventType || !(eventType in historicalPointEventRules) || eventType === "monthly_evaluation") return Response.json({ error: "ประเภทเหตุการณ์ Points ไม่ถูกต้อง" }, { status: 400 });
+      if (eventType === "quest") {
+        return Response.json({ error: "Points จากเควสต้องตรวจหลักฐานและมอบสิทธิ์จากศูนย์เควสเท่านั้น" }, { status: 409 });
+      }
       const rule = historicalPointEventRules[eventType];
       if (rule.points === null) return Response.json({ error: "รายการนี้ต้องประมวลผลจากรอบประเมิน" }, { status: 400 });
       const ruleLabel = withPointsDisplayTerminology(rule.label);
@@ -2287,7 +2402,7 @@ export async function POST(request: Request) {
       if (disciplineTypes.includes(eventType) && employeeEventRows.some((event) => disciplineTypes.includes(event.eventType) && event.eventDate === eventDate)) {
         return Response.json({ error: "วันนี้มีรายการวินัยแล้ว ไม่สามารถหัก Points ด้านวินัยซ้ำในวันเดียวกันได้" }, { status: 409 });
       }
-      if ((eventType === "bonus" || eventType === "quest") && employeeEventRows.filter((event) => event.eventType === eventType && event.eventDate.startsWith(eventDate.slice(0, 7))).length >= eventPointEconomyPolicy.positiveManualEventsPerMonth) {
+      if (eventType === "bonus" && employeeEventRows.filter((event) => event.eventType === eventType && event.eventDate.startsWith(eventDate.slice(0, 7))).length >= eventPointEconomyPolicy.positiveManualEventsPerMonth) {
         return Response.json({ error: `${ruleLabel} ให้ได้สูงสุด ${eventPointEconomyPolicy.positiveManualEventsPerMonth} ครั้งต่อเดือน` }, { status: 409 });
       }
       const negativePointsThisMonth = employeeEventRows.filter((event) => event.eventDate.startsWith(eventMonth) && event.points < 0).reduce((sum, event) => sum + Math.abs(event.points), 0);
@@ -2399,6 +2514,543 @@ export async function POST(request: Request) {
         pointEntryRows.push(entry);
       }
       return Response.json({ pointEvents: pointEventRows, pointEntries: pointEntryRows, month, count: pendingEligible.length });
+    }
+
+    if (payload.action === "saveQuest") {
+      const questId = typeof payload.questId === "string" ? payload.questId.trim().slice(0, 160) : "";
+      const [sourceQuest] = questId
+        ? await db.select().from(quests).where(eq(quests.id, questId)).limit(1)
+        : [];
+      if (questId && !sourceQuest) return Response.json({ error: "ไม่พบเควสที่เลือก" }, { status: 404 });
+      if (sourceQuest?.status === "archived") return Response.json({ error: "เควสที่ลบแล้วเป็นประวัติถาวรและไม่สามารถแก้ไขได้" }, { status: 409 });
+
+      const sourceTargetRows = sourceQuest
+        ? await db.select().from(questTargets).where(eq(questTargets.questId, sourceQuest.id))
+        : [];
+      const title = typeof payload.title === "string" ? payload.title.trim() : sourceQuest?.title ?? "";
+      const description = typeof payload.description === "string" ? payload.description.trim() : sourceQuest?.description ?? "";
+      const type = payload.type ?? sourceQuest?.type;
+      const requestedStatus = payload.status ?? sourceQuest?.status ?? "draft";
+      const status = requestedStatus === "draft" || requestedStatus === "active" || requestedStatus === "completed" ? requestedStatus : null;
+      if (!title || Array.from(title).length > 180) return Response.json({ error: "กรุณาระบุชื่อเควสไม่เกิน 180 ตัวอักษร" }, { status: 400 });
+      if (!description || Array.from(description).length > 4_000) return Response.json({ error: "กรุณาระบุรายละเอียดเควสไม่เกิน 4,000 ตัวอักษร" }, { status: 400 });
+      if (type !== "individual" && type !== "team" && type !== "activity") return Response.json({ error: "กรุณาเลือกประเภทเควสที่ถูกต้อง" }, { status: 400 });
+      if (!status) return Response.json({ error: "สถานะเควสไม่ถูกต้อง" }, { status: 400 });
+      if (!sourceQuest && status === "completed") return Response.json({ error: "เควสใหม่ต้องเริ่มเป็นฉบับร่างหรือเปิดใช้งานก่อน จึงยังตั้งเป็นเสร็จสิ้นไม่ได้" }, { status: 400 });
+      if (sourceQuest) {
+        const validTransition = (sourceQuest.status === "draft" && (status === "draft" || status === "active"))
+          || (sourceQuest.status === "active" && (status === "active" || status === "completed"))
+          || (sourceQuest.status === "completed" && status === "completed");
+        if (!validTransition) return Response.json({ error: `ไม่สามารถเปลี่ยนสถานะเควสจาก ${sourceQuest.status} เป็น ${status} ได้` }, { status: 409 });
+      }
+
+      const requestedProgress = payload.progress ?? sourceQuest?.progress ?? 0;
+      if (typeof requestedProgress !== "number" || !Number.isSafeInteger(requestedProgress) || requestedProgress < 0 || requestedProgress > 100) {
+        return Response.json({ error: "ความคืบหน้าต้องเป็นจำนวนเต็มตั้งแต่ 0 ถึง 100" }, { status: 400 });
+      }
+      const progress = status === "completed" ? 100 : requestedProgress;
+      const pointsReward = payload.pointsReward ?? sourceQuest?.pointsReward ?? 0;
+      if (typeof pointsReward !== "number" || !Number.isSafeInteger(pointsReward) || pointsReward < 0 || pointsReward > 10_000_000) {
+        return Response.json({ error: "Points ของเควสต้องเป็นจำนวนเต็มตั้งแต่ 0 ถึง 10,000,000" }, { status: 400 });
+      }
+      const startDate = typeof payload.startDate === "string" ? payload.startDate.trim() : sourceQuest?.startDate ?? "";
+      const endDate = typeof payload.endDate === "string" ? payload.endDate.trim() : sourceQuest?.endDate ?? "";
+      if (!isValidIsoDay(startDate) || !isValidIsoDay(endDate) || endDate < startDate) {
+        return Response.json({ error: "กรุณาระบุวันเริ่มและวันสิ้นสุดให้ถูกต้อง โดยวันสิ้นสุดต้องไม่อยู่ก่อนวันเริ่ม" }, { status: 400 });
+      }
+      const isFeatured = payload.isFeatured ?? sourceQuest?.isFeatured ?? true;
+      if (typeof isFeatured !== "boolean") return Response.json({ error: "กรุณาระบุสถานะการแสดงเควสเด่น" }, { status: 400 });
+      if (status === "active" || status === "completed") {
+        const questRule = activePointRules.events.quest;
+        const questPointLimit = questRule.points;
+        const standardEarnMonthlyCap = activePointRules.economy.standardEarnMonthlyCap;
+        if (!activePointPolicy || !activePointPolicy.contentHash || activePointPolicy.contentHash !== await policyIntegrityHash(activePointPolicy)) {
+          return Response.json({ error: "ยังไม่มีกติกา Points ที่ประกาศใช้และตรวจสอบความถูกต้องได้ จึงยังเปิดเควสไม่ได้" }, { status: 409 });
+        }
+        if (questRule.entryMode !== "manual" || !questRule.authorizedRoles.includes("admin")) {
+          return Response.json({ error: "กติกาปัจจุบันไม่อนุญาตให้ HR / Admin มอบ Points จากเควส จึงยังเปิดเควสไม่ได้" }, { status: 409 });
+        }
+        if (questPointLimit === null || questPointLimit < 0 || pointsReward > questPointLimit || pointsReward > standardEarnMonthlyCap) {
+          const effectiveLimit = Math.max(0, Math.min(questPointLimit ?? 0, standardEarnMonthlyCap));
+          return Response.json({ error: `เควสนี้ประกาศได้ไม่เกิน ${effectiveLimit.toLocaleString("th-TH")} Points ตามเพดานต่อเควสและเพดานรวมรายเดือนของกติกาปัจจุบัน` }, { status: 409 });
+        }
+        if (activePointRules.economy.positiveManualEventsPerMonth < 1) {
+          return Response.json({ error: "กติกาปัจจุบันปิดการมอบ Points จากเควส จึงยังเปิดเควสไม่ได้" }, { status: 409 });
+        }
+      }
+
+      if (payload.targetEmployeeIds !== undefined && !Array.isArray(payload.targetEmployeeIds)) return Response.json({ error: "รายชื่อผู้รับเควสไม่ถูกต้อง" }, { status: 400 });
+      if (payload.targetDepartmentIds !== undefined && !Array.isArray(payload.targetDepartmentIds)) return Response.json({ error: "รายชื่อทีมไม่ถูกต้อง" }, { status: 400 });
+      const rawEmployeeTargets = payload.targetEmployeeIds ?? sourceTargetRows.filter((target) => target.targetType === "employee").map((target) => target.targetKey);
+      const rawDepartmentTargets = payload.targetDepartmentIds ?? sourceTargetRows.filter((target) => target.targetType === "department").map((target) => target.targetKey);
+      if (rawEmployeeTargets.some((value) => typeof value !== "string" || !value.trim() || value.trim().length > 120)
+        || rawDepartmentTargets.some((value) => typeof value !== "string" || !value.trim() || value.trim().length > 120)) {
+        return Response.json({ error: "กลุ่มเป้าหมายเควสไม่ถูกต้อง" }, { status: 400 });
+      }
+      const targetEmployeeIds = [...new Set(rawEmployeeTargets.map((value) => value.trim()))];
+      const targetDepartmentIds = [...new Set(rawDepartmentTargets.map((value) => value.trim()))];
+      if (type === "individual" && (targetEmployeeIds.length !== 1 || targetDepartmentIds.length !== 0)) {
+        return Response.json({ error: "เควสรายบุคคลต้องเลือกพนักงานที่กำลังใช้งานอยู่ 1 คนเท่านั้น" }, { status: 400 });
+      }
+      if (type === "team" && (targetDepartmentIds.length < 1 || targetDepartmentIds.length > 50 || targetEmployeeIds.length !== 0)) {
+        return Response.json({ error: "เควสทีมต้องเลือกอย่างน้อย 1 ทีม และไม่ระบุพนักงานรายบุคคล" }, { status: 400 });
+      }
+      if (type === "activity" && (targetEmployeeIds.length !== 0 || targetDepartmentIds.length !== 0)) {
+        return Response.json({ error: "เควสกิจกรรมเปิดให้ทั้งองค์กร จึงไม่ต้องระบุพนักงานหรือทีม" }, { status: 400 });
+      }
+
+      const activeEmployeeRows = await db.select({ id: employees.id, name: employees.name, roleId: employees.roleId }).from(employees).where(eq(employees.status, "active"));
+      const activeEmployeesById = new Map(activeEmployeeRows.map((employee) => [employee.id, employee]));
+      if (targetEmployeeIds.some((employeeId) => !activeEmployeesById.has(employeeId))) {
+        return Response.json({ error: "เควสรายบุคคลเลือกได้เฉพาะพนักงานที่กำลังใช้งานอยู่" }, { status: 400 });
+      }
+      const departmentsById = new Map<string, string>();
+      for (const role of roles) departmentsById.set(role.departmentId, role.department);
+      for (const employee of activeEmployeeRows) {
+        const role = getRole(employee.roleId);
+        departmentsById.set(role.departmentId, role.department);
+      }
+      if (targetDepartmentIds.some((departmentId) => !departmentsById.has(departmentId))) {
+        return Response.json({ error: "พบทีมเป้าหมายที่ไม่มีอยู่ในโครงสร้างองค์กร" }, { status: 400 });
+      }
+
+      const rewardIdInput = payload.rewardId === undefined ? sourceQuest?.rewardId ?? null : payload.rewardId;
+      if (rewardIdInput !== null && typeof rewardIdInput !== "string") return Response.json({ error: "ข้อมูลรางวัลของเควสไม่ถูกต้อง" }, { status: 400 });
+      const rewardId = typeof rewardIdInput === "string" ? rewardIdInput.trim().slice(0, 160) || null : null;
+      const [linkedReward] = rewardId ? await db.select().from(rewards).where(eq(rewards.id, rewardId)).limit(1) : [];
+      if (rewardId && !linkedReward) return Response.json({ error: "ไม่พบรางวัลที่ผูกกับเควส กรุณาเลือกรางวัลใหม่" }, { status: 400 });
+      const preservesExistingReward = Boolean(rewardId && sourceQuest?.rewardId === rewardId);
+      const activatesDraftQuest = sourceQuest?.status === "draft" && status === "active";
+      if (rewardId && linkedReward && !linkedReward.isActive && (!preservesExistingReward || activatesDraftQuest)) {
+        return Response.json({ error: "รางวัลที่ผูกใหม่หรือใช้เปิดเควสต้องเป็นรางวัลที่เปิดใช้งานอยู่" }, { status: 400 });
+      }
+      const rewardTitleSnapshot = preservesExistingReward
+        ? sourceQuest?.rewardTitleSnapshot || linkedReward?.title || ""
+        : linkedReward?.title ?? "";
+      const rewardIconSnapshot = preservesExistingReward
+        ? sourceQuest?.rewardIconSnapshot || linkedReward?.icon || ""
+        : linkedReward?.icon ?? "";
+
+      const normalizedTargetSignature = (employeeIds: string[], departmentIds: string[]) => JSON.stringify({
+        employeeIds: [...employeeIds].sort(),
+        departmentIds: [...departmentIds].sort(),
+      });
+      const sourceEmployeeTargetIds = sourceTargetRows.filter((target) => target.targetType === "employee").map((target) => target.targetKey);
+      const sourceDepartmentTargetIds = sourceTargetRows.filter((target) => target.targetType === "department").map((target) => target.targetKey);
+      const targetsChanged = Boolean(sourceQuest) && normalizedTargetSignature(targetEmployeeIds, targetDepartmentIds) !== normalizedTargetSignature(sourceEmployeeTargetIds, sourceDepartmentTargetIds);
+      const [existingCompletion] = sourceQuest
+        ? await db.select({ id: questCompletions.id }).from(questCompletions).where(eq(questCompletions.questId, sourceQuest.id)).limit(1)
+        : [];
+      if (sourceQuest && existingCompletion) {
+        const fulfilledTermsChanged = sourceQuest.type !== type
+          || sourceQuest.title !== title
+          || sourceQuest.description !== description
+          || sourceQuest.pointsReward !== pointsReward
+          || sourceQuest.rewardId !== rewardId
+          || sourceQuest.startDate !== startDate
+          || sourceQuest.endDate !== endDate
+          || targetsChanged;
+        if (fulfilledTermsChanged) return Response.json({ error: "เควสนี้เคยมอบสิทธิ์แล้ว จึงแก้ประเภท เป้าหมาย เงื่อนไข Points รางวัล หรือช่วงเวลาไม่ได้" }, { status: 409 });
+      }
+
+      const expectedUpdatedAt = typeof payload.expectedUpdatedAt === "string" ? payload.expectedUpdatedAt : "";
+      const expectedRevision = payload.expectedRevision;
+      if (sourceQuest && (!expectedUpdatedAt || typeof expectedRevision !== "number" || !Number.isSafeInteger(expectedRevision) || expectedRevision < 0)) {
+        return Response.json({ error: "ข้อมูลเวอร์ชันเควสไม่ครบ กรุณาโหลดข้อมูลล่าสุดแล้วลองใหม่" }, { status: 400 });
+      }
+      if (sourceQuest && (sourceQuest.updatedAt !== expectedUpdatedAt || sourceQuest.revision !== expectedRevision)) {
+        return Response.json({ error: "เควสนี้ถูกแก้ไขจากอีกหน้าจอ กรุณาโหลดข้อมูลล่าสุด" }, { status: 409 });
+      }
+
+      const actor = authenticatedActor(currentUser);
+      const sourceTimestamp = sourceQuest ? Date.parse(sourceQuest.updatedAt) : Number.NaN;
+      const now = new Date(Math.max(Date.now(), Number.isFinite(sourceTimestamp) ? sourceTimestamp + 1 : 0)).toISOString();
+      const revision = sourceQuest ? sourceQuest.revision + 1 : 0;
+      const savedQuest: QuestRow = {
+        id: sourceQuest?.id ?? `quest-${crypto.randomUUID()}`,
+        type,
+        title,
+        description,
+        status,
+        progress,
+        pointsReward,
+        rewardId,
+        rewardTitleSnapshot,
+        rewardIconSnapshot,
+        isFeatured,
+        startDate,
+        endDate,
+        revision,
+        createdByUserId: sourceQuest?.createdByUserId ?? actor.userId,
+        createdByName: sourceQuest?.createdByName ?? actor.name,
+        updatedByUserId: actor.userId,
+        updatedByName: actor.name,
+        createdAt: sourceQuest?.createdAt ?? now,
+        updatedAt: now,
+      };
+      const candidateTargets: QuestTargetRow[] = [
+        ...targetEmployeeIds.map((employeeId) => ({
+          id: `quest-target-${crypto.randomUUID()}`,
+          questId: savedQuest.id,
+          targetType: "employee" as const,
+          targetKey: employeeId,
+          targetLabelSnapshot: sourceTargetRows.find((target) => target.targetType === "employee" && target.targetKey === employeeId)?.targetLabelSnapshot
+            || activeEmployeesById.get(employeeId)?.name
+            || employeeId,
+          createdAt: now,
+        })),
+        ...targetDepartmentIds.map((departmentId) => ({
+          id: `quest-target-${crypto.randomUUID()}`,
+          questId: savedQuest.id,
+          targetType: "department" as const,
+          targetKey: departmentId,
+          targetLabelSnapshot: sourceTargetRows.find((target) => target.targetType === "department" && target.targetKey === departmentId)?.targetLabelSnapshot
+            || departmentsById.get(departmentId)
+            || departmentId,
+          createdAt: now,
+        })),
+      ];
+      const savedTargets = sourceQuest && !targetsChanged ? sourceTargetRows : candidateTargets;
+      const targetEmployees = savedTargets.filter((target) => target.targetType === "employee").map((target) => ({ id: target.targetKey, label: target.targetLabelSnapshot }));
+      const targetDepartments = savedTargets.filter((target) => target.targetType === "department").map((target) => ({ id: target.targetKey, label: target.targetLabelSnapshot }));
+      const snapshotJson = JSON.stringify({ ...savedQuest, targetEmployeeIds, targetDepartmentIds, targetEmployees, targetDepartments });
+      const d1 = getD1();
+      const insertQuestStatement = d1.prepare(`INSERT INTO quests (
+        id, type, title, description, status, progress, points_reward, reward_id, reward_title_snapshot, reward_icon_snapshot,
+        is_featured, start_date, end_date, revision, created_by_user_id, created_by_name, updated_by_user_id, updated_by_name, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .bind(savedQuest.id, savedQuest.type, savedQuest.title, savedQuest.description, savedQuest.status, savedQuest.progress, savedQuest.pointsReward, savedQuest.rewardId, savedQuest.rewardTitleSnapshot, savedQuest.rewardIconSnapshot, savedQuest.isFeatured ? 1 : 0, savedQuest.startDate, savedQuest.endDate, savedQuest.revision, savedQuest.createdByUserId, savedQuest.createdByName, savedQuest.updatedByUserId, savedQuest.updatedByName, savedQuest.createdAt, savedQuest.updatedAt);
+      const updateQuestStatement = d1.prepare(`UPDATE quests SET
+        type = ?, title = ?, description = ?, status = ?, progress = ?, points_reward = ?, reward_id = ?, reward_title_snapshot = ?, reward_icon_snapshot = ?,
+        is_featured = ?, start_date = ?, end_date = ?, revision = ?, updated_by_user_id = ?, updated_by_name = ?, updated_at = ?
+        WHERE id = ? AND revision = ? AND updated_at = ?`)
+        .bind(savedQuest.type, savedQuest.title, savedQuest.description, savedQuest.status, savedQuest.progress, savedQuest.pointsReward, savedQuest.rewardId, savedQuest.rewardTitleSnapshot, savedQuest.rewardIconSnapshot, savedQuest.isFeatured ? 1 : 0, savedQuest.startDate, savedQuest.endDate, savedQuest.revision, savedQuest.updatedByUserId, savedQuest.updatedByName, savedQuest.updatedAt, savedQuest.id, sourceQuest?.revision ?? -1, sourceQuest?.updatedAt ?? "");
+      const targetStatements = candidateTargets.map((target) => d1.prepare(`INSERT INTO quest_targets (
+        id, quest_id, target_type, target_key, target_label_snapshot, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?)`)
+        .bind(target.id, target.questId, target.targetType, target.targetKey, target.targetLabelSnapshot, target.createdAt));
+      const mutationEventStatement = d1.prepare(`INSERT INTO quest_mutation_events (
+        id, quest_id, event_type, expected_revision, expected_updated_at, revision, actor_user_id, actor_name, snapshot_json, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .bind(`quest-event-${crypto.randomUUID()}`, savedQuest.id, sourceQuest ? "updated" : "created", sourceQuest?.revision ?? -1, sourceQuest?.updatedAt ?? now, savedQuest.revision, actor.userId, actor.name, snapshotJson, now);
+      try {
+        if (sourceQuest) {
+          await d1.batch([
+            mutationEventStatement,
+            updateQuestStatement,
+            ...(targetsChanged ? [d1.prepare("DELETE FROM quest_targets WHERE quest_id = ?").bind(savedQuest.id), ...targetStatements] : []),
+          ]);
+        } else {
+          await d1.batch([insertQuestStatement, ...targetStatements, mutationEventStatement]);
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "";
+        if (message.includes("QUEST_") || message.includes("quest_mutation_events.quest_id, quest_mutation_events.revision")) {
+          return Response.json({ error: "เควสนี้ถูกแก้ไขจากอีกหน้าจอ กรุณาโหลดข้อมูลล่าสุด" }, { status: 409 });
+        }
+        throw error;
+      }
+      return Response.json({ quest: questDto(savedQuest, savedTargets, true) }, { status: sourceQuest ? 200 : 201 });
+    }
+
+    if (payload.action === "completeQuestForEmployee") {
+      const questId = typeof payload.questId === "string" ? payload.questId.trim().slice(0, 160) : "";
+      const employeeId = typeof payload.employeeId === "string" ? payload.employeeId.trim().slice(0, 120) : "";
+      if (!questId || !employeeId) return Response.json({ error: "กรุณาเลือกเควสและพนักงานที่ต้องการมอบสิทธิ์" }, { status: 400 });
+      if (currentUser.employeeId === employeeId) return Response.json({ error: "HR / Admin ไม่สามารถตรวจและมอบ Points หรือรางวัลให้ตนเองได้" }, { status: 403 });
+
+      const completionResponse = async (completion: QuestCompletionRow, idempotentReplay: boolean, status = 200) => {
+        const [[pointEvent], [pointEntry], [reward]] = await Promise.all([
+          db.select().from(pointEvents).where(eq(pointEvents.id, completion.pointEventId)).limit(1),
+          db.select().from(pointLedger).where(eq(pointLedger.id, completion.pointLedgerId)).limit(1),
+          completion.rewardId ? db.select().from(rewards).where(eq(rewards.id, completion.rewardId)).limit(1) : Promise.resolve([]),
+        ]);
+        return Response.json({
+          questCompletion: questCompletionDto(completion, true),
+          pointEvent: pointEvent ?? null,
+          pointEntry: pointEntry ?? null,
+          reward: reward ?? null,
+          idempotentReplay,
+        }, { status });
+      };
+
+      const [priorCompletion] = await db.select().from(questCompletions).where(and(
+        eq(questCompletions.questId, questId),
+        eq(questCompletions.employeeId, employeeId),
+      )).limit(1);
+      if (priorCompletion) return completionResponse(priorCompletion, true);
+
+      const [[quest], targetRows, [employee]] = await Promise.all([
+        db.select().from(quests).where(eq(quests.id, questId)).limit(1),
+        db.select().from(questTargets).where(eq(questTargets.questId, questId)),
+        db.select({ id: employees.id, name: employees.name, roleId: employees.roleId }).from(employees).where(and(eq(employees.id, employeeId), eq(employees.status, "active"))).limit(1),
+      ]);
+      if (!quest) return Response.json({ error: "ไม่พบเควสที่เลือก" }, { status: 404 });
+      if (!employee) return Response.json({ error: "ไม่พบพนักงานที่กำลังใช้งานอยู่" }, { status: 404 });
+      if (quest.status !== "active" && quest.status !== "completed") return Response.json({ error: "มอบสิทธิ์ได้เฉพาะเควสที่เปิดใช้งานหรือปิดสำเร็จแล้ว" }, { status: 409 });
+
+      const expectedUpdatedAt = typeof payload.expectedUpdatedAt === "string" ? payload.expectedUpdatedAt : "";
+      const expectedRevision = payload.expectedRevision;
+      if (!expectedUpdatedAt || typeof expectedRevision !== "number" || !Number.isSafeInteger(expectedRevision) || expectedRevision < 0) {
+        return Response.json({ error: "ข้อมูลเวอร์ชันเควสไม่ครบ กรุณาโหลดข้อมูลล่าสุดแล้วลองใหม่" }, { status: 400 });
+      }
+      if (quest.updatedAt !== expectedUpdatedAt || quest.revision !== expectedRevision) {
+        return Response.json({ error: "เควสนี้ถูกแก้ไขจากอีกหน้าจอ กรุณาโหลดข้อมูลล่าสุด" }, { status: 409 });
+      }
+
+      const employeeRole = getRole(employee.roleId);
+      const employeeDepartmentId = employeeRole.departmentId;
+      const eligible = quest.type === "activity"
+        || (quest.type === "individual" && targetRows.some((target) => target.targetType === "employee" && target.targetKey === employee.id))
+        || (quest.type === "team" && targetRows.some((target) => target.targetType === "department" && target.targetKey === employeeDepartmentId));
+      if (!eligible) return Response.json({ error: "พนักงานคนนี้ไม่อยู่ในกลุ่มเป้าหมายของเควส" }, { status: 403 });
+
+      const completionDate = typeof payload.completionDate === "string" ? payload.completionDate.trim() : "";
+      const today = bangkokIsoDay();
+      if (!isValidIsoDay(completionDate) || completionDate > today) return Response.json({ error: "วันที่ทำเควสสำเร็จต้องเป็นวันที่ถูกต้องและไม่อยู่ในอนาคต" }, { status: 400 });
+      if (completionDate < quest.startDate || completionDate > quest.endDate) return Response.json({ error: "วันที่ทำสำเร็จต้องอยู่ภายในช่วงเวลาของเควส" }, { status: 400 });
+      if (isoDayDistance(completionDate, today) > 90) return Response.json({ error: "HR / Admin บันทึกผลเควสย้อนหลังได้ไม่เกิน 90 วัน" }, { status: 409 });
+      const evidenceUrl = typeof payload.evidenceUrl === "string" ? payload.evidenceUrl.trim() : "";
+      const note = typeof payload.note === "string" ? payload.note.trim() : "";
+      if (!evidenceUrl || evidenceUrl.length > 1_200 || !isSafeHttpsUrl(evidenceUrl)) return Response.json({ error: "กรุณาแนบลิงก์หลักฐาน https:// ที่ถูกต้อง" }, { status: 400 });
+      if (!note || Array.from(note).length > 1_000) return Response.json({ error: "กรุณาระบุผลการตรวจไม่เกิน 1,000 ตัวอักษร" }, { status: 400 });
+
+      const { policy: completionPolicy, rules: completionRules } = pointPolicyFromRows(pointPolicyRows, completionDate);
+      if (!completionPolicy || !completionPolicy.contentHash || completionPolicy.contentHash !== await policyIntegrityHash(completionPolicy)) {
+        return Response.json({ error: "ไม่มีกติกา Points ที่ประกาศใช้และตรวจสอบได้ในวันที่ทำเควสสำเร็จ" }, { status: 409 });
+      }
+      const questRule = completionRules.events.quest;
+      const questPointPolicyLimit = questRule.points;
+      if (questRule.entryMode !== "manual" || !questRule.authorizedRoles.includes("admin") || questPointPolicyLimit === null || questPointPolicyLimit < 0) {
+        return Response.json({ error: "กติกา Points ในวันที่เลือกไม่อนุญาตให้ HR มอบ Points จากเควส" }, { status: 409 });
+      }
+      if (quest.pointsReward > questPointPolicyLimit) {
+        return Response.json({ error: `เควสนี้ประกาศ ${quest.pointsReward.toLocaleString("th-TH")} Points แต่กติกาในวันที่เลือกอนุญาตสูงสุด ${questPointPolicyLimit.toLocaleString("th-TH")} Points กรุณาแก้กติกาหรือเควสก่อนมอบสิทธิ์` }, { status: 409 });
+      }
+      const maxManualQuestCompletions = completionRules.economy.positiveManualEventsPerMonth;
+      if (maxManualQuestCompletions < 1) return Response.json({ error: "กติกาในวันที่เลือกปิดการมอบ Points จากเควส" }, { status: 409 });
+
+      const [[linkedReward], employeeEventRows, employeeLedgerRows, employeeCapClaimRows] = await Promise.all([
+        quest.rewardId ? db.select().from(rewards).where(eq(rewards.id, quest.rewardId)).limit(1) : Promise.resolve([]),
+        db.select().from(pointEvents).where(eq(pointEvents.employeeId, employee.id)),
+        db.select().from(pointLedger).where(eq(pointLedger.employeeId, employee.id)),
+        db.select({ id: pointCapClaims.id }).from(pointCapClaims).where(and(eq(pointCapClaims.employeeId, employee.id), eq(pointCapClaims.claimMonth, completionDate.slice(0, 7)))),
+      ]);
+      if (quest.rewardId && (!linkedReward || !linkedReward.isActive || linkedReward.stock <= 0)) {
+        return Response.json({ error: "รางวัลที่ประกาศไว้ถูกปิดหรือหมดสต็อก จึงยังมอบสิทธิ์เควสไม่ได้" }, { status: 409 });
+      }
+      const completionMonth = completionDate.slice(0, 7);
+      const questCompletionsThisMonth = employeeEventRows.filter((event) => event.eventType === "quest" && event.eventDate.startsWith(completionMonth)).length;
+      if (questCompletionsThisMonth >= maxManualQuestCompletions) {
+        return Response.json({ error: `พนักงานได้รับ Points จากเควสครบ ${maxManualQuestCompletions} ครั้งของเดือนนี้แล้ว` }, { status: 409 });
+      }
+      const positiveEventsThisMonth = employeeEventRows.filter((event) => event.eventDate.startsWith(completionMonth) && event.eventType !== "monthly_evaluation" && event.points > 0).reduce((sum, event) => sum + event.points, 0);
+      const workAwardsThisMonth = employeeLedgerRows.filter((entry) => (entry.sourceType === "task" || entry.sourceType === "mission") && bangkokMonthFromTimestamp(entry.createdAt) === completionMonth && entry.points > 0).reduce((sum, entry) => sum + entry.points, 0);
+      const standardEarnMonthlyCap = completionRules.economy.standardEarnMonthlyCap;
+      if (positiveEventsThisMonth + workAwardsThisMonth + quest.pointsReward > standardEarnMonthlyCap) {
+        return Response.json({ error: `หากมอบเควสนี้ Points บวกมาตรฐานจะเกินเพดาน ${standardEarnMonthlyCap.toLocaleString("th-TH")} Points ของเดือน จึงไม่มีการมอบบางส่วน` }, { status: 409 });
+      }
+
+      const actor = authenticatedActor(currentUser);
+      const now = new Date().toISOString();
+      const completionId = `quest-completion-${crypto.randomUUID()}`;
+      const pointEventId = `point-event-${completionId}`;
+      const pointLedgerId = `points-${completionId}`;
+      const policyMetadata = pointPolicyMetadata(completionPolicy);
+      if (!policyMetadata.policyId || policyMetadata.policyVersion === null || !policyMetadata.policyContentHash) {
+        return Response.json({ error: "ข้อมูลอ้างอิงกติกา Points ไม่ครบ จึงยังมอบสิทธิ์ไม่ได้" }, { status: 409 });
+      }
+      const pointNote = `เควสสำเร็จ: ${quest.title} — ${note}`;
+      const pointEvent = {
+        id: pointEventId,
+        employeeId: employee.id,
+        eventType: "quest" as const,
+        points: quest.pointsReward,
+        eventDate: completionDate,
+        note: pointNote,
+        evidenceUrl,
+        recordedBy: actor.name,
+        policyId: policyMetadata.policyId,
+        policyVersion: policyMetadata.policyVersion,
+        policyContentHash: policyMetadata.policyContentHash,
+        createdAt: now,
+      };
+      const pointEntry = {
+        id: pointLedgerId,
+        employeeId: employee.id,
+        sourceType: "quest" as const,
+        sourceId: completionId,
+        points: quest.pointsReward,
+        note: pointNote,
+        policyId: policyMetadata.policyId,
+        policyVersion: policyMetadata.policyVersion,
+        policyContentHash: policyMetadata.policyContentHash,
+        createdAt: now,
+      };
+      const mutationClaim = {
+        id: `point-mutation-claim-${crypto.randomUUID()}`,
+        pointEventId,
+        employeeId: employee.id,
+        predecessorEventCount: employeeEventRows.length,
+        employeeSequenceKey: `${employee.id}:event-count:${employeeEventRows.length}`,
+        createdAt: now,
+      };
+      const capClaim = {
+        id: `point-cap-claim-${crypto.randomUUID()}`,
+        employeeId: employee.id,
+        claimMonth: completionMonth,
+        sourceType: "quest_completion",
+        sourceId: completionId,
+        employeeMonthSequenceKey: `${employee.id}:${completionMonth}:${employeeCapClaimRows.length}`,
+        createdAt: now,
+      };
+      const questCompletion: QuestCompletionRow = {
+        id: completionId,
+        questId: quest.id,
+        employeeId: employee.id,
+        completionDate,
+        questRevision: quest.revision,
+        questUpdatedAt: quest.updatedAt,
+        questTypeSnapshot: quest.type,
+        questTitleSnapshot: quest.title,
+        questDescriptionSnapshot: quest.description,
+        questStartDateSnapshot: quest.startDate,
+        questEndDateSnapshot: quest.endDate,
+        pointsAwarded: quest.pointsReward,
+        rewardId: quest.rewardId,
+        rewardTitleSnapshot: quest.rewardTitleSnapshot,
+        rewardIconSnapshot: quest.rewardIconSnapshot,
+        rewardInventoryVersion: linkedReward?.inventoryVersion ?? null,
+        employeeNameSnapshot: employee.name,
+        employeeRoleIdSnapshot: employee.roleId,
+        employeeDepartmentIdSnapshot: employeeDepartmentId,
+        employeeDepartmentNameSnapshot: employeeRole.department,
+        evidenceUrl,
+        note,
+        pointEventId,
+        pointLedgerId,
+        policyId: policyMetadata.policyId,
+        policyVersion: policyMetadata.policyVersion,
+        policyContentHash: policyMetadata.policyContentHash,
+        questPointPolicyLimit,
+        maxManualQuestCompletions,
+        standardEarnMonthlyCap,
+        completedByUserId: actor.userId,
+        completedByName: actor.name,
+        completedAt: now,
+      };
+
+      const d1 = getD1();
+      const statements = [
+        d1.prepare(`INSERT INTO point_events (
+          id, employee_id, event_type, points, event_date, note, evidence_url, recorded_by, policy_id, policy_version, policy_content_hash, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+          .bind(pointEvent.id, pointEvent.employeeId, pointEvent.eventType, pointEvent.points, pointEvent.eventDate, pointEvent.note, pointEvent.evidenceUrl, pointEvent.recordedBy, pointEvent.policyId, pointEvent.policyVersion, pointEvent.policyContentHash, pointEvent.createdAt),
+        d1.prepare(`INSERT INTO point_mutation_claims (
+          id, point_event_id, employee_id, predecessor_event_count, employee_sequence_key, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?)`)
+          .bind(mutationClaim.id, mutationClaim.pointEventId, mutationClaim.employeeId, mutationClaim.predecessorEventCount, mutationClaim.employeeSequenceKey, mutationClaim.createdAt),
+        d1.prepare(`INSERT INTO point_cap_claims (
+          id, employee_id, claim_month, source_type, source_id, employee_month_sequence_key, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+          .bind(capClaim.id, capClaim.employeeId, capClaim.claimMonth, capClaim.sourceType, capClaim.sourceId, capClaim.employeeMonthSequenceKey, capClaim.createdAt),
+        d1.prepare(`INSERT INTO point_ledger (
+          id, employee_id, source_type, source_id, points, note, policy_id, policy_version, policy_content_hash, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+          .bind(pointEntry.id, pointEntry.employeeId, pointEntry.sourceType, pointEntry.sourceId, pointEntry.points, pointEntry.note, pointEntry.policyId, pointEntry.policyVersion, pointEntry.policyContentHash, pointEntry.createdAt),
+        d1.prepare(`INSERT INTO quest_completions (
+          id, quest_id, employee_id, completion_date, quest_revision, quest_updated_at, quest_type_snapshot, quest_title_snapshot,
+          quest_description_snapshot, quest_start_date_snapshot, quest_end_date_snapshot, points_awarded, reward_id, reward_title_snapshot,
+          reward_icon_snapshot, reward_inventory_version, employee_name_snapshot, employee_role_id_snapshot, employee_department_id_snapshot, employee_department_name_snapshot,
+          evidence_url, note, point_event_id, point_ledger_id, policy_id, policy_version, policy_content_hash, quest_point_policy_limit,
+          max_manual_quest_completions, standard_earn_monthly_cap, completed_by_user_id, completed_by_name, completed_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+          .bind(questCompletion.id, questCompletion.questId, questCompletion.employeeId, questCompletion.completionDate, questCompletion.questRevision, questCompletion.questUpdatedAt, questCompletion.questTypeSnapshot, questCompletion.questTitleSnapshot, questCompletion.questDescriptionSnapshot, questCompletion.questStartDateSnapshot, questCompletion.questEndDateSnapshot, questCompletion.pointsAwarded, questCompletion.rewardId, questCompletion.rewardTitleSnapshot, questCompletion.rewardIconSnapshot, questCompletion.rewardInventoryVersion, questCompletion.employeeNameSnapshot, questCompletion.employeeRoleIdSnapshot, questCompletion.employeeDepartmentIdSnapshot, questCompletion.employeeDepartmentNameSnapshot, questCompletion.evidenceUrl, questCompletion.note, questCompletion.pointEventId, questCompletion.pointLedgerId, questCompletion.policyId, questCompletion.policyVersion, questCompletion.policyContentHash, questCompletion.questPointPolicyLimit, questCompletion.maxManualQuestCompletions, questCompletion.standardEarnMonthlyCap, questCompletion.completedByUserId, questCompletion.completedByName, questCompletion.completedAt),
+      ];
+      if (linkedReward) {
+        statements.push(
+          d1.prepare(`UPDATE rewards SET stock = stock - 1, inventory_version = inventory_version + 1, updated_at = ?
+            WHERE id = ? AND is_active = 1 AND stock > 0 AND inventory_version = ?`)
+            .bind(now, linkedReward.id, linkedReward.inventoryVersion),
+          d1.prepare("UPDATE rewards SET title = CASE WHEN changes() = 1 THEN title ELSE NULL END WHERE id = ?").bind(linkedReward.id),
+        );
+      }
+      try {
+        await d1.batch(statements);
+      } catch (error) {
+        const [racedCompletion] = await db.select().from(questCompletions).where(and(
+          eq(questCompletions.questId, quest.id),
+          eq(questCompletions.employeeId, employee.id),
+        )).limit(1);
+        if (racedCompletion) return completionResponse(racedCompletion, true);
+        const message = error instanceof Error ? error.message : "";
+        if (message.includes("QUEST_COMPLETION_") || message.includes("UNIQUE constraint failed") || message.includes("NOT NULL constraint failed: rewards.title")) {
+          return Response.json({ error: "ข้อมูลเควส Points หรือสต็อกเปลี่ยนแปลงพร้อมกัน กรุณาโหลดข้อมูลล่าสุดและตรวจเพดานก่อนลองใหม่" }, { status: 409 });
+        }
+        throw error;
+      }
+      const reward = linkedReward ? { ...linkedReward, stock: linkedReward.stock - 1, inventoryVersion: linkedReward.inventoryVersion + 1, updatedAt: now } : null;
+      return Response.json({ questCompletion: questCompletionDto(questCompletion, true), pointEvent, pointEntry, reward, idempotentReplay: false }, { status: 201 });
+    }
+
+    if (payload.action === "deleteQuest") {
+      const questId = typeof payload.questId === "string" ? payload.questId.trim().slice(0, 160) : "";
+      if (!questId) return Response.json({ error: "กรุณาเลือกเควสที่ต้องการลบ" }, { status: 400 });
+      const [sourceQuest] = await db.select().from(quests).where(eq(quests.id, questId)).limit(1);
+      if (!sourceQuest) return Response.json({ error: "ไม่พบเควสที่เลือก" }, { status: 404 });
+      const sourceTargets = await db.select().from(questTargets).where(eq(questTargets.questId, sourceQuest.id));
+      const expectedUpdatedAt = typeof payload.expectedUpdatedAt === "string" ? payload.expectedUpdatedAt : "";
+      const expectedRevision = payload.expectedRevision;
+      if (!expectedUpdatedAt || typeof expectedRevision !== "number" || !Number.isSafeInteger(expectedRevision) || expectedRevision < 0) {
+        return Response.json({ error: "ข้อมูลเวอร์ชันเควสไม่ครบ กรุณาโหลดข้อมูลล่าสุดแล้วลองใหม่" }, { status: 400 });
+      }
+      if (sourceQuest.updatedAt !== expectedUpdatedAt || sourceQuest.revision !== expectedRevision) {
+        return Response.json({ error: "เควสนี้ถูกแก้ไขจากอีกหน้าจอ กรุณาโหลดข้อมูลล่าสุด" }, { status: 409 });
+      }
+      const requiredConfirmation = `ลบเควส ${sourceQuest.title}`;
+      if (typeof payload.confirmation !== "string" || payload.confirmation !== requiredConfirmation) {
+        return Response.json({ error: `กรุณาพิมพ์ “${requiredConfirmation}” ให้ถูกต้อง` }, { status: 400 });
+      }
+      if (sourceQuest.status === "archived") {
+        return Response.json({ quest: questDto(sourceQuest, sourceTargets, true), disposition: "archived", deleted: false, archived: true });
+      }
+      const actor = authenticatedActor(currentUser);
+      const sourceTimestamp = Date.parse(sourceQuest.updatedAt);
+      const now = new Date(Math.max(Date.now(), Number.isFinite(sourceTimestamp) ? sourceTimestamp + 1 : 0)).toISOString();
+      const archivedQuest: QuestRow = {
+        ...sourceQuest,
+        status: "archived",
+        revision: sourceQuest.revision + 1,
+        updatedByUserId: actor.userId,
+        updatedByName: actor.name,
+        updatedAt: now,
+      };
+      const snapshotJson = JSON.stringify({
+        ...archivedQuest,
+        targetEmployeeIds: sourceTargets.filter((target) => target.targetType === "employee").map((target) => target.targetKey),
+        targetDepartmentIds: sourceTargets.filter((target) => target.targetType === "department").map((target) => target.targetKey),
+        targetEmployees: sourceTargets.filter((target) => target.targetType === "employee").map((target) => ({ id: target.targetKey, label: target.targetLabelSnapshot })),
+        targetDepartments: sourceTargets.filter((target) => target.targetType === "department").map((target) => ({ id: target.targetKey, label: target.targetLabelSnapshot })),
+      });
+      const d1 = getD1();
+      try {
+        await d1.batch([
+          d1.prepare(`INSERT INTO quest_mutation_events (
+            id, quest_id, event_type, expected_revision, expected_updated_at, revision, actor_user_id, actor_name, snapshot_json, created_at
+          ) VALUES (?, ?, 'archived', ?, ?, ?, ?, ?, ?, ?)`)
+            .bind(`quest-event-${crypto.randomUUID()}`, sourceQuest.id, sourceQuest.revision, sourceQuest.updatedAt, archivedQuest.revision, actor.userId, actor.name, snapshotJson, now),
+          d1.prepare(`UPDATE quests SET status = 'archived', revision = ?, updated_by_user_id = ?, updated_by_name = ?, updated_at = ?
+            WHERE id = ? AND revision = ? AND updated_at = ?`)
+            .bind(archivedQuest.revision, actor.userId, actor.name, now, sourceQuest.id, sourceQuest.revision, sourceQuest.updatedAt),
+        ]);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "";
+        if (message.includes("QUEST_") || message.includes("quest_mutation_events.quest_id, quest_mutation_events.revision")) {
+          return Response.json({ error: "เควสนี้ถูกแก้ไขจากอีกหน้าจอ กรุณาโหลดข้อมูลล่าสุด" }, { status: 409 });
+        }
+        throw error;
+      }
+      return Response.json({ quest: questDto(archivedQuest, sourceTargets, true), disposition: "archived", deleted: false, archived: true });
     }
 
     if (payload.action === "saveReward") {

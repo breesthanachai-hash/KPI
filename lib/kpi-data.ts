@@ -237,6 +237,72 @@ export type RewardRecord = {
   updatedAt: string;
 };
 
+export type QuestRecord = {
+  id: string;
+  type: "individual" | "team" | "activity";
+  title: string;
+  description: string;
+  status: "draft" | "active" | "completed" | "archived";
+  progress: number;
+  pointsReward: number;
+  rewardId: string | null;
+  rewardTitleSnapshot: string;
+  rewardIconSnapshot: string;
+  isFeatured: boolean;
+  startDate: string;
+  endDate: string;
+  revision: number;
+  createdByUserId?: string;
+  createdByName?: string;
+  updatedByUserId?: string;
+  updatedByName?: string;
+  createdAt: string;
+  updatedAt: string;
+  targetEmployeeIds: string[];
+  targetDepartmentIds: string[];
+  targetEmployees: Array<{ id: string; label: string }>;
+  targetDepartments: Array<{ id: string; label: string }>;
+  pointsAwardMode: "admin_verified_completion";
+  rewardFulfillmentMode: "admin_verified_completion" | "none";
+  fulfillmentNotice: string;
+};
+
+export type QuestCompletionRecord = {
+  id: string;
+  questId: string;
+  employeeId: string;
+  completionDate: string;
+  questRevision: number;
+  questUpdatedAt: string;
+  questTypeSnapshot: "individual" | "team" | "activity";
+  questTitleSnapshot: string;
+  questDescriptionSnapshot: string;
+  questStartDateSnapshot: string;
+  questEndDateSnapshot: string;
+  pointsAwarded: number;
+  rewardId: string | null;
+  rewardTitleSnapshot: string;
+  rewardIconSnapshot: string;
+  rewardInventoryVersion: number | null;
+  employeeNameSnapshot: string;
+  employeeRoleIdSnapshot: string;
+  employeeDepartmentIdSnapshot: string;
+  employeeDepartmentNameSnapshot: string;
+  evidenceUrl: string;
+  note: string;
+  pointEventId: string;
+  pointLedgerId: string;
+  policyId: string;
+  policyVersion: number;
+  policyContentHash: string;
+  questPointPolicyLimit: number;
+  maxManualQuestCompletions: number;
+  standardEarnMonthlyCap: number;
+  completedByUserId?: string;
+  completedByName: string;
+  completedAt: string;
+};
+
 export type PointLedgerRecord = {
   id: string;
   employeeId: string;

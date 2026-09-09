@@ -24,6 +24,8 @@ import {
   type PointLedgerRecord,
   type PointPolicyRules,
   type ProjectRecord,
+  type QuestCompletionRecord,
+  type QuestRecord,
   type RewardRecord,
   type RewardRedemptionRecord,
   type SkillCategoryId,
@@ -115,6 +117,7 @@ type AppPermissions = {
   canManageAccounts: boolean;
   canManagePeople: boolean;
   canManageWork: boolean;
+  canManageQuests: boolean;
   canAssignTeamWork: boolean;
   canReviewWork: boolean;
   canViewTeam: boolean;
@@ -174,7 +177,19 @@ type WorkDueFilter = "all" | "today" | "overdue" | "week" | "review" | "done";
 
 type EmployeeTaskScope = "assigned" | "created";
 
-type WorkSection = "tasks" | "projects" | "points" | "rewards";
+type WorkSection = "quests" | "tasks" | "projects" | "points" | "rewards";
+
+type QuestTypeFilter = "all" | QuestRecord["type"];
+type QuestStatusFilter = "current" | "all" | "archived";
+
+type QuestFormState = Pick<QuestRecord, "type" | "title" | "description" | "status" | "progress" | "pointsReward" | "rewardId" | "isFeatured" | "startDate" | "endDate" | "targetEmployeeIds" | "targetDepartmentIds">;
+
+type QuestCompletionFormState = {
+  employeeId: string;
+  completionDate: string;
+  evidenceUrl: string;
+  note: string;
+};
 
 type PointPanel = "overview" | "policies" | "adjust" | "history";
 
@@ -195,6 +210,7 @@ type OrganizationPolicyRecord = {
   effectiveDate: string;
   effectiveTo?: string | null;
   acknowledgementRequired: boolean;
+  scopeType?: "all" | "department" | "role" | "employment_type";
   rules?: unknown;
   publishedAt: string;
   publishedBy: string;
@@ -297,6 +313,7 @@ type AppNotification = {
   title: string;
   message: string;
   createdAt: string;
+  questId?: string;
   workItemId?: string;
   dueFilter?: WorkDueFilter;
   actionLabel: string;
@@ -314,6 +331,19 @@ const rewardCategoryMeta: Record<RewardRecord["category"], { label: string; defa
   learning: { label: "การเรียนรู้", defaultIcon: "📚" },
   wellbeing: { label: "สุขภาพและความเป็นอยู่", defaultIcon: "♥" },
   recognition: { label: "การยกย่อง", defaultIcon: "★" },
+};
+
+const questTypeMeta: Record<QuestRecord["type"], { label: string; shortLabel: string; icon: string; description: string }> = {
+  individual: { label: "เควสรายบุคคล", shortLabel: "รายบุคคล", icon: "●", description: "มอบหมายให้พนักงานหนึ่งคนโดยตรง" },
+  team: { label: "เควสแบบทีม", shortLabel: "ทีม", icon: "◆", description: "ชวนหลายคนหรือทั้งแผนกร่วมเป้าหมาย" },
+  activity: { label: "เควสกิจกรรม", shortLabel: "กิจกรรม", icon: "✦", description: "กิจกรรมเปิดให้ทุกคนในองค์กรเข้าร่วม" },
+};
+
+const questStatusMeta: Record<QuestRecord["status"], { label: string; description: string }> = {
+  draft: { label: "ฉบับร่าง", description: "เห็นเฉพาะ HR / Admin" },
+  active: { label: "เปิดรับภารกิจ", description: "แสดงแก่ผู้เข้าร่วมตามขอบเขต" },
+  completed: { label: "สำเร็จแล้ว", description: "ปิดผลสำเร็จและเก็บเป็นผลงาน" },
+  archived: { label: "เก็บประวัติ", description: "ซ่อนจากผู้เข้าร่วม แต่ยังตรวจย้อนหลังได้" },
 };
 
 type TalentDimensionId = "analysis" | "communication" | "problemSolving" | "leadership" | "execution";
@@ -907,6 +937,38 @@ function blankRewardForm(): RewardFormState {
   };
 }
 
+function blankQuestForm(pointsLimit = defaultPointPolicyRules.events.quest.points ?? 0): QuestFormState {
+  const startDate = bangkokIsoDate();
+  const safePointsLimit = Math.max(0, Math.round(pointsLimit));
+  const safeDefaultPoints = Math.max(0, Math.round(defaultPointPolicyRules.events.quest.points ?? 0));
+  return {
+    type: "individual",
+    title: "",
+    description: "",
+    status: "draft",
+    progress: 0,
+    pointsReward: Math.min(safePointsLimit, safeDefaultPoints),
+    rewardId: null,
+    isFeatured: true,
+    startDate,
+    endDate: addIsoDays(startDate, 14),
+    targetEmployeeIds: [],
+    targetDepartmentIds: [],
+  };
+}
+
+function blankQuestCompletionForm(completionDate = bangkokIsoDate()): QuestCompletionFormState {
+  return { employeeId: "", completionDate, evidenceUrl: "", note: "" };
+}
+
+function isHttpsUrl(value: string) {
+  try {
+    return new URL(value).protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 function accountCredentialState(account: PublicUserAccount): AccountCredentialState {
   if (account.status !== "active") return { id: "inactive", label: "พักสิทธิ์", detail: "บัญชีถูกระงับการเข้าใช้" };
   const lockedUntilTime = account.lockedUntil ? Date.parse(account.lockedUntil) : Number.NaN;
@@ -933,6 +995,8 @@ export default function Home() {
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
   const [workItems, setWorkItems] = useState<WorkItemRecord[]>([]);
   const [workSubmissions, setWorkSubmissions] = useState<WorkSubmissionRecord[]>([]);
+  const [quests, setQuests] = useState<QuestRecord[]>([]);
+  const [questCompletions, setQuestCompletions] = useState<QuestCompletionRecord[]>([]);
   const [rewards, setRewards] = useState<RewardRecord[]>([]);
   const [pointLedger, setPointLedger] = useState<PointLedgerRecord[]>([]);
   const [pointEvents, setPointEvents] = useState<PointEventRecord[]>([]);
@@ -952,7 +1016,7 @@ export default function Home() {
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [employeePreview, setEmployeePreview] = useState<EmployeePreview | null>(null);
   const isEmployeePreview = Boolean(employeePreview?.readOnly);
-  const [permissions, setPermissions] = useState<AppPermissions>({ canManageAccounts: false, canManagePeople: false, canManageWork: false, canAssignTeamWork: false, canReviewWork: false, canViewTeam: false, canViewTeamOverview: false, canViewOwnGrowth: false, canViewOwnRewards: false, canManageOrganizationDocuments: false, canManageEmployeeWarnings: false, canManageEmployeeRecognitions: false });
+  const [permissions, setPermissions] = useState<AppPermissions>({ canManageAccounts: false, canManagePeople: false, canManageWork: false, canManageQuests: false, canAssignTeamWork: false, canReviewWork: false, canViewTeam: false, canViewTeamOverview: false, canViewOwnGrowth: false, canViewOwnRewards: false, canManageOrganizationDocuments: false, canManageEmployeeWarnings: false, canManageEmployeeRecognitions: false });
   const [teamOverview, setTeamOverview] = useState<EmployeeTeamOverview>({ employees: [], evaluations: [], workItems: [] });
   const [launchReadiness, setLaunchReadiness] = useState<LaunchReadiness | null>(null);
   const [authGate, setAuthGate] = useState<AuthGateState | null>(null);
@@ -984,6 +1048,13 @@ export default function Home() {
   const [showWorkForm, setShowWorkForm] = useState(false);
   const [showProjectForm, setShowProjectForm] = useState(false);
   const [editingWorkItem, setEditingWorkItem] = useState<WorkItemRecord | null>(null);
+  const [showQuestForm, setShowQuestForm] = useState(false);
+  const [editingQuest, setEditingQuest] = useState<QuestRecord | null>(null);
+  const [questForm, setQuestForm] = useState<QuestFormState>(() => blankQuestForm());
+  const [questToFulfill, setQuestToFulfill] = useState<QuestRecord | null>(null);
+  const [questCompletionForm, setQuestCompletionForm] = useState<QuestCompletionFormState>(() => blankQuestCompletionForm());
+  const [questTypeFilter, setQuestTypeFilter] = useState<QuestTypeFilter>("all");
+  const [questStatusFilter, setQuestStatusFilter] = useState<QuestStatusFilter>("current");
   const [submissionWorkItem, setSubmissionWorkItem] = useState<WorkItemRecord | null>(null);
   const [submissionFile, setSubmissionFile] = useState<File | null>(null);
   const [reviewerNote, setReviewerNote] = useState("");
@@ -1006,7 +1077,7 @@ export default function Home() {
   const [workSearch, setWorkSearch] = useState("");
   const [workDueFilter, setWorkDueFilter] = useState<WorkDueFilter>("all");
   const [employeeTaskScope, setEmployeeTaskScope] = useState<EmployeeTaskScope>("assigned");
-  const [workSection, setWorkSection] = useState<WorkSection>("tasks");
+  const [workSection, setWorkSection] = useState<WorkSection>("quests");
   const [pointPanel, setPointPanel] = useState<PointPanel>("overview");
   const [workAssigneeFilter, setWorkAssigneeFilter] = useState("all");
   const [officeLoadFilter, setOfficeLoadFilter] = useState<OfficeLoadFilter>("all");
@@ -1028,6 +1099,7 @@ export default function Home() {
   const [peopleOpsEmployeeId, setPeopleOpsEmployeeId] = useState("");
   const [attendanceDate, setAttendanceDate] = useState(bangkokIsoDate());
   const [officeClock, setOfficeClock] = useState("--:--");
+  const [todayDate, setTodayDate] = useState(() => bangkokIsoDate());
   const [employeeForm, setEmployeeForm] = useState({ name: "", email: "", roleId: roles[0].id, manager: "" });
   const [hrForm, setHrForm] = useState({ actionId: "", currentSalary: 0, salaryReviewMonth: "มกราคม 2570", planType: "upskill" as TalentActionRecord["type"], title: "", dueDate: "2026-09-30", targetRoleId: roles[0].id });
   const [workForm, setWorkForm] = useState({ projectId: "", assigneeEmployeeId: "", kind: "task" as WorkItemRecord["kind"], title: "", description: "", priority: "medium" as WorkItemRecord["priority"], status: "todo" as WorkItemRecord["status"], progress: 0, points: workPointValue("task", "medium", defaultPointPolicyRules), dueDate: "2026-09-05" });
@@ -1062,7 +1134,7 @@ export default function Home() {
     if (previewEmployeeId) dashboardParams.set("previewEmployeeId", previewEmployeeId);
     fetch(`/api/dashboard?${dashboardParams.toString()}`, { signal: controller.signal })
       .then(async (response) => {
-        const body = await response.json().catch(() => ({})) as { currentUser?: CurrentUser; employeePreview?: EmployeePreview | null; permissions?: AppPermissions; teamOverview?: EmployeeTeamOverview; launchReadiness?: LaunchReadiness; userAccounts?: PublicUserAccount[]; employeeRegistrationRequests?: EmployeeRegistrationRequest[]; notificationReads?: NotificationReadRecord[]; employees?: EmployeeRecord[]; evaluations?: EvaluationRecord[]; selfAssessments?: EmployeeSelfAssessmentRecord[]; hrProfiles?: HrProfileRecord[]; attendanceRecords?: AttendanceRecord[]; skillAchievements?: SkillAchievementRecord[]; talentActions?: TalentActionRecord[]; projects?: ProjectRecord[]; workItems?: WorkItemRecord[]; workSubmissions?: WorkSubmissionRecord[]; rewards?: RewardRecord[]; pointLedger?: PointLedgerRecord[]; pointEvents?: PointEventRecord[]; pointPolicyRules?: PointPolicyRules; rewardRedemptions?: RewardRedemptionRecord[]; organizationPolicies?: OrganizationPolicyRecord[]; policyAcknowledgements?: PolicyAcknowledgementRecord[]; employeeProfiles?: EmployeeProfileRecord[]; applicationDocuments?: ApplicationDocumentRecord[]; employmentContracts?: EmploymentContractRecord[]; organizationDocuments?: OrganizationDocumentRecord[]; employeeWarnings?: EmployeeWarningRecord[]; employeeRecognitions?: EmployeeRecognitionRecord[]; authRequired?: boolean; passwordChangeRequired?: boolean; accessDenied?: boolean; displayName?: string; loginId?: string; error?: string };
+        const body = await response.json().catch(() => ({})) as { currentUser?: CurrentUser; employeePreview?: EmployeePreview | null; permissions?: AppPermissions; teamOverview?: EmployeeTeamOverview; launchReadiness?: LaunchReadiness; userAccounts?: PublicUserAccount[]; employeeRegistrationRequests?: EmployeeRegistrationRequest[]; notificationReads?: NotificationReadRecord[]; employees?: EmployeeRecord[]; evaluations?: EvaluationRecord[]; selfAssessments?: EmployeeSelfAssessmentRecord[]; hrProfiles?: HrProfileRecord[]; attendanceRecords?: AttendanceRecord[]; skillAchievements?: SkillAchievementRecord[]; talentActions?: TalentActionRecord[]; projects?: ProjectRecord[]; workItems?: WorkItemRecord[]; workSubmissions?: WorkSubmissionRecord[]; quests?: QuestRecord[]; questCompletions?: QuestCompletionRecord[]; rewards?: RewardRecord[]; pointLedger?: PointLedgerRecord[]; pointEvents?: PointEventRecord[]; pointPolicyRules?: PointPolicyRules; rewardRedemptions?: RewardRedemptionRecord[]; organizationPolicies?: OrganizationPolicyRecord[]; policyAcknowledgements?: PolicyAcknowledgementRecord[]; employeeProfiles?: EmployeeProfileRecord[]; applicationDocuments?: ApplicationDocumentRecord[]; employmentContracts?: EmploymentContractRecord[]; organizationDocuments?: OrganizationDocumentRecord[]; employeeWarnings?: EmployeeWarningRecord[]; employeeRecognitions?: EmployeeRecognitionRecord[]; authRequired?: boolean; passwordChangeRequired?: boolean; accessDenied?: boolean; displayName?: string; loginId?: string; error?: string };
         if (response.status === 401 || body.authRequired) {
           setAuthGate({ mode: "login" });
           setAccessDenied(null);
@@ -1070,6 +1142,8 @@ export default function Home() {
           setEmployeePreview(null);
           setEmployees([]);
           setWorkItems([]);
+          setQuests([]);
+          setQuestCompletions([]);
           setOrganizationPolicies([]);
           setPolicyAcknowledgements([]);
           setTeamOverview({ employees: [], evaluations: [], workItems: [] });
@@ -1083,6 +1157,8 @@ export default function Home() {
           setEmployeePreview(null);
           setEmployees([]);
           setWorkItems([]);
+          setQuests([]);
+          setQuestCompletions([]);
           setOrganizationPolicies([]);
           setPolicyAcknowledgements([]);
           setTeamOverview({ employees: [], evaluations: [], workItems: [] });
@@ -1096,6 +1172,8 @@ export default function Home() {
           setEmployeePreview(null);
           setEmployees([]);
           setWorkItems([]);
+          setQuests([]);
+          setQuestCompletions([]);
           setOrganizationPolicies([]);
           setPolicyAcknowledgements([]);
           setTeamOverview({ employees: [], evaluations: [], workItems: [] });
@@ -1112,7 +1190,7 @@ export default function Home() {
         setAuthGate(null);
         setCurrentUser(body.currentUser ?? null);
         setEmployeePreview(body.employeePreview ?? null);
-        setPermissions(body.permissions ?? { canManageAccounts: false, canManagePeople: false, canManageWork: false, canAssignTeamWork: false, canReviewWork: false, canViewTeam: false, canViewTeamOverview: false, canViewOwnGrowth: false, canViewOwnRewards: false, canManageOrganizationDocuments: false, canManageEmployeeWarnings: false, canManageEmployeeRecognitions: false });
+        setPermissions(body.permissions ?? { canManageAccounts: false, canManagePeople: false, canManageWork: false, canManageQuests: false, canAssignTeamWork: false, canReviewWork: false, canViewTeam: false, canViewTeamOverview: false, canViewOwnGrowth: false, canViewOwnRewards: false, canManageOrganizationDocuments: false, canManageEmployeeWarnings: false, canManageEmployeeRecognitions: false });
         setTeamOverview(body.teamOverview ?? { employees: [], evaluations: [], workItems: [] });
         setLaunchReadiness(body.launchReadiness ?? null);
         setUserAccounts(body.userAccounts ?? []);
@@ -1129,6 +1207,8 @@ export default function Home() {
         setProjects(body.projects ?? []);
         setWorkItems(body.workItems ?? []);
         setWorkSubmissions(body.workSubmissions ?? []);
+        setQuests(body.quests ?? []);
+        setQuestCompletions(body.questCompletions ?? []);
         setRewards(body.rewards ?? []);
         setPointLedger(body.pointLedger ?? []);
         setPointEvents(body.pointEvents ?? []);
@@ -1186,7 +1266,10 @@ export default function Home() {
   }, [dashboardReloadKey, period]);
 
   useEffect(() => {
-    const updateClock = () => setOfficeClock(new Intl.DateTimeFormat("th-TH-u-nu-latn", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date()));
+    const updateClock = () => {
+      setOfficeClock(new Intl.DateTimeFormat("th-TH-u-nu-latn", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date()));
+      setTodayDate(bangkokIsoDate());
+    };
     updateClock();
     const timer = window.setInterval(updateClock, 30000);
     return () => window.clearInterval(timer);
@@ -1216,7 +1299,7 @@ export default function Home() {
     return () => window.clearTimeout(timer);
   }, [canManageEmployeeFiles, view]);
 
-  const hasBlockingOverlay = Boolean(selectedEmployee || skillProfileEmployee || hrEmployee || showAddEmployee || showWorkForm || showProjectForm || submissionWorkItem || rewardToRedeem || showRewardForm || showProfileEditor || showContractForm || contractToSign || showOrganizationDocumentForm || showEmployeeWarningForm || showEmployeeRecognitionForm || showNotifications || showUserMenu || showChangePassword);
+  const hasBlockingOverlay = Boolean(selectedEmployee || skillProfileEmployee || hrEmployee || showAddEmployee || showWorkForm || showQuestForm || questToFulfill || showProjectForm || submissionWorkItem || rewardToRedeem || showRewardForm || showProfileEditor || showContractForm || contractToSign || showOrganizationDocumentForm || showEmployeeWarningForm || showEmployeeRecognitionForm || showNotifications || showUserMenu || showChangePassword);
 
   useEffect(() => {
     let mascotShouldBeVisible = false;
@@ -1266,6 +1349,10 @@ export default function Home() {
         setShowAddEmployee(false);
         setShowWorkForm(false);
         setEditingWorkItem(null);
+        setShowQuestForm(false);
+        setEditingQuest(null);
+        setQuestToFulfill(null);
+        setQuestCompletionForm(blankQuestCompletionForm());
         setShowProjectForm(false);
         setSubmissionWorkItem(null);
         setRewardToRedeem(null);
@@ -1291,7 +1378,7 @@ export default function Home() {
       lastFocusedElementRef.current?.focus();
       lastFocusedElementRef.current = null;
     };
-  }, [hasBlockingOverlay, selectedEmployee, skillProfileEmployee, hrEmployee, showAddEmployee, showWorkForm, showProjectForm, submissionWorkItem, rewardToRedeem, showRewardForm, showProfileEditor, showContractForm, contractToSign, showOrganizationDocumentForm, showEmployeeWarningForm, showEmployeeRecognitionForm, showNotifications, showUserMenu, showChangePassword, showAiAssistant]);
+  }, [hasBlockingOverlay, selectedEmployee, skillProfileEmployee, hrEmployee, showAddEmployee, showWorkForm, showQuestForm, questToFulfill, showProjectForm, submissionWorkItem, rewardToRedeem, showRewardForm, showProfileEditor, showContractForm, contractToSign, showOrganizationDocumentForm, showEmployeeWarningForm, showEmployeeRecognitionForm, showNotifications, showUserMenu, showChangePassword, showAiAssistant]);
 
   const evaluationsByEmployee = useMemo(
     () => new Map(evaluations.filter((evaluation) => evaluation.period === period).map((evaluation) => [evaluation.employeeId, evaluation])),
@@ -1442,7 +1529,7 @@ export default function Home() {
   const pointEventRules = activePointPolicyRules.events;
   const workPointAwards = activePointPolicyRules.workAwards;
   const pointRedemptionPolicy = activePointPolicyRules.redemption;
-  const manualPointEventTypes = (Object.keys(pointEventRules) as PointEventType[]).filter((eventType) => pointEventRules[eventType].entryMode === "manual");
+  const manualPointEventTypes = (Object.keys(pointEventRules) as PointEventType[]).filter((eventType) => eventType !== "quest" && pointEventRules[eventType].entryMode === "manual");
   const pointOperatorRole = currentUser?.role === "admin" || currentUser?.role === "manager" ? currentUser.role : null;
   const availableManualPointEventTypes = manualPointEventTypes.filter((eventType) => pointOperatorRole ? pointEventRules[eventType].authorizedRoles.includes(pointOperatorRole) : false);
   const selectedPointEventType = availableManualPointEventTypes.includes(pointEventForm.eventType) ? pointEventForm.eventType : availableManualPointEventTypes[0] ?? pointEventForm.eventType;
@@ -1450,8 +1537,8 @@ export default function Home() {
   const publishedOrganizationPolicies = organizationPolicies.filter((policy) => policy.status === "published").slice().sort((a, b) => b.version - a.version || b.updatedAt.localeCompare(a.updatedAt));
   const pointPolicyToday = bangkokIsoDate();
   const activePointPolicyRecord = publishedOrganizationPolicies
-    .filter((policy) => policy.category === "points_rewards" && policy.effectiveDate <= pointPolicyToday && (!policy.effectiveTo || policy.effectiveTo >= pointPolicyToday))
-    .sort((a, b) => b.effectiveDate.localeCompare(a.effectiveDate) || b.version - a.version)[0] ?? null;
+    .filter((policy) => policy.code === "points-and-rewards" && policy.category === "points_rewards" && policy.scopeType === "all" && policy.effectiveDate <= pointPolicyToday && (!policy.effectiveTo || policy.effectiveTo >= pointPolicyToday))
+    .sort((a, b) => b.version - a.version)[0] ?? null;
   const activePointPolicyLabel = activePointPolicyRecord
     ? `${activePointPolicyRecord.title} · v${activePointPolicyRecord.version} · มีผล ${formatDueDate(activePointPolicyRecord.effectiveDate)}`
     : "ยังไม่มีกติกา Points ที่มีผลใช้";
@@ -1474,9 +1561,112 @@ export default function Home() {
     const completed = items.filter((item) => item.status === "done").length;
     return { project, items, progress, completed };
   }), [projects, workItems]);
-  const todayDate = bangkokIsoDate();
-  const weekEndDate = addIsoDays(todayDate, 7);
+  const weekEndDate = useMemo(() => addIsoDays(todayDate, 7), [todayDate]);
+  const questPointLimit = Math.max(0, Math.min(Math.round(pointEventRules.quest.points ?? 0), Math.round(pointEconomyPolicy.standardEarnMonthlyCap)));
+  const questPolicyAllowsAdminCompletion = Boolean(activePointPolicyRecord
+    && pointEventRules.quest.entryMode === "manual"
+    && pointEventRules.quest.authorizedRoles.includes("admin")
+    && pointEconomyPolicy.positiveManualEventsPerMonth >= 1);
+  const currentQuests = quests.filter((quest) => quest.status === "active");
+  const filteredQuests = quests
+    .filter((quest) => questTypeFilter === "all" || quest.type === questTypeFilter)
+    .filter((quest) => !permissions.canManageQuests
+      ? quest.status === "active"
+      : questStatusFilter === "all"
+        ? true
+        : questStatusFilter === "archived"
+          ? quest.status === "archived"
+          : quest.status !== "archived")
+    .slice()
+    .sort((a, b) => Number(b.isFeatured) - Number(a.isFeatured) || ({ active: 0, draft: 1, completed: 2, archived: 3 }[a.status] - { active: 0, draft: 1, completed: 2, archived: 3 }[b.status]) || a.endDate.localeCompare(b.endDate));
+  const activeQuestPoints = currentQuests.reduce((sum, quest) => sum + quest.pointsReward, 0);
+  const activeQuestRewards = currentQuests.filter((quest) => Boolean(quest.rewardId)).length;
+  const questProgressAverage = currentQuests.length ? Math.round(currentQuests.reduce((sum, quest) => sum + quest.progress, 0) / currentQuests.length) : 0;
+  const questSelectedReward = questForm.rewardId ? rewards.find((reward) => reward.id === questForm.rewardId) ?? null : null;
+  const questPreservesInactiveReward = Boolean(editingQuest?.rewardId && editingQuest.rewardId === questForm.rewardId && !(editingQuest.status === "draft" && questForm.status === "active"));
+  const questRewardUnavailable = Boolean(questForm.rewardId) && !questSelectedReward?.isActive && !questPreservesInactiveReward;
+  const questPointsInvalid = !Number.isInteger(questForm.pointsReward) || questForm.pointsReward < 0 || questForm.pointsReward > questPointLimit;
+  const questStatusRequiresPolicy = questForm.status === "active" || questForm.status === "completed";
+  const questPolicyUnavailable = questStatusRequiresPolicy && !activePointPolicyRecord;
+  const questPolicyDisablesCompletions = questStatusRequiresPolicy && Boolean(activePointPolicyRecord) && !questPolicyAllowsAdminCompletion;
+  const editingQuestHasCompletions = Boolean(editingQuest && questCompletions.some((completion) => completion.questId === editingQuest.id));
+  const questAllowedStatuses: QuestRecord["status"][] = !editingQuest
+    ? ["draft", "active"]
+    : editingQuest.status === "draft"
+      ? ["draft", "active"]
+      : editingQuest.status === "active"
+        ? ["active", "completed"]
+        : editingQuest.status === "completed"
+          ? ["completed"]
+          : [];
+  const questTargetInvalid = questForm.type === "individual"
+    ? questForm.targetEmployeeIds.length !== 1 || questForm.targetDepartmentIds.length !== 0
+    : questForm.type === "team"
+      ? questForm.targetDepartmentIds.length === 0 || questForm.targetEmployeeIds.length !== 0
+      : questForm.targetEmployeeIds.length !== 0 || questForm.targetDepartmentIds.length !== 0;
+  const questAudienceLabel = (quest: QuestRecord) => {
+    if (quest.type === "activity") return "ทุกคนในองค์กร";
+    if (quest.type === "individual") return quest.targetEmployeeIds.map((employeeId) => employeesById.get(employeeId)?.name ?? quest.targetEmployees?.find((target) => target.id === employeeId)?.label ?? "พนักงานที่กำหนด").join(", ");
+    return quest.targetDepartmentIds.map((departmentId) => departmentFilters.find((department) => department.id === departmentId)?.label ?? quest.targetDepartments?.find((target) => target.id === departmentId)?.label ?? "ทีมที่กำหนด").join(", ");
+  };
   const activeEmployees = employees.filter((employee) => employee.status === "active");
+  const questCompletionsByQuest = new Map<string, QuestCompletionRecord[]>();
+  questCompletions.forEach((completion) => questCompletionsByQuest.set(completion.questId, [...(questCompletionsByQuest.get(completion.questId) ?? []), completion]));
+  questCompletionsByQuest.forEach((items) => items.sort((a, b) => b.completedAt.localeCompare(a.completedAt)));
+  const eligibleEmployeesForQuest = (quest: QuestRecord, includeCompleted = false) => {
+    const completedEmployeeIds = new Set((questCompletionsByQuest.get(quest.id) ?? []).map((completion) => completion.employeeId));
+    return activeEmployees.filter((employee) => {
+      const belongsToScope = quest.type === "activity"
+        || (quest.type === "individual" && quest.targetEmployeeIds.includes(employee.id))
+        || (quest.type === "team" && quest.targetDepartmentIds.includes(getRole(employee.roleId).departmentId));
+      const canReceiveFromCurrentAdmin = employee.id !== currentUser?.employeeId;
+      return belongsToScope && canReceiveFromCurrentAdmin && (includeCompleted || !completedEmployeeIds.has(employee.id));
+    });
+  };
+  const selectedQuestCompletions = questToFulfill ? questCompletionsByQuest.get(questToFulfill.id) ?? [] : [];
+  const selectedQuestEligibleEmployees = questToFulfill ? eligibleEmployeesForQuest(questToFulfill) : [];
+  const questCompletionPolicyFloorDate = addIsoDays(todayDate, -90);
+  const questCompletionMinDate = questToFulfill && questToFulfill.startDate > questCompletionPolicyFloorDate ? questToFulfill.startDate : questCompletionPolicyFloorDate;
+  const questCompletionMaxDate = questToFulfill && questToFulfill.endDate < todayDate ? questToFulfill.endDate : todayDate;
+  const questCompletionPolicy = publishedOrganizationPolicies
+    .filter((policy) => policy.code === "points-and-rewards" && policy.category === "points_rewards" && policy.scopeType === "all" && policy.effectiveDate <= questCompletionForm.completionDate && (!policy.effectiveTo || policy.effectiveTo >= questCompletionForm.completionDate))
+    .sort((a, b) => b.version - a.version)[0] ?? null;
+  const questCompletionPolicyRules = resolvePointPolicyRules(questCompletionPolicy?.rules);
+  const questCompletionPointLimit = Math.max(0, Math.min(Math.round(questCompletionPolicyRules.events.quest.points ?? 0), Math.round(questCompletionPolicyRules.economy.standardEarnMonthlyCap)));
+  const questCompletionPolicyAllowsAdminCompletion = Boolean(questCompletionPolicy
+    && questCompletionPolicyRules.events.quest.entryMode === "manual"
+    && questCompletionPolicyRules.events.quest.authorizedRoles.includes("admin")
+    && questCompletionPolicyRules.economy.positiveManualEventsPerMonth >= 1);
+  const questCompletionPolicyLabel = questCompletionPolicy
+    ? `${questCompletionPolicy.title} · v${questCompletionPolicy.version} · มีผล ${formatDueDate(questCompletionPolicy.effectiveDate)}`
+    : "ไม่พบนโยบาย Points ที่มีผลในวันที่เลือก";
+  const questCompletionMonth = questCompletionForm.completionDate.slice(0, 7);
+  const questCompletionMonthlyLimit = questCompletionPolicyRules.economy.positiveManualEventsPerMonth;
+  const questCompletionMonthlyCount = pointEvents.filter((event) => event.employeeId === questCompletionForm.employeeId && event.eventType === "quest" && event.eventDate.startsWith(questCompletionMonth)).length;
+  const questCompletionMonthlyLimitReached = Boolean(questCompletionPolicyAllowsAdminCompletion && questCompletionForm.employeeId && questCompletionMonthlyCount >= questCompletionMonthlyLimit);
+  const questCompletionPositiveEventPoints = pointEvents.filter((event) => event.employeeId === questCompletionForm.employeeId && event.eventDate.startsWith(questCompletionMonth) && event.eventType !== "monthly_evaluation" && event.points > 0).reduce((sum, event) => sum + event.points, 0);
+  const questCompletionWorkAwardPoints = pointLedger.filter((entry) => entry.employeeId === questCompletionForm.employeeId && (entry.sourceType === "task" || entry.sourceType === "mission") && bangkokIsoMonth(entry.createdAt) === questCompletionMonth && entry.points > 0).reduce((sum, entry) => sum + entry.points, 0);
+  const questCompletionProjectedStandardPoints = questCompletionPositiveEventPoints + questCompletionWorkAwardPoints + (questToFulfill?.pointsReward ?? 0);
+  const questCompletionStandardCap = questCompletionPolicyRules.economy.standardEarnMonthlyCap;
+  const questCompletionStandardCapExceeded = Boolean(questCompletionForm.employeeId && questCompletionProjectedStandardPoints > questCompletionStandardCap);
+  const questCompletionReward = questToFulfill?.rewardId ? rewards.find((reward) => reward.id === questToFulfill.rewardId) ?? null : null;
+  const questCompletionRewardUnavailable = Boolean(questToFulfill?.rewardId && (!questCompletionReward?.isActive || questCompletionReward.stock <= 0));
+  const questCompletionDateInvalid = Boolean(questToFulfill && (questCompletionMinDate > questCompletionMaxDate || questCompletionForm.completionDate < questCompletionMinDate || questCompletionForm.completionDate > questCompletionMaxDate));
+  const questCompletionEvidenceInvalid = !isHttpsUrl(questCompletionForm.evidenceUrl.trim());
+  const questCompletionEmployeeInvalid = !selectedQuestEligibleEmployees.some((employee) => employee.id === questCompletionForm.employeeId);
+  const questCompletionNoteInvalid = !questCompletionForm.note.trim() || Array.from(questCompletionForm.note.trim()).length > 1000;
+  const questCompletionPointsInvalid = Boolean(questToFulfill && questToFulfill.pointsReward > questCompletionPointLimit);
+  const questCompletionReady = Boolean(questToFulfill
+    && (questToFulfill.status === "active" || questToFulfill.status === "completed")
+    && questCompletionPolicyAllowsAdminCompletion
+    && !questCompletionEmployeeInvalid
+    && !questCompletionDateInvalid
+    && !questCompletionEvidenceInvalid
+    && !questCompletionPointsInvalid
+    && !questCompletionMonthlyLimitReached
+    && !questCompletionStandardCapExceeded
+    && !questCompletionRewardUnavailable
+    && !questCompletionNoteInvalid);
   const attendanceForDate = attendanceRecords.filter((record) => record.workDate === attendanceDate);
   const attendanceOnTimeCount = attendanceForDate.filter((record) => record.status === "present").length;
   const attendanceLateCount = attendanceForDate.filter((record) => record.status === "late").length;
@@ -1543,6 +1733,17 @@ export default function Home() {
   }, [accessiblePointLedger]);
   const notifications = useMemo<AppNotification[]>(() => {
     const items: AppNotification[] = [];
+    quests.filter((quest) => quest.status === "active").forEach((quest) => {
+      items.push({
+        id: `quest-center:${quest.id}:${quest.revision}`,
+        kind: "quest",
+        title: `${quest.isFeatured ? "เควสเด่น" : "มีเควสใหม่"}: ${quest.title}`,
+        message: `${questTypeMeta[quest.type].shortLabel} · ประกาศสิทธิ์ ${formatMoney(quest.pointsReward)} Points${quest.rewardId ? ` + ${quest.rewardTitleSnapshot || "รางวัลพิเศษ"}` : ""}`,
+        createdAt: quest.updatedAt,
+        questId: quest.id,
+        actionLabel: "เปิดศูนย์เควส",
+      });
+    });
     workItems.forEach((item) => {
       const employeeName = employeesById.get(item.assigneeEmployeeId)?.name ?? "พนักงาน";
       const projectName = projectsById.get(item.projectId)?.name ?? "งานทั่วไป";
@@ -1613,7 +1814,7 @@ export default function Home() {
         });
       });
     return items.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  }, [currentUser?.employeeId, currentUser?.role, employeesById, historicalRewardTitlesByRedemption, permissions.canReviewWork, projectsById, rewardRedemptions, rewards, todayDate, workItems, workSubmissions]);
+  }, [currentUser?.employeeId, currentUser?.role, employeesById, historicalRewardTitlesByRedemption, permissions.canReviewWork, projectsById, quests, rewardRedemptions, rewards, todayDate, workItems, workSubmissions]);
   const unreadNotifications = notifications.filter((item) => !notificationReadIds.has(item.id));
   const questNotificationCount = notifications.filter((item) => item.kind === "quest").length;
   const visibleNotifications = notifications.filter((item) => notificationFilter === "all" || (notificationFilter === "unread" && !notificationReadIds.has(item.id)) || (notificationFilter === "quest" && item.kind === "quest"));
@@ -1927,6 +2128,14 @@ export default function Home() {
       setWorkSection("rewards");
       return;
     }
+    if (notification.questId) {
+      setView("work");
+      setWorkSection("quests");
+      setQuestTypeFilter("all");
+      setQuestStatusFilter("current");
+      window.setTimeout(() => document.querySelector<HTMLElement>(`.quest-card[data-quest-id="${CSS.escape(notification.questId ?? "")}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 40);
+      return;
+    }
     const notificationWorkItem = notification.workItemId ? workItems.find((item) => item.id === notification.workItemId) : null;
     if (currentUser?.role === "employee" && currentUser.employeeId && notificationWorkItem) {
       const isOutgoingTeamTask = workItemCreatorId(notificationWorkItem) === currentUser.employeeId && notificationWorkItem.assigneeEmployeeId !== currentUser.employeeId;
@@ -2185,6 +2394,158 @@ export default function Home() {
       }
     } catch (error) {
       showErrorToast(error, "บันทึกงานไม่สำเร็จ");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const openQuestEditor = (quest?: QuestRecord) => {
+    if (!permissions.canManageQuests || isEmployeePreview) return;
+    if (quest?.status === "archived") {
+      showToast("เควสในประวัติเป็นข้อมูลอ่านอย่างเดียว ไม่สามารถแก้ไขหรือเปิดกลับได้", "error");
+      return;
+    }
+    setEditingQuest(quest ?? null);
+    setQuestForm(quest ? {
+      type: quest.type,
+      title: quest.title,
+      description: quest.description,
+      status: quest.status,
+      progress: quest.progress,
+      pointsReward: quest.pointsReward,
+      rewardId: quest.rewardId,
+      isFeatured: quest.isFeatured,
+      startDate: quest.startDate,
+      endDate: quest.endDate,
+      targetEmployeeIds: [...quest.targetEmployeeIds],
+      targetDepartmentIds: [...quest.targetDepartmentIds],
+    } : blankQuestForm(questPointLimit));
+    setShowQuestForm(true);
+  };
+
+  const closeQuestEditor = () => {
+    setShowQuestForm(false);
+    setEditingQuest(null);
+    setQuestForm(blankQuestForm(questPointLimit));
+  };
+
+  const saveQuest = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!permissions.canManageQuests || isEmployeePreview || editingQuest?.status === "archived" || !questAllowedStatuses.includes(questForm.status) || questTargetInvalid || questRewardUnavailable || questPointsInvalid || questPolicyUnavailable || questPolicyDisablesCompletions) return;
+    const targetEmployeeIds = questForm.type === "individual" ? questForm.targetEmployeeIds.slice(0, 1) : [];
+    const targetDepartmentIds = questForm.type === "team" ? [...new Set(questForm.targetDepartmentIds)] : [];
+    const progress = questForm.status === "completed" ? 100 : Math.max(0, Math.min(100, questForm.progress));
+    setIsSaving(true);
+    try {
+      const response = await fetch("/api/dashboard", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "saveQuest",
+          questId: editingQuest?.id,
+          expectedRevision: editingQuest?.revision,
+          expectedUpdatedAt: editingQuest?.updatedAt,
+          ...questForm,
+          progress,
+          targetEmployeeIds,
+          targetDepartmentIds,
+        }),
+      });
+      const body = await response.json() as { quest?: QuestRecord; error?: string };
+      if (!response.ok || !body.quest) throw new Error(body.error ?? "บันทึกเควสไม่สำเร็จ");
+      setQuests((items) => [...items.filter((item) => item.id !== body.quest?.id), body.quest as QuestRecord]);
+      const savedTitle = body.quest.title;
+      closeQuestEditor();
+      showToast(editingQuest ? `บันทึกเควส “${savedTitle}” แล้ว` : `สร้างเควส “${savedTitle}” แล้ว`);
+    } catch (error) {
+      showErrorToast(error, "บันทึกเควสไม่สำเร็จ");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const deleteQuest = async (quest: QuestRecord) => {
+    if (!permissions.canManageQuests || isEmployeePreview || quest.status === "archived") return;
+    const accepted = window.confirm(`ลบเควส “${quest.title}” ออกจากหน้าผู้เข้าร่วมใช่หรือไม่?\n\nระบบจะเก็บเควสเป็นประวัติ ไม่ลบข้อมูลเดิม และไม่เปลี่ยนรายการ Points หรือรางวัลย้อนหลัง`);
+    if (!accepted) return;
+    setIsSaving(true);
+    try {
+      const response = await fetch("/api/dashboard", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "deleteQuest", questId: quest.id, expectedRevision: quest.revision, expectedUpdatedAt: quest.updatedAt, confirmation: `ลบเควส ${quest.title}` }),
+      });
+      const body = await response.json() as { quest?: QuestRecord; archived?: boolean; error?: string };
+      if (!response.ok || !body.quest || !body.archived) throw new Error(body.error ?? "ลบเควสไม่สำเร็จ");
+      setQuests((items) => items.map((item) => item.id === body.quest?.id ? body.quest as QuestRecord : item));
+      closeQuestEditor();
+      setQuestStatusFilter("current");
+      showToast(`นำเควส “${quest.title}” ออกจากหน้าผู้เข้าร่วมแล้ว และเก็บประวัติไว้`);
+    } catch (error) {
+      showErrorToast(error, "ลบเควสไม่สำเร็จ");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const openQuestFulfillment = (quest: QuestRecord) => {
+    if (!permissions.canManageQuests || isEmployeePreview || (quest.status !== "active" && quest.status !== "completed")) return;
+    const eligibleEmployees = eligibleEmployeesForQuest(quest);
+    const maxDate = quest.endDate < todayDate ? quest.endDate : todayDate;
+    setQuestToFulfill(quest);
+    setQuestCompletionForm({
+      employeeId: eligibleEmployees[0]?.id ?? "",
+      completionDate: maxDate,
+      evidenceUrl: "",
+      note: "",
+    });
+  };
+
+  const closeQuestFulfillment = () => {
+    setQuestToFulfill(null);
+    setQuestCompletionForm(blankQuestCompletionForm());
+  };
+
+  const completeQuestForEmployee = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!questToFulfill || !permissions.canManageQuests || isEmployeePreview || !questCompletionReady) return;
+    setIsSaving(true);
+    try {
+      const response = await fetch("/api/dashboard", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "completeQuestForEmployee",
+          questId: questToFulfill.id,
+          employeeId: questCompletionForm.employeeId,
+          completionDate: questCompletionForm.completionDate,
+          expectedRevision: questToFulfill.revision,
+          expectedUpdatedAt: questToFulfill.updatedAt,
+          evidenceUrl: questCompletionForm.evidenceUrl.trim(),
+          note: questCompletionForm.note.trim(),
+        }),
+      });
+      const body = await response.json().catch(() => ({})) as { questCompletion?: QuestCompletionRecord; pointEvent?: PointEventRecord | null; pointEntry?: PointLedgerRecord | null; reward?: RewardRecord | null; idempotentReplay?: boolean; error?: string };
+      if (!response.ok || !body.questCompletion) {
+        if (response.status === 409) {
+          closeQuestFulfillment();
+          setDashboardReloadKey((value) => value + 1);
+        }
+        throw new Error(body.error ?? "บันทึกผลเควสไม่สำเร็จ");
+      }
+      setQuestCompletions((items) => [body.questCompletion as QuestCompletionRecord, ...items.filter((item) => item.id !== body.questCompletion?.id)]);
+      if (body.pointEvent) setPointEvents((items) => [body.pointEvent as PointEventRecord, ...items.filter((item) => item.id !== body.pointEvent?.id)]);
+      if (body.pointEntry) setPointLedger((items) => [body.pointEntry as PointLedgerRecord, ...items.filter((item) => item.id !== body.pointEntry?.id)]);
+      if (body.reward) setRewards((items) => [body.reward as RewardRecord, ...items.filter((item) => item.id !== body.reward?.id)]);
+      const employeeName = body.questCompletion.employeeNameSnapshot;
+      const pointsAwarded = body.questCompletion.pointsAwarded;
+      const rewardCopy = body.questCompletion.rewardId ? ` และรางวัล ${body.questCompletion.rewardTitleSnapshot}` : "";
+      closeQuestFulfillment();
+      showToast(body.idempotentReplay
+        ? `รายการของ ${employeeName} ถูกบันทึกไว้แล้ว ระบบไม่มอบสิทธิ์ซ้ำ`
+        : `มอบ ${formatMoney(pointsAwarded)} Points${rewardCopy} ให้ ${employeeName} แล้ว`);
+    } catch (error) {
+      showErrorToast(error, "บันทึกผลเควสไม่สำเร็จ");
     } finally {
       setIsSaving(false);
     }
@@ -3416,7 +3777,8 @@ export default function Home() {
     { id: "stock", passed: rewardToRedeem.stock > 0, title: "รางวัลยังมีสิทธิ์คงเหลือ", detail: `เหลือ ${rewardToRedeem.stock} สิทธิ์` },
   ] : [];
   const canSubmitRewardRedemption = Boolean(activeRewardEmployeeId) && !isEmployeePreview && rewardPreflightChecks.every((check) => check.passed);
-  const activeViewTitle = view === "work" && workSection === "points" && pointPanel === "policies" ? "กฎองค์กรและการรับทราบ"
+  const activeViewTitle = view === "work" && workSection === "quests" ? "ศูนย์เควส"
+    : view === "work" && workSection === "points" && pointPanel === "policies" ? "กฎองค์กรและการรับทราบ"
     : isEmployeeUser && view === "work" && workSection === "points" ? "Points สะสมของฉัน"
     : isEmployeeUser && view === "work" && workSection === "rewards" ? "แลกรางวัล"
       : isEmployeeUser && view === "work" ? "งานของฉัน"
@@ -3425,7 +3787,8 @@ export default function Home() {
             : isEmployeeUser && view === "power" ? "ค่าพลังของฉันและทีม"
               : isEmployeeUser && view === "peopleOps" ? "การเติบโตและเงินเดือนของฉัน"
                 : viewMeta[view].title;
-  const activeViewDescription = view === "work" && workSection === "points" && pointPanel === "policies" ? (isAdmin ? "ร่าง ตรวจความครบถ้วน และประกาศกฎองค์กรให้พนักงานรับทราบอย่างตรวจสอบได้" : "อ่านกฎที่ประกาศใช้ เข้าใจกติกา Points และบันทึกการรับทราบของคุณ")
+  const activeViewDescription = view === "work" && workSection === "quests" ? (permissions.canManageQuests ? "สร้าง จัดกลุ่ม และประกาศเควสพร้อม Points และรางวัลให้ทีมเห็นอย่างชัดเจน" : "ดูเควสที่เปิดสำหรับคุณหรือทีม พร้อมเป้าหมาย กำหนดส่ง Points และรางวัลในที่เดียว")
+    : view === "work" && workSection === "points" && pointPanel === "policies" ? (isAdmin ? "ร่าง ตรวจความครบถ้วน และประกาศกฎองค์กรให้พนักงานรับทราบอย่างตรวจสอบได้" : "อ่านกฎที่ประกาศใช้ เข้าใจกติกา Points และบันทึกการรับทราบของคุณ")
     : isEmployeeUser && view === "work" && workSection === "points" ? "ตรวจสอบยอด Points รายการได้–เสีย Points และที่มาทุกรายการของคุณ"
     : isEmployeeUser && view === "work" && workSection === "rewards" ? "ใช้ Points ของคุณแลกรางวัล และติดตามสถานะคำขอได้ในที่เดียว"
       : isEmployeeUser && view === "work" ? "ดูสิ่งที่ต้องทำ เริ่มงาน อัปเดตความคืบหน้า และส่งหลักฐานได้ในไม่กี่ขั้นตอน"
@@ -3557,13 +3920,14 @@ export default function Home() {
   return (
     <main className={`app-shell calm-shell ${isEmployeeUser ? "employee-portal-shell" : ""}`}>
       <header className="topbar">
-        <button className="brand" onClick={() => { setActiveDepartment("all"); setWorkSection("tasks"); setWorkDueFilter("all"); setWorkSearch(""); setView("work"); }} aria-label="ไปที่รายการงาน">
+        <button className="brand" onClick={() => { setActiveDepartment("all"); setWorkSection("quests"); setView("work"); }} aria-label="ไปที่ศูนย์เควส">
           <span className="brand-mark" aria-hidden="true"><i /><i /><i /></span>
           <span><strong>{isEmployeeUser ? "MY PEOPLE PULSE" : "PEOPLE PULSE"}</strong><small>{isEmployeeUser ? "EMPLOYEE PORTAL" : "PEOPLE &amp; WORK OS"}</small></span>
         </button>
         <nav aria-label="เมนูหลัก">
           {isEmployeeUser ? <>
             <span className="nav-section-label">พื้นที่ของฉัน</span>
+            <button className={view === "work" && workSection === "quests" ? "active quest-nav-button" : "quest-nav-button"} onClick={() => { setQuestTypeFilter("all"); setWorkSection("quests"); setView("work"); }}><span aria-hidden="true">Q</span><b>เควสของฉัน</b><em>{currentQuests.length}</em></button>
             <button className={view === "work" && workSection === "tasks" ? "active" : ""} onClick={() => { setActiveDepartment("all"); setEmployeeTaskScope("assigned"); setWorkSection("tasks"); setWorkAssigneeFilter(currentUser?.employeeId ?? "all"); setWorkDueFilter("all"); setWorkSearch(""); setView("work"); }}><span aria-hidden="true">✓</span><b>งานของฉัน</b><em>{employeeAssignedWorkItems.filter((item) => item.status !== "done").length}</em></button>
             <button className={view === "portfolio" ? "active" : ""} onClick={() => { setPortfolioEmployeeId(currentUser?.employeeId ?? "all"); setView("portfolio"); }}><span aria-hidden="true">◇</span><b>แฟ้มผลงานของฉัน</b></button>
             <span className="nav-section-label">ทีมของฉัน</span>
@@ -3575,7 +3939,8 @@ export default function Home() {
             <button className={view === "work" && workSection === "points" && pointPanel === "policies" ? "active" : ""} onClick={() => { setPointPanel("policies"); setWorkSection("points"); setView("work"); }}><span aria-hidden="true">§</span><b>กฎองค์กร</b>{pendingPolicyAcknowledgementCount > 0 && <em>{pendingPolicyAcknowledgementCount}</em>}</button>
           </> : <>
             <span className="nav-section-label">พื้นที่ทำงาน</span>
-            <button className={view === "work" && !(workSection === "points" && pointPanel === "policies") ? "active" : ""} onClick={() => { setActiveDepartment("all"); setWorkSection("tasks"); setWorkDueFilter("all"); setWorkSearch(""); setView("work"); }}><span aria-hidden="true">✓</span><b>งาน</b><em>{workItems.filter((item) => item.status !== "done").length}</em></button>
+            <button className={view === "work" && workSection === "quests" ? "active quest-nav-button" : "quest-nav-button"} onClick={() => { setQuestTypeFilter("all"); setWorkSection("quests"); setView("work"); }}><span aria-hidden="true">Q</span><b>ศูนย์เควส</b><em>{currentQuests.length}</em></button>
+            <button className={view === "work" && workSection !== "quests" && !(workSection === "points" && pointPanel === "policies") ? "active" : ""} onClick={() => { setActiveDepartment("all"); setWorkSection("tasks"); setWorkDueFilter("all"); setWorkSearch(""); setView("work"); }}><span aria-hidden="true">✓</span><b>งาน</b><em>{workItems.filter((item) => item.status !== "done").length}</em></button>
             <button className={view === "portfolio" ? "active" : ""} onClick={() => setView("portfolio")}><span aria-hidden="true">◇</span><b>แฟ้มผลงาน</b></button>
             <button className={showAiAssistant ? "active" : ""} onClick={openPeopleAi}><span aria-hidden="true">AI</span><b>ผู้ช่วย AI</b><em>ใหม่</em></button>
             <button className={view === "office" ? "active" : ""} onClick={() => setView("office")}><span aria-hidden="true">⌂</span><b>สำนักงานจำลอง</b><em>{officePressureCount}</em></button>
@@ -4801,6 +5166,7 @@ export default function Home() {
           <section className="mission-layout">
             <nav className="work-section-tabs" aria-label="เลือกส่วนจัดการงาน">
               {([
+                { id: "quests", icon: "Q", label: "ศูนย์เควส", copy: isEmployeeUser ? "เควสสำหรับฉัน" : "สร้างและจัดการ", value: currentQuests.length },
                 { id: "tasks", icon: "✓", label: "รายการงาน", copy: "งานที่ต้องทำ", value: (isEmployeeUser ? employeeAssignedWorkItems : workItems).filter((item) => item.status !== "done").length },
                 { id: "projects", icon: "◇", label: "โปรเจกต์", copy: "ติดตามภาพรวม", value: projects.length },
                 { id: "points", icon: "★", label: isEmployeeUser ? "Points ของฉัน" : "จัดการ Points", copy: isEmployeeUser ? "ยอด กฎ ประวัติ" : "รอบ กฎ ประวัติ", value: totalPoints },
@@ -4813,6 +5179,73 @@ export default function Home() {
                 </button>
               ))}
             </nav>
+
+            {workSection === "quests" && <section className="quest-center" aria-labelledby="quest-center-title">
+              <header className="quest-center-hero">
+                <div className="quest-center-copy">
+                  <p className="eyebrow">QUEST CENTER</p>
+                  <h2 id="quest-center-title">ภารกิจเด่นของคนและทีม</h2>
+                  <p>{permissions.canManageQuests ? "สร้างเควสรายบุคคล เควสทีม และกิจกรรม พร้อมกำหนด Points และรางวัลให้เห็นชัดตั้งแต่เริ่ม" : "เลือกดูเป้าหมายที่เปิดสำหรับคุณ อ่านเงื่อนไข และติดตามความคืบหน้าได้จากที่เดียว"}</p>
+                  {permissions.canManageQuests && !isEmployeePreview && <button type="button" onClick={() => openQuestEditor()}><span aria-hidden="true">＋</span> สร้างเควสใหม่</button>}
+                </div>
+                <div className="quest-hero-orbit" aria-hidden="true"><span>Q</span><i /><i /><i /></div>
+                <div className="quest-hero-stats" aria-label="ภาพรวมเควส">
+                  <article><small>เปิดอยู่</small><strong>{currentQuests.length}</strong><span>เควส</span></article>
+                  <article><small>Points ที่ประกาศ</small><strong>{formatMoney(activeQuestPoints)}</strong><span>Points</span></article>
+                  <article><small>รางวัลพิเศษ</small><strong>{activeQuestRewards}</strong><span>รายการ</span></article>
+                  <article><small>ความคืบหน้าเฉลี่ย</small><strong>{questProgressAverage}%</strong><span>จากเควสเปิด</span></article>
+                </div>
+              </header>
+
+              <div className="quest-control-bar">
+                <div className="quest-type-filters" role="group" aria-label="กรองประเภทเควส">
+                  {([{ id: "all", label: "ทุกเควส", icon: "Q" }, ...Object.entries(questTypeMeta).map(([id, meta]) => ({ id, label: meta.shortLabel, icon: meta.icon }))] as { id: QuestTypeFilter; label: string; icon: string }[]).map((filter) => <button type="button" key={filter.id} className={questTypeFilter === filter.id ? "active" : ""} aria-pressed={questTypeFilter === filter.id} onClick={() => setQuestTypeFilter(filter.id)}><span aria-hidden="true">{filter.icon}</span>{filter.label}<b>{filter.id === "all" ? quests.length : quests.filter((quest) => quest.type === filter.id).length}</b></button>)}
+                </div>
+                {permissions.canManageQuests && <div className="quest-status-filters" role="group" aria-label="กรองสถานะเควส">
+                  {([{ id: "current", label: "กำลังจัดการ" }, { id: "archived", label: "ประวัติ" }, { id: "all", label: "ทั้งหมด" }] as { id: QuestStatusFilter; label: string }[]).map((filter) => <button type="button" key={filter.id} className={questStatusFilter === filter.id ? "active" : ""} aria-pressed={questStatusFilter === filter.id} onClick={() => setQuestStatusFilter(filter.id)}>{filter.label}</button>)}
+                </div>}
+              </div>
+
+              <div className="quest-card-grid" aria-live="polite">
+                {filteredQuests.map((quest) => {
+                  const typeMeta = questTypeMeta[quest.type];
+                  const statusMeta = questStatusMeta[quest.status];
+                  const deadlineState = quest.status === "completed" ? "completed" : quest.endDate < todayDate ? "overdue" : quest.endDate === todayDate ? "today" : "upcoming";
+                  const completions = questCompletionsByQuest.get(quest.id) ?? [];
+                  const ownCompletion = currentUser?.role === "employee" && currentUser.employeeId ? completions.find((completion) => completion.employeeId === currentUser.employeeId) ?? null : null;
+                  return <article key={quest.id} data-quest-id={quest.id} className={`quest-card type-${quest.type} status-${quest.status} ${quest.isFeatured ? "featured" : ""}`}>
+                    {quest.isFeatured && <span className="quest-featured-ribbon"><i aria-hidden="true">✦</i> เควสเด่น</span>}
+                    <header>
+                      <span className={`quest-type-icon ${quest.type}`} aria-hidden="true">{typeMeta.icon}</span>
+                      <div><span className={`quest-type-badge ${quest.type}`}>{typeMeta.label}</span><h3>{quest.title}</h3></div>
+                      <span className={`quest-status-badge ${quest.status}`}>{statusMeta.label}</span>
+                    </header>
+                    <p className="quest-description">{quest.description || "ยังไม่มีรายละเอียดเพิ่มเติม"}</p>
+                    <div className="quest-audience"><span aria-hidden="true">◎</span><p><small>ผู้เข้าร่วม</small><strong>{questAudienceLabel(quest)}</strong></p></div>
+                    <div className="quest-benefits">
+                      <span className="quest-points-benefit"><small>สิทธิ์ที่ประกาศเมื่อสำเร็จ</small><strong>★ {formatMoney(quest.pointsReward)} Points</strong></span>
+                      {quest.rewardId && <span className="quest-reward-benefit"><i aria-hidden="true">{quest.rewardIconSnapshot || "♢"}</i><span><small>รางวัลพิเศษ</small><strong>{quest.rewardTitleSnapshot || "รางวัลที่กำหนด"}</strong></span></span>}
+                    </div>
+                    <div className="quest-progress-block">
+                      <div><span><small>ความคืบหน้า</small><strong>{quest.progress}%</strong></span><span className={`quest-deadline ${deadlineState}`}><small>{deadlineState === "overdue" ? "เลยกำหนด" : deadlineState === "today" ? "สิ้นสุดวันนี้" : deadlineState === "completed" ? "ปิดสำเร็จ" : "สิ้นสุด"}</small><strong>{formatDueDate(quest.endDate)}</strong></span></div>
+                      <i role="progressbar" aria-label={`ความคืบหน้าเควส ${quest.title}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={quest.progress}><b style={{ width: `${quest.progress}%` }} /></i>
+                      <small>{formatDueDate(quest.startDate)} – {formatDueDate(quest.endDate)}</small>
+                    </div>
+                    {ownCompletion ? <div className="quest-own-fulfillment" role="status"><span aria-hidden="true">✓</span><p><strong>ได้รับสิทธิ์แล้ว</strong><small>{formatMoney(ownCompletion.pointsAwarded)} Points{ownCompletion.rewardId ? ` + ${ownCompletion.rewardIconSnapshot || "♢"} ${ownCompletion.rewardTitleSnapshot}` : ""} · ยืนยัน {formatDueDate(ownCompletion.completionDate)}</small></p></div>
+                      : currentUser?.role === "employee" ? <div className="quest-own-fulfillment pending"><span aria-hidden="true">○</span><p><strong>ยังไม่ได้รับสิทธิ์</strong><small>ทำตามเกณฑ์และส่งหลักฐานให้ HR ตรวจ ก่อนระบบมอบ Points และรางวัล</small></p></div>
+                        : <div className="quest-fulfillment-count"><span aria-hidden="true">✓</span><p><small>{permissions.canManageQuests ? "มอบสิทธิ์แล้ว" : "ทีมที่ได้รับสิทธิ์แล้ว"}</small><strong>{completions.length} คน</strong></p></div>}
+                    {permissions.canManageQuests && completions.length > 0 && <details className="quest-fulfillment-history"><summary>ดูรายชื่อและประวัติการมอบสิทธิ์ <b>{completions.length}</b></summary><div>{completions.map((completion) => <article key={completion.id}><span aria-hidden="true">{completion.rewardIconSnapshot || "★"}</span><p><strong>{completion.employeeNameSnapshot} · {completion.employeeDepartmentNameSnapshot}</strong><small>{formatDueDate(completion.completionDate)} · {formatMoney(completion.pointsAwarded)} Points{completion.rewardId ? ` · ${completion.rewardTitleSnapshot}` : ""}</small><small>{completion.note}</small><small>ตรวจโดย {completion.completedByName} · {formatUpdatedAt(completion.completedAt)}</small></p><a href={completion.evidenceUrl} target="_blank" rel="noreferrer" aria-label={`เปิดหลักฐานของ ${completion.employeeNameSnapshot}`}>หลักฐาน ↗</a></article>)}</div></details>}
+                    <footer>
+                      <p><span aria-hidden="true">i</span><small>{quest.fulfillmentNotice}</small></p>
+                      {permissions.canManageQuests && !isEmployeePreview && quest.status !== "archived" && <div className="quest-card-actions">{(quest.status === "active" || quest.status === "completed") && <button type="button" className="fulfill" onClick={() => openQuestFulfillment(quest)}>ตรวจผลและมอบสิทธิ์</button>}<button type="button" onClick={() => openQuestEditor(quest)}>แก้ไขเควส</button><button type="button" className="danger" disabled={isSaving} onClick={() => void deleteQuest(quest)}>ลบ</button></div>}
+                    </footer>
+                  </article>;
+                })}
+                {!filteredQuests.length && <div className="quest-empty" role="status"><span aria-hidden="true">Q</span><strong>{questStatusFilter === "archived" ? "ยังไม่มีเควสในประวัติ" : "ยังไม่มีเควสในหมวดนี้"}</strong><p>{permissions.canManageQuests ? "สร้างเควสใหม่ หรือเลือกตัวกรองอื่นเพื่อดูรายการที่มีอยู่" : "เมื่อ HR เปิดเควสที่ตรงกับคุณ ทีม หรือกิจกรรมองค์กร เควสจะปรากฏที่นี่"}</p>{permissions.canManageQuests && !isEmployeePreview && <button type="button" onClick={() => openQuestEditor()}>＋ สร้างเควสแรก</button>}</div>}
+              </div>
+
+              <div className="quest-review-note" role="note"><span aria-hidden="true">✓</span><p><strong>มอบสิทธิ์หลัง HR / Admin ตรวจหลักฐานเท่านั้น</strong><small>เมื่อยืนยันผล ระบบจะเพิ่ม Points ตามจำนวนที่ประกาศและตัดสต็อกรางวัลในรายการเดียว พร้อมเก็บผู้ตรวจ นโยบาย และหลักฐานเพื่อป้องกันการมอบซ้ำ</small></p></div>
+            </section>}
 
             {workSection === "tasks" && <section className="simple-todo-card" aria-labelledby="simple-todo-title">
               <div className="simple-todo-heading">
@@ -5206,6 +5639,84 @@ export default function Home() {
               <div className="signature-audit"><span>⌁</span><p><strong>ข้อจำกัด:</strong> ระบบจะบันทึกบัญชี ชื่อ คำยินยอม และเวลา แต่ยังไม่ผูก hash กับไฟล์เอกสาร จึงห้ามใช้รายการนี้แทนบริการลงนามที่ผ่านการตรวจด้านกฎหมายและความน่าเชื่อถือ</p></div>
             </div>
             <div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setContractToSign(null)}>ยกเลิก</button><button className="primary-button" disabled={isSaving || !signatureForm.consent || signatureForm.signedName.trim() !== contractSigningEmployee.name.trim()}>{isSaving ? "กำลังบันทึก..." : "ยืนยันขั้นตอน (Pilot)"}</button></div>
+          </form>
+        </div>
+      )}
+
+      {questToFulfill && permissions.canManageQuests && !isEmployeePreview && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && closeQuestFulfillment()}>
+          <form className="quest-fulfillment-modal" onSubmit={completeQuestForEmployee} role="dialog" aria-modal="true" aria-labelledby="quest-fulfillment-title" aria-describedby="quest-fulfillment-description">
+            <header className="quest-fulfillment-hero">
+              <span className={`quest-form-icon ${questToFulfill.type}`} aria-hidden="true">{questTypeMeta[questToFulfill.type].icon}</span>
+              <div><p className="eyebrow">VERIFIED QUEST RESULT</p><h2 id="quest-fulfillment-title">ตรวจผลและมอบสิทธิ์</h2><p id="quest-fulfillment-description">ยืนยันผู้สำเร็จเควส “{questToFulfill.title}” จากหลักฐานจริง ระบบจะมอบสิทธิ์หนึ่งครั้งต่อคน</p></div>
+              <button type="button" className="modal-close dark" onClick={closeQuestFulfillment} aria-label="ปิดหน้าต่างตรวจผลเควส">×</button>
+              <div className="quest-fulfillment-preview">
+                <span><small>Points ที่มอบจริง</small><strong>★ {formatMoney(questToFulfill.pointsReward)}</strong></span>
+                <span><small>รางวัลจาก snapshot</small><strong>{questToFulfill.rewardId ? `${questToFulfill.rewardIconSnapshot || "♢"} ${questToFulfill.rewardTitleSnapshot}` : "ไม่มีรางวัลพิเศษ"}</strong></span>
+                <span><small>มอบแล้ว</small><strong>{selectedQuestCompletions.length} คน</strong></span>
+              </div>
+            </header>
+            <div className="quest-fulfillment-body">
+              <div className="quest-fulfillment-grid">
+                <label className="wide"><span>พนักงานที่ผ่านเควส</span><select autoFocus required value={questCompletionForm.employeeId} onChange={(event) => setQuestCompletionForm((form) => ({ ...form, employeeId: event.target.value }))}><option value="">เลือกพนักงาน</option>{selectedQuestEligibleEmployees.map((employee) => { const role = getRole(employee.roleId); return <option key={employee.id} value={employee.id}>{employee.name} · {role.department} · {role.shortName}</option>; })}</select><small>แสดงเฉพาะพนักงานที่ทำงานอยู่ ตรงขอบเขตเควส ยังไม่เคยรับสิทธิ์ และไม่ใช่ผู้ตรวจเอง</small></label>
+                <label><span>วันที่ทำสำเร็จ</span><input required type="date" min={questCompletionMinDate} max={questCompletionMaxDate} disabled={questCompletionMinDate > questCompletionMaxDate} value={questCompletionForm.completionDate} onChange={(event) => setQuestCompletionForm((form) => ({ ...form, completionDate: event.target.value }))} /><small>อยู่ในช่วงเควส ไม่เกินวันนี้ และย้อนหลังได้ไม่เกิน 90 วัน</small></label>
+                <label><span>Points ที่ระบบจะเพิ่ม</span><input readOnly aria-readonly="true" value={`${formatMoney(questToFulfill.pointsReward)} Points`} /><small>ใช้จำนวนตามเควสแบบตรงตัว ระบบจะไม่ปรับลดให้อัตโนมัติ</small></label>
+                <label className="wide"><span>ลิงก์หลักฐาน HTTPS</span><input required type="url" inputMode="url" pattern="https://.*" maxLength={1200} value={questCompletionForm.evidenceUrl} onChange={(event) => setQuestCompletionForm((form) => ({ ...form, evidenceUrl: event.target.value }))} placeholder="https://drive.google.com/..." aria-describedby="quest-fulfillment-evidence-help" /><small id="quest-fulfillment-evidence-help">ต้องเป็นลิงก์ https:// ที่ผู้ตรวจเปิดดูผลงานหรือหลักฐานได้</small>{questCompletionForm.evidenceUrl && questCompletionEvidenceInvalid && <small className="quest-form-error" role="alert">ลิงก์หลักฐานต้องขึ้นต้นด้วย https:// และเป็น URL ที่ถูกต้อง</small>}</label>
+                <label className="wide"><span>บันทึกผลการตรวจ</span><textarea required maxLength={1000} value={questCompletionForm.note} onChange={(event) => setQuestCompletionForm((form) => ({ ...form, note: event.target.value }))} placeholder="ระบุเกณฑ์ที่ผ่าน สิ่งที่ตรวจพบ และเหตุผลที่อนุมัติสิทธิ์นี้" /><small>บันทึกนี้จะเก็บกับประวัติการมอบสิทธิ์เพื่อใช้อ้างอิงภายหลัง · ไม่เกิน 1,000 ตัวอักษร</small></label>
+              </div>
+
+              {!selectedQuestEligibleEmployees.length && <div className="quest-fulfillment-alert" role="status"><span aria-hidden="true">i</span><p><strong>ไม่มีพนักงานที่พร้อมรับสิทธิ์เพิ่ม</strong><small>ผู้เข้าร่วมอาจได้รับสิทธิ์ครบแล้ว ไม่มีพนักงานที่ยังทำงานในขอบเขต หรือบัญชีผู้ตรวจเป็นผู้เข้าร่วมเพียงคนเดียว</small></p></div>}
+              {questCompletionDateInvalid && <div className="quest-fulfillment-alert error" role="alert"><span aria-hidden="true">!</span><p><strong>วันที่อยู่นอกช่วงที่อนุญาต</strong><small>เลือกวันที่ตั้งแต่ {formatDueDate(questCompletionMinDate)} ถึง {formatDueDate(questCompletionMaxDate)} หากเควสเก่ากว่า 90 วัน ระบบจะไม่อนุญาตให้บันทึกย้อนหลัง</small></p></div>}
+              {!questCompletionPolicy && <div className="quest-fulfillment-alert error" role="alert"><span aria-hidden="true">!</span><p><strong>ไม่มีนโยบาย Points ที่ใช้กับวันที่ทำสำเร็จ</strong><small>ยังมอบสิทธิ์ไม่ได้ กรุณาเผยแพร่กฎ Points ที่ครอบคลุมวันที่ {formatDueDate(questCompletionForm.completionDate)} แล้วลองใหม่</small></p></div>}
+              {questCompletionPolicy && !questCompletionPolicyAllowsAdminCompletion && <div className="quest-fulfillment-alert error" role="alert"><span aria-hidden="true">!</span><p><strong>นโยบายในวันที่เลือกไม่อนุญาตให้ Admin มอบสิทธิ์จากเควส</strong><small>กฎเควสต้องเป็นแบบ manual, ระบุ Admin เป็นผู้มีสิทธิ์ และกำหนดโควตา Points บวกแบบ manual อย่างน้อย 1 ครั้งต่อเดือน</small></p></div>}
+              {questCompletionPolicy && questCompletionPointsInvalid && <div className="quest-fulfillment-alert error" role="alert"><span aria-hidden="true">!</span><p><strong>Points ของเควสเกินเพดานนโยบายในวันที่เลือก</strong><small>เควสกำหนด {formatMoney(questToFulfill.pointsReward)} Points แต่กฎอนุญาตสูงสุด {formatMoney(questCompletionPointLimit)} Points ระบบจะไม่ตัดคะแนนลงเอง กรุณาแก้จำนวนในเควสก่อนตรวจผล</small></p></div>}
+              {questCompletionPolicy && questCompletionMonthlyLimitReached && <div className="quest-fulfillment-alert error" role="alert"><span aria-hidden="true">!</span><p><strong>พนักงานได้รับ Points จากเควสครบโควตาเดือนนี้แล้ว</strong><small>มีประวัติ {questCompletionMonthlyCount} ครั้ง จากเพดาน {questCompletionMonthlyLimit} ครั้งในเดือน {questCompletionMonth}</small></p></div>}
+              {questCompletionPolicy && questCompletionStandardCapExceeded && <div className="quest-fulfillment-alert error" role="alert"><span aria-hidden="true">!</span><p><strong>การมอบครั้งนี้จะเกินเพดาน Points บวกมาตรฐานรายเดือน</strong><small>หลังมอบจะเป็น {formatMoney(questCompletionProjectedStandardPoints)} Points แต่กฎกำหนดสูงสุด {formatMoney(questCompletionStandardCap)} Points ระบบจะไม่มอบเพียงบางส่วน</small></p></div>}
+              {questCompletionRewardUnavailable && <div className="quest-fulfillment-alert error" role="alert"><span aria-hidden="true">!</span><p><strong>รางวัลที่ประกาศปิดอยู่หรือหมดสต็อก</strong><small>เปิดรางวัลและเติมสต็อก “{questToFulfill.rewardTitleSnapshot}” ก่อน จึงจะมอบ Points และรางวัลพร้อมกันได้</small></p></div>}
+
+              <div className="quest-fulfillment-policy" role="note"><span aria-hidden="true">i</span><p><strong>เพดานตามวันที่เลือก: ไม่เกิน {formatMoney(questCompletionPointLimit)} Points ต่อการสำเร็จเควส</strong><small>{questCompletionPolicyRules.events.quest.description} · {questCompletionPolicyLabel}</small><small>เมื่อยืนยัน ระบบจะบันทึกผล เพิ่ม Points และตัดสต็อกรางวัลในธุรกรรมเดียว ไม่เปลี่ยนสถานะหรือความคืบหน้าของเควส และจะไม่มอบซ้ำให้คนเดิม</small></p></div>
+            </div>
+            <div className="modal-actions quest-fulfillment-actions"><button type="button" className="secondary-button" onClick={closeQuestFulfillment}>ยกเลิก</button><button className="primary-button" disabled={isSaving || !questCompletionReady}>{isSaving ? "กำลังตรวจและบันทึก..." : `ยืนยันและมอบ ${formatMoney(questToFulfill.pointsReward)} Points`}</button></div>
+          </form>
+        </div>
+      )}
+
+      {showQuestForm && permissions.canManageQuests && !isEmployeePreview && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && closeQuestEditor()}>
+          <form className="quest-form-modal" onSubmit={saveQuest} role="dialog" aria-modal="true" aria-labelledby="quest-form-title" aria-describedby="quest-form-description">
+            <header className="quest-form-hero">
+              <span className={`quest-form-icon ${questForm.type}`} aria-hidden="true">{questTypeMeta[questForm.type].icon}</span>
+              <div><p className="eyebrow">QUEST BUILDER</p><h2 id="quest-form-title">{editingQuest ? "แก้ไขและจัดการเควส" : "สร้างเควสใหม่"}</h2><p id="quest-form-description">กำหนดกลุ่มเป้าหมาย ช่วงเวลา Points และรางวัลที่ประกาศให้ผู้เข้าร่วมเห็น</p></div>
+              <button type="button" className="modal-close dark" onClick={closeQuestEditor} aria-label="ปิดหน้าต่างจัดการเควส">×</button>
+              <div className="quest-form-preview"><span>{questStatusMeta[questForm.status].label}</span><strong>{questForm.title || "ชื่อเควสของคุณ"}</strong><small>{questTypeMeta[questForm.type].label} · ★ {formatMoney(questForm.pointsReward)} Points</small></div>
+            </header>
+            <div className="quest-form-body">
+              <fieldset className="quest-type-picker"><legend>ประเภทเควส</legend>{(Object.entries(questTypeMeta) as [QuestRecord["type"], (typeof questTypeMeta)[QuestRecord["type"]]][]).map(([type, meta]) => <button type="button" key={type} disabled={editingQuestHasCompletions} className={questForm.type === type ? `active ${type}` : type} aria-pressed={questForm.type === type} onClick={() => setQuestForm((form) => ({ ...form, type, targetEmployeeIds: type === "individual" ? [form.targetEmployeeIds[0] ?? activeEmployees[0]?.id].filter(Boolean) as string[] : [], targetDepartmentIds: type === "team" ? form.targetDepartmentIds : [] }))}><span aria-hidden="true">{meta.icon}</span><p><strong>{meta.label}</strong><small>{meta.description}</small></p></button>)}</fieldset>
+
+              <div className="quest-form-grid">
+                <label className="wide"><span>ชื่อเควส</span><input autoFocus required disabled={editingQuestHasCompletions} maxLength={180} value={questForm.title} onChange={(event) => setQuestForm((form) => ({ ...form, title: event.target.value }))} placeholder="เช่น พิชิตเป้ายอดขายประจำสัปดาห์" /></label>
+                <label className="wide"><span>รายละเอียดและเกณฑ์สำเร็จ</span><textarea required disabled={editingQuestHasCompletions} maxLength={4000} value={questForm.description} onChange={(event) => setQuestForm((form) => ({ ...form, description: event.target.value }))} placeholder="บอกเป้าหมาย สิ่งที่ต้องทำ และหลักฐานที่ HR จะใช้ตรวจผลให้ชัดเจน" /></label>
+
+                {questForm.type === "individual" && <label className="wide quest-target-field"><span>พนักงานผู้รับเควส</span><select required disabled={editingQuestHasCompletions} value={questForm.targetEmployeeIds[0] ?? ""} onChange={(event) => setQuestForm((form) => ({ ...form, targetEmployeeIds: event.target.value ? [event.target.value] : [], targetDepartmentIds: [] }))}><option value="">เลือกพนักงาน 1 คน</option>{activeEmployees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name} · {getRole(employee.roleId).name}</option>)}</select><small>เควสนี้จะแสดงเฉพาะพนักงานที่เลือกและ HR / Admin</small></label>}
+                {questForm.type === "team" && <fieldset className="wide quest-team-picker"><legend>ทีม / แผนกที่เข้าร่วม</legend><div>{departmentFilters.filter((department) => department.id !== "all").map((department) => { const selected = questForm.targetDepartmentIds.includes(department.id); return <button type="button" key={department.id} disabled={editingQuestHasCompletions} className={selected ? "active" : ""} aria-pressed={selected} onClick={() => setQuestForm((form) => ({ ...form, targetEmployeeIds: [], targetDepartmentIds: selected ? form.targetDepartmentIds.filter((id) => id !== department.id) : [...form.targetDepartmentIds, department.id] }))}><span aria-hidden="true">{selected ? "✓" : "＋"}</span>{department.label}</button>; })}</div><small>เลือกได้มากกว่า 1 แผนก สมาชิกและหัวหน้าของแผนกที่เลือกจะเห็นเควสนี้</small></fieldset>}
+                {questForm.type === "activity" && <div className="wide quest-activity-scope" role="note"><span aria-hidden="true">✦</span><p><strong>กิจกรรมสำหรับทุกคนในองค์กร</strong><small>ไม่ต้องเลือกรายชื่อหรือแผนก เมื่อเปิดใช้งาน พนักงานและหัวหน้าทุกคนจะเห็นเควสนี้</small></p></div>}
+
+                <label><span>วันเริ่ม</span><input required disabled={editingQuestHasCompletions} type="date" value={questForm.startDate} onChange={(event) => setQuestForm((form) => ({ ...form, startDate: event.target.value, endDate: form.endDate < event.target.value ? event.target.value : form.endDate }))} /></label>
+                <label><span>วันสิ้นสุด</span><input required disabled={editingQuestHasCompletions} type="date" min={questForm.startDate} value={questForm.endDate} onChange={(event) => setQuestForm((form) => ({ ...form, endDate: event.target.value }))} /></label>
+                <label><span>Points เมื่อสำเร็จ</span><input required disabled={editingQuestHasCompletions} type="number" inputMode="numeric" min={0} max={questPointLimit} step={1} value={questForm.pointsReward} onChange={(event) => setQuestForm((form) => ({ ...form, pointsReward: Number(event.target.value) }))} /><small>สูงสุด {formatMoney(questPointLimit)} Points จากค่าที่ต่ำกว่าระหว่างเพดานเควสกับเพดานบวกรายเดือน</small>{questPointsInvalid && <small className="quest-form-error" role="alert">กรอกจำนวนเต็มตั้งแต่ 0 ถึง {formatMoney(questPointLimit)} Points</small>}</label>
+                <label><span>รางวัลพิเศษ <em>ไม่บังคับ</em></span><select disabled={editingQuestHasCompletions} value={questForm.rewardId ?? ""} onChange={(event) => setQuestForm((form) => ({ ...form, rewardId: event.target.value || null }))}><option value="">ไม่มีรางวัลพิเศษ</option>{rewards.filter((reward) => reward.isActive || reward.id === questForm.rewardId).map((reward) => <option key={reward.id} value={reward.id}>{reward.icon} {reward.title}{reward.isActive ? ` · เหลือ ${reward.stock}` : " · ปิดอยู่"}</option>)}</select>{questRewardUnavailable && <small className="quest-form-error" role="alert">รางวัลที่ผูกกับเควสต้องเปิดใช้งาน กรุณาเลือกรางวัลอื่นหรือนำรางวัลนี้ออก</small>}</label>
+                <label><span>สถานะ</span><select value={questForm.status} onChange={(event) => { const status = event.target.value as QuestRecord["status"]; setQuestForm((form) => ({ ...form, status, progress: status === "completed" ? 100 : form.progress })); }}>{questAllowedStatuses.map((status) => <option key={status} value={status}>{status === "draft" ? "ฉบับร่าง · ยังไม่แสดง" : status === "active" ? "เปิดใช้งาน · แสดงตามขอบเขต" : "สำเร็จแล้ว · ปิดผล"}</option>)}</select><small>{questStatusMeta[questForm.status].description}</small></label>
+                <label className="quest-feature-toggle"><input type="checkbox" checked={questForm.isFeatured} onChange={(event) => setQuestForm((form) => ({ ...form, isFeatured: event.target.checked }))} /><span><strong>แสดงเป็นเควสเด่น</strong><small>ปักไว้ก่อนเควสทั่วไปและติดป้ายเด่น</small></span></label>
+                <label className="wide quest-progress-field"><span>ความคืบหน้า <b>{questForm.status === "completed" ? 100 : questForm.progress}%</b></span><input type="range" min={0} max={100} step={5} disabled={questForm.status === "completed"} value={questForm.status === "completed" ? 100 : questForm.progress} onChange={(event) => setQuestForm((form) => ({ ...form, progress: Number(event.target.value) }))} style={{ "--range-value": `${questForm.status === "completed" ? 100 : questForm.progress}%` } as React.CSSProperties} /><small>HR / Admin อัปเดตตามผลที่ตรวจสอบแล้ว สถานะสำเร็จจะตั้งเป็น 100%</small></label>
+              </div>
+
+              {questTargetInvalid && <div className="quest-form-validation" role="alert"><span aria-hidden="true">!</span><p><strong>ยังกำหนดผู้เข้าร่วมไม่ครบ</strong><small>{questForm.type === "individual" ? "เลือกพนักงาน 1 คนสำหรับเควสรายบุคคล" : questForm.type === "team" ? "เลือกอย่างน้อย 1 แผนกสำหรับเควสทีม" : "กิจกรรมองค์กรไม่ต้องกำหนดผู้เข้าร่วม"}</small></p></div>}
+              {editingQuestHasCompletions && <div className="quest-form-validation locked" role="status"><span aria-hidden="true">⌁</span><p><strong>เงื่อนไขเควสถูกล็อกหลังมอบสิทธิ์ครั้งแรก</strong><small>เพื่อรักษาประวัติเดิม จะแก้ประเภท ชื่อ รายละเอียด ผู้เข้าร่วม ช่วงเวลา Points หรือรางวัลไม่ได้ แต่ยังอัปเดตสถานะ ความคืบหน้า และการแสดงเควสเด่นได้</small></p></div>}
+              {questPolicyUnavailable && <div className="quest-form-validation" role="alert"><span aria-hidden="true">!</span><p><strong>ยังบันทึกสถานะนี้ไม่ได้ เพราะไม่มีกฎ Points ที่มีผลอยู่</strong><small>บันทึกเควสใหม่เป็นฉบับร่างได้ หรือเผยแพร่นโยบายใน “จัดการ Points” → “กฎ Points” ก่อนเปิดหรือปิดสำเร็จ</small></p></div>}
+              {questPolicyDisablesCompletions && <div className="quest-form-validation" role="alert"><span aria-hidden="true">!</span><p><strong>กฎ Points ไม่อนุญาตให้ Admin มอบสิทธิ์จากเควส</strong><small>ตั้งกฎเควสเป็น manual เพิ่ม Admin ในผู้มีสิทธิ์ และกำหนดจำนวนครั้งที่ให้ Points บวกแบบ manual ต่อเดือนอย่างน้อย 1 ก่อนเปิดหรือปิดเควส</small></p></div>}
+              <div className="quest-form-policy" role="note"><span aria-hidden="true">i</span><p><strong>กำหนดได้ไม่เกิน {formatMoney(questPointLimit)} Points ต่อผู้สำเร็จหนึ่งคน</strong><small>ระบบใช้ค่าที่ต่ำกว่าระหว่างเพดานเควสกับเพดาน Points บวกมาตรฐานรายเดือน · {pointEventRules.quest.description} หากต้องการเปลี่ยนเพดาน ให้แก้ที่แท็บ “จัดการ Points” → “กฎ Points”</small></p></div>
+            </div>
+            <div className="modal-actions quest-form-actions"><div>{editingQuest && editingQuest.status !== "archived" && <button type="button" className="quest-delete-button" disabled={isSaving} onClick={() => void deleteQuest(editingQuest)}>ลบเควส</button>}</div><button type="button" className="secondary-button" onClick={closeQuestEditor}>ยกเลิก</button><button className="primary-button" disabled={isSaving || questTargetInvalid || questRewardUnavailable || questPointsInvalid || questPolicyUnavailable || questPolicyDisablesCompletions}>{isSaving ? "กำลังบันทึก..." : editingQuest ? "บันทึกการแก้ไข" : "สร้างเควส"}</button></div>
           </form>
         </div>
       )}

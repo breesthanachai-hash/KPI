@@ -386,6 +386,101 @@ export const rewards = sqliteTable("rewards", {
   index("rewards_active_cost_idx").on(table.isActive, table.costPoints),
 ]);
 
+export const quests = sqliteTable("quests", {
+  id: text("id").primaryKey(),
+  type: text("type", { enum: ["individual", "team", "activity"] }).notNull(),
+  title: text("title").notNull(),
+  description: text("description").notNull().default(""),
+  status: text("status", { enum: ["draft", "active", "completed", "archived"] }).notNull().default("draft"),
+  progress: integer("progress").notNull().default(0),
+  pointsReward: integer("points_reward").notNull().default(0),
+  rewardId: text("reward_id").references(() => rewards.id, { onDelete: "restrict" }),
+  rewardTitleSnapshot: text("reward_title_snapshot").notNull().default(""),
+  rewardIconSnapshot: text("reward_icon_snapshot").notNull().default(""),
+  isFeatured: integer("is_featured", { mode: "boolean" }).notNull().default(true),
+  startDate: text("start_date").notNull(),
+  endDate: text("end_date").notNull(),
+  revision: integer("revision").notNull().default(0),
+  createdByUserId: text("created_by_user_id").notNull().default(""),
+  createdByName: text("created_by_name").notNull().default(""),
+  updatedByUserId: text("updated_by_user_id").notNull().default(""),
+  updatedByName: text("updated_by_name").notNull().default(""),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  index("quests_status_featured_dates_idx").on(table.status, table.isFeatured, table.startDate, table.endDate),
+  index("quests_type_status_idx").on(table.type, table.status),
+  index("quests_reward_idx").on(table.rewardId),
+]);
+
+export const questTargets = sqliteTable("quest_targets", {
+  id: text("id").primaryKey(),
+  questId: text("quest_id").notNull().references(() => quests.id, { onDelete: "restrict" }),
+  targetType: text("target_type", { enum: ["employee", "department", "all"] }).notNull(),
+  targetKey: text("target_key").notNull(),
+  targetLabelSnapshot: text("target_label_snapshot").notNull().default(""),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("quest_targets_quest_type_key_unique").on(table.questId, table.targetType, table.targetKey),
+  index("quest_targets_type_key_quest_idx").on(table.targetType, table.targetKey, table.questId),
+]);
+
+export const questMutationEvents = sqliteTable("quest_mutation_events", {
+  id: text("id").primaryKey(),
+  questId: text("quest_id").notNull().references(() => quests.id, { onDelete: "restrict" }),
+  eventType: text("event_type", { enum: ["created", "updated", "archived"] }).notNull(),
+  expectedRevision: integer("expected_revision").notNull(),
+  expectedUpdatedAt: text("expected_updated_at").notNull(),
+  revision: integer("revision").notNull(),
+  actorUserId: text("actor_user_id").notNull().default(""),
+  actorName: text("actor_name").notNull(),
+  snapshotJson: text("snapshot_json").notNull(),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("quest_mutation_events_quest_revision_unique").on(table.questId, table.revision),
+  index("quest_mutation_events_actor_created_idx").on(table.actorUserId, table.createdAt),
+]);
+
+export const questCompletions = sqliteTable("quest_completions", {
+  id: text("id").primaryKey(),
+  questId: text("quest_id").notNull().references(() => quests.id, { onDelete: "restrict" }),
+  employeeId: text("employee_id").notNull(),
+  completionDate: text("completion_date").notNull(),
+  questRevision: integer("quest_revision").notNull(),
+  questUpdatedAt: text("quest_updated_at").notNull(),
+  questTypeSnapshot: text("quest_type_snapshot", { enum: ["individual", "team", "activity"] }).notNull(),
+  questTitleSnapshot: text("quest_title_snapshot").notNull(),
+  questDescriptionSnapshot: text("quest_description_snapshot").notNull().default(""),
+  questStartDateSnapshot: text("quest_start_date_snapshot").notNull(),
+  questEndDateSnapshot: text("quest_end_date_snapshot").notNull(),
+  pointsAwarded: integer("points_awarded").notNull(),
+  rewardId: text("reward_id"),
+  rewardTitleSnapshot: text("reward_title_snapshot").notNull().default(""),
+  rewardIconSnapshot: text("reward_icon_snapshot").notNull().default(""),
+  rewardInventoryVersion: integer("reward_inventory_version"),
+  employeeNameSnapshot: text("employee_name_snapshot").notNull(),
+  employeeRoleIdSnapshot: text("employee_role_id_snapshot").notNull(),
+  employeeDepartmentIdSnapshot: text("employee_department_id_snapshot").notNull(),
+  employeeDepartmentNameSnapshot: text("employee_department_name_snapshot").notNull(),
+  evidenceUrl: text("evidence_url").notNull(),
+  note: text("note").notNull(),
+  pointEventId: text("point_event_id").notNull(),
+  pointLedgerId: text("point_ledger_id").notNull(),
+  policyId: text("policy_id").notNull(),
+  policyVersion: integer("policy_version").notNull(),
+  policyContentHash: text("policy_content_hash").notNull(),
+  questPointPolicyLimit: integer("quest_point_policy_limit").notNull(),
+  maxManualQuestCompletions: integer("max_manual_quest_completions").notNull(),
+  standardEarnMonthlyCap: integer("standard_earn_monthly_cap").notNull(),
+  completedByUserId: text("completed_by_user_id").notNull().default(""),
+  completedByName: text("completed_by_name").notNull(),
+  completedAt: text("completed_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("quest_completions_quest_employee_unique").on(table.questId, table.employeeId),
+  index("quest_completions_employee_date_idx").on(table.employeeId, table.completionDate),
+  index("quest_completions_quest_date_idx").on(table.questId, table.completionDate),
+]);
+
 export const pointLedger = sqliteTable("point_ledger", {
   id: text("id").primaryKey(),
   employeeId: text("employee_id").notNull().references(() => employees.id, { onDelete: "cascade" }),

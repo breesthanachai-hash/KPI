@@ -787,8 +787,8 @@ test("ships balanced point governance and version-specific organization policy a
   assert.match(schema, /export const rewardRedemptionClaims = sqliteTable\("reward_redemption_claims"/);
   assert.match(schema, /inventoryVersion: integer\("inventory_version"\)\.notNull\(\)\.default\(0\)/);
   assert.equal((schema.match(/policyId: text\("policy_id"\)\.references\(\(\) => organizationPolicies\.id/g) ?? []).length, 2, "both point tables must retain policy provenance");
-  assert.equal((schema.match(/policyVersion: integer\("policy_version"\)/g) ?? []).length, 3, "acknowledgements and both point tables must retain policy versions");
-  assert.equal((schema.match(/policyContentHash: text\("policy_content_hash"\)/g) ?? []).length, 2, "both point tables must retain policy hashes");
+  assert.equal((schema.match(/policyVersion: integer\("policy_version"\)/g) ?? []).length, 4, "acknowledgements, both point tables and quest completions must retain policy versions");
+  assert.equal((schema.match(/policyContentHash: text\("policy_content_hash"\)/g) ?? []).length, 3, "both point tables and quest completions must retain policy hashes");
   assert.match(governanceMigration, /CREATE TABLE `organization_policy_publish_claims`/);
   assert.match(governanceMigration, /CREATE UNIQUE INDEX `organization_policy_publish_claim_head_unique`/);
   assert.match(governanceMigration, /CREATE TABLE `point_mutation_claims`/);
@@ -1017,7 +1017,7 @@ test("locks employee evidence and signatures to their owner and applies Bangkok 
   assert.match(dashboardRoute, /new Date\(timestamp \+ BANGKOK_OFFSET_MS\)\.toISOString\(\)\.slice\(0, 10\)/);
   assert.match(dashboardRoute, /function bangkokMonthFromTimestamp\(value: string\)/);
   assert.match(dashboardRoute, /const submissionDate = bangkokIsoDayFromTimestamp\(submission\.submittedAt\) \?\? bangkokIsoDay\(\)/);
-  assert.equal((dashboardRoute.match(/bangkokMonthFromTimestamp\(entry\.createdAt\)/g) ?? []).length, 2, "work and manual awards must share Bangkok month caps");
+  assert.equal((dashboardRoute.match(/bangkokMonthFromTimestamp\(entry\.createdAt\)/g) ?? []).length, 3, "work, manual and quest awards must share Bangkok month caps");
   assert.match(dashboardRoute, /const month = bangkokMonthFromTimestamp\(now\) \?\? bangkokIsoDay\(\)\.slice\(0, 7\)/);
   assert.match(dashboardRoute, /activeRedemptions\.filter\(\(redemption\) => bangkokMonthFromTimestamp\(redemption\.createdAt\) === month\)/);
   assert.match(page, /new Intl\.DateTimeFormat\("en-CA", \{ timeZone: "Asia\/Bangkok"/);
