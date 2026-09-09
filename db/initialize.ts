@@ -1,8 +1,10 @@
 import { getD1 } from ".";
 
 let initialization: Promise<unknown> | null = null;
-// Migration 0022 creates this object only after every preceding schema change.
-// Future schema migrations must use a new marker name and place it last too.
+// Runtime initialization creates this object only after every schema object and
+// compound trigger has been installed. Migration 0022 intentionally omits it so
+// Sites cannot skip runtime trigger installation after applying split statements.
+// Future schema versions must keep their readiness marker runtime-owned and last.
 const LATEST_SCHEMA_MARKER = "people_pulse_schema_v22_ready";
 
 async function latestSchemaIsReady(d1: ReturnType<typeof getD1>) {

@@ -184,8 +184,8 @@ Migration ล่าสุดที่เกี่ยวข้อง:
 - `0019_auth_session_guard.sql` เพิ่ม trigger ที่ยอมสร้าง session เฉพาะบัญชีที่ยัง active, มี credential version ตรงกัน และผูกกับพนักงาน active สำหรับบทบาทที่ไม่ใช่ Admin พร้อมเปลี่ยน readiness marker เป็น v19
 - `0020_silly_mockingbird.sql` เพิ่มแบบประเมินตนเองของพนักงานแยกจากผลประเมินทางการและ Points พร้อมเปลี่ยน readiness marker เป็น v20
 - `0021_chubby_malice.sql` เพิ่มชื่อเล่น คำขอสมัครสมาชิกพนักงาน ตัวล็อกการตรวจคำขอ และ readiness marker v21
-- `0022_strong_wrecking_crew.sql` เพิ่มศูนย์เควส กลุ่มเป้าหมาย ผลสำเร็จแบบ idempotent ประวัติการแก้ไขที่แก้ย้อนหลังไม่ได้ trigger ป้องกัน Points/สต็อกซ้ำ และ readiness marker v22
-- `db/initialize.ts` สร้างตาราง ดัชนี และ trigger ป้องกัน race condition ตอนเริ่มระบบ ส่วนฐานข้อมูลเดิมอัปเกรดตามลำดับใน `drizzle/`; trigger แบบ `BEGIN/END` ใน migration ถูกคั่นด้วย statement marker เพื่อให้ตัวรันของ Sites/D1 ประมวลผลทั้ง trigger เป็นคำสั่งเดียว
+- `0022_strong_wrecking_crew.sql` เพิ่มตารางและดัชนีของศูนย์เควส กลุ่มเป้าหมาย ผลสำเร็จแบบ idempotent และประวัติการแก้ไข โดยตั้งใจไม่ใส่ compound trigger หรือ readiness marker เพื่อให้ตัวแบ่งคำสั่ง SQL ของ Sites ใช้งานได้แน่นอน
+- `db/initialize.ts` ติดตั้ง trigger ป้องกัน race condition การแก้ประวัติย้อนหลัง การให้ Points ซ้ำ และการตัดสต็อกซ้ำ จากนั้นสร้าง readiness marker v22 เป็นคำสั่งสุดท้าย เมื่อไม่พบ marker ระบบต้องติดตั้งส่วนเหล่านี้ให้ครบก่อนจึงถือว่าฐานข้อมูลพร้อม
 
 > **Migration-first:** ก่อน deploy โค้ดรุ่นนี้ต้องติดตั้ง migration ถึง `0022_strong_wrecking_crew.sql` ให้ครบก่อน เพราะระบบเข้าใช้ แบบประเมินตนเอง การสมัครสมาชิก และศูนย์เควสอาศัยโครงสร้างฐานข้อมูลล่าสุด ห้าม deploy โค้ดใหม่ก่อน migration และห้ามเปลี่ยน access policy ระหว่างการอัปเกรดจนกว่า smoke test จะผ่าน
 
