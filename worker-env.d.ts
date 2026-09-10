@@ -24,9 +24,16 @@ interface D1Database {
   dump(): Promise<ArrayBuffer>;
 }
 
-interface R2ObjectBody {
-  body: ReadableStream;
+interface R2ListedObject {
+  key: string;
   size: number;
+  uploaded: Date;
+  httpMetadata?: { contentType?: string };
+  customMetadata?: Record<string, string>;
+}
+
+interface R2ObjectBody extends R2ListedObject {
+  body: ReadableStream<Uint8Array>;
 }
 
 interface R2Bucket {
@@ -36,6 +43,12 @@ interface R2Bucket {
   }): Promise<unknown>;
   get(key: string): Promise<R2ObjectBody | null>;
   delete(key: string): Promise<void>;
+  list(options?: {
+    cursor?: string;
+    limit?: number;
+    prefix?: string;
+    include?: Array<"httpMetadata" | "customMetadata">;
+  }): Promise<{ objects: R2ListedObject[]; truncated: boolean; cursor?: string }>;
 }
 
 declare module "cloudflare:workers" {
