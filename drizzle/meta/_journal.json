@@ -169,6 +169,13 @@
       "when": 1789034343459,
       "tag": "0023_complex_ken_ellis",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1789042675958,
+      "tag": "0024_gifted_peter_parker",
+      "breakpoints": true
     }
   ]
 }

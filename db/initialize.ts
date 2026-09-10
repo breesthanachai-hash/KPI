@@ -5,7 +5,7 @@ let initialization: Promise<unknown> | null = null;
 // compound trigger has been installed. Forward migrations intentionally omit it
 // so Sites cannot skip runtime compatibility checks after applying split statements.
 // Future schema versions must keep their readiness marker runtime-owned and last.
-const LATEST_SCHEMA_MARKER = "people_pulse_schema_v23_ready";
+const LATEST_SCHEMA_MARKER = "people_pulse_schema_v24_ready";
 
 async function latestSchemaIsReady(d1: ReturnType<typeof getD1>) {
   const marker = await d1.prepare(
@@ -65,6 +65,46 @@ export function ensureDatabase() {
     d1.prepare("CREATE UNIQUE INDEX IF NOT EXISTS employee_position_events_employee_result_unique ON employee_position_events (employee_id, resulting_updated_at)"),
     d1.prepare("CREATE INDEX IF NOT EXISTS employee_position_events_employee_created_idx ON employee_position_events (employee_id, created_at)"),
     d1.prepare("CREATE INDEX IF NOT EXISTS employee_position_events_actor_created_idx ON employee_position_events (actor_user_id, created_at)"),
+    d1.prepare(`CREATE TABLE IF NOT EXISTS system_settings (
+      id TEXT PRIMARY KEY NOT NULL,
+      organization_name TEXT NOT NULL DEFAULT 'People Pulse',
+      organization_short_name TEXT NOT NULL DEFAULT 'People Pulse',
+      navigation_mode TEXT NOT NULL DEFAULT 'simple',
+      admin_home TEXT NOT NULL DEFAULT 'work',
+      manager_home TEXT NOT NULL DEFAULT 'work',
+      employee_home TEXT NOT NULL DEFAULT 'work',
+      ai_assistant_enabled INTEGER NOT NULL DEFAULT 1,
+      ai_mascot_enabled INTEGER NOT NULL DEFAULT 1,
+      office_3d_enabled INTEGER NOT NULL DEFAULT 1,
+      quest_reward_linking_enabled INTEGER NOT NULL DEFAULT 1,
+      revision INTEGER NOT NULL DEFAULT 0,
+      updated_by_user_id TEXT NOT NULL DEFAULT 'system',
+      updated_by_name TEXT NOT NULL DEFAULT 'ระบบ',
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`),
+    d1.prepare(`CREATE TABLE IF NOT EXISTS system_settings_events (
+      id TEXT PRIMARY KEY NOT NULL,
+      settings_id TEXT NOT NULL REFERENCES system_settings(id) ON DELETE RESTRICT,
+      previous_revision INTEGER NOT NULL,
+      next_revision INTEGER NOT NULL,
+      expected_updated_at TEXT NOT NULL,
+      resulting_updated_at TEXT NOT NULL,
+      previous_snapshot TEXT NOT NULL,
+      next_snapshot TEXT NOT NULL,
+      changed_keys TEXT NOT NULL,
+      actor_user_id TEXT NOT NULL,
+      actor_name TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`),
+    d1.prepare("CREATE UNIQUE INDEX IF NOT EXISTS system_settings_events_revision_unique ON system_settings_events (settings_id, next_revision)"),
+    d1.prepare("CREATE INDEX IF NOT EXISTS system_settings_events_created_idx ON system_settings_events (settings_id, created_at)"),
+    d1.prepare(`INSERT INTO system_settings (
+      id, organization_name, organization_short_name, navigation_mode,
+      admin_home, manager_home, employee_home,
+      ai_assistant_enabled, ai_mascot_enabled, office_3d_enabled, quest_reward_linking_enabled,
+      revision, updated_by_user_id, updated_by_name
+    ) SELECT 'global', 'People Pulse', 'People Pulse', 'simple', 'work', 'work', 'work', 1, 1, 1, 1, 0, 'system', 'ระบบ'
+      WHERE NOT EXISTS (SELECT 1 FROM system_settings)`),
     d1.prepare(`CREATE TABLE IF NOT EXISTS user_accounts (
       id TEXT PRIMARY KEY NOT NULL,
       auth_user_id TEXT NOT NULL DEFAULT '',
@@ -104,6 +144,19 @@ export function ensureDatabase() {
         )
       BEGIN
         SELECT RAISE(ABORT, 'LAST_ACTIVE_ADMIN_REQUIRED');
+      END`),
+    d1.prepare(`CREATE TRIGGER IF NOT EXISTS user_accounts_preserve_system_owner_update
+      BEFORE UPDATE OF id, role, status ON user_accounts
+      WHEN OLD.id = 'user-owner'
+        AND (NEW.id != OLD.id OR NEW.role != 'admin' OR NEW.status != 'active')
+      BEGIN
+        SELECT RAISE(ABORT, 'SYSTEM_OWNER_REQUIRED');
+      END`),
+    d1.prepare(`CREATE TRIGGER IF NOT EXISTS user_accounts_preserve_system_owner_delete
+      BEFORE DELETE ON user_accounts
+      WHEN OLD.id = 'user-owner'
+      BEGIN
+        SELECT RAISE(ABORT, 'SYSTEM_OWNER_REQUIRED');
       END`),
     d1.prepare(`CREATE TABLE IF NOT EXISTS auth_credentials (
       user_account_id TEXT PRIMARY KEY NOT NULL REFERENCES user_accounts(id) ON DELETE CASCADE,
@@ -1366,9 +1419,201 @@ export function ensureDatabase() {
         BEGIN
           SELECT RAISE(ABORT, 'QUEST_MUTATION_EVENT_IMMUTABLE');
         END`),
+      d1.prepare(`CREATE TRIGGER IF NOT EXISTS quest_reward_linking_insert_guard
+        BEFORE INSERT ON quests
+        WHEN NEW.reward_id IS NOT NULL AND (
+          SELECT quest_reward_linking_enabled FROM system_settings WHERE id = 'global'
+        ) IS NOT 1
+        BEGIN
+          SELECT RAISE(ABORT, 'QUEST_REWARD_LINKING_DISABLED');
+        END`),
+      d1.prepare(`CREATE TRIGGER IF NOT EXISTS quest_reward_linking_update_guard
+        BEFORE UPDATE OF reward_id ON quests
+        WHEN NEW.reward_id IS NOT NULL
+          AND NEW.reward_id IS NOT OLD.reward_id
+          AND (
+            SELECT quest_reward_linking_enabled FROM system_settings WHERE id = 'global'
+          ) IS NOT 1
+        BEGIN
+          SELECT RAISE(ABORT, 'QUEST_REWARD_LINKING_DISABLED');
+        END`),
+      d1.prepare(`CREATE TRIGGER IF NOT EXISTS system_settings_singleton_insert_guard
+        BEFORE INSERT ON system_settings
+        WHEN NEW.id != 'global' OR EXISTS (SELECT 1 FROM system_settings)
+        BEGIN
+          SELECT RAISE(ABORT, 'SYSTEM_SETTINGS_SINGLETON');
+        END`),
+      d1.prepare(`CREATE TRIGGER IF NOT EXISTS system_settings_update_guard
+        BEFORE UPDATE ON system_settings
+        BEGIN
+          SELECT CASE WHEN OLD.id != 'global' OR NEW.id != OLD.id
+            THEN RAISE(ABORT, 'SYSTEM_SETTINGS_SINGLETON') END;
+          SELECT CASE WHEN NEW.revision != OLD.revision + 1
+            THEN RAISE(ABORT, 'SYSTEM_SETTINGS_INVALID_REVISION') END;
+          SELECT CASE WHEN NEW.updated_by_user_id != 'user-owner' OR NOT EXISTS (
+            SELECT 1 FROM user_accounts
+            WHERE id = NEW.updated_by_user_id AND role = 'admin' AND status = 'active'
+          ) THEN RAISE(ABORT, 'SYSTEM_SETTINGS_OWNER_REQUIRED') END;
+          SELECT CASE WHEN length(trim(NEW.organization_name)) < 2 OR length(NEW.organization_name) > 80
+            OR length(trim(NEW.organization_short_name)) < 2 OR length(NEW.organization_short_name) > 30
+            THEN RAISE(ABORT, 'SYSTEM_SETTINGS_INVALID_ORGANIZATION') END;
+          SELECT CASE WHEN NEW.navigation_mode NOT IN ('simple', 'full')
+            OR NEW.admin_home NOT IN ('overview', 'employees', 'work')
+            OR NEW.manager_home NOT IN ('overview', 'employees', 'work')
+            OR NEW.employee_home NOT IN ('work', 'portfolio', 'peopleOps')
+            THEN RAISE(ABORT, 'SYSTEM_SETTINGS_INVALID_EXPERIENCE') END;
+          SELECT CASE WHEN NEW.ai_assistant_enabled NOT IN (0, 1)
+            OR NEW.ai_mascot_enabled NOT IN (0, 1)
+            OR NEW.office_3d_enabled NOT IN (0, 1)
+            OR NEW.quest_reward_linking_enabled NOT IN (0, 1)
+            OR (NEW.ai_mascot_enabled = 1 AND NEW.ai_assistant_enabled = 0)
+            THEN RAISE(ABORT, 'SYSTEM_SETTINGS_INVALID_FEATURES') END;
+          SELECT CASE WHEN NEW.organization_name IS OLD.organization_name
+            AND NEW.organization_short_name IS OLD.organization_short_name
+            AND NEW.navigation_mode IS OLD.navigation_mode
+            AND NEW.admin_home IS OLD.admin_home
+            AND NEW.manager_home IS OLD.manager_home
+            AND NEW.employee_home IS OLD.employee_home
+            AND NEW.ai_assistant_enabled IS OLD.ai_assistant_enabled
+            AND NEW.ai_mascot_enabled IS OLD.ai_mascot_enabled
+            AND NEW.office_3d_enabled IS OLD.office_3d_enabled
+            AND NEW.quest_reward_linking_enabled IS OLD.quest_reward_linking_enabled
+            THEN RAISE(ABORT, 'SYSTEM_SETTINGS_NO_CHANGES') END;
+          SELECT CASE WHEN NOT EXISTS (
+            SELECT 1 FROM system_settings_events AS event
+            WHERE event.settings_id = OLD.id
+              AND event.previous_revision = OLD.revision
+              AND event.next_revision = NEW.revision
+              AND event.expected_updated_at = OLD.updated_at
+              AND event.resulting_updated_at = NEW.updated_at
+              AND event.actor_user_id = NEW.updated_by_user_id
+              AND event.actor_name = NEW.updated_by_name
+              AND json_extract(event.previous_snapshot, '$.id') IS OLD.id
+              AND json_extract(event.previous_snapshot, '$.revision') IS OLD.revision
+              AND json_extract(event.previous_snapshot, '$.organization.name') IS OLD.organization_name
+              AND json_extract(event.previous_snapshot, '$.organization.shortName') IS OLD.organization_short_name
+              AND json_extract(event.previous_snapshot, '$.experience.navigationMode') IS OLD.navigation_mode
+              AND json_extract(event.previous_snapshot, '$.experience.adminHome') IS OLD.admin_home
+              AND json_extract(event.previous_snapshot, '$.experience.managerHome') IS OLD.manager_home
+              AND json_extract(event.previous_snapshot, '$.experience.employeeHome') IS OLD.employee_home
+              AND json_extract(event.previous_snapshot, '$.features.aiAssistantEnabled') IS OLD.ai_assistant_enabled
+              AND json_extract(event.previous_snapshot, '$.features.aiMascotEnabled') IS OLD.ai_mascot_enabled
+              AND json_extract(event.previous_snapshot, '$.features.office3dEnabled') IS OLD.office_3d_enabled
+              AND json_extract(event.previous_snapshot, '$.features.questRewardLinkingEnabled') IS OLD.quest_reward_linking_enabled
+              AND json_extract(event.previous_snapshot, '$.updatedAt') IS OLD.updated_at
+              AND json_extract(event.previous_snapshot, '$.updatedByName') IS OLD.updated_by_name
+              AND json_extract(event.next_snapshot, '$.id') IS NEW.id
+              AND json_extract(event.next_snapshot, '$.revision') IS NEW.revision
+              AND json_extract(event.next_snapshot, '$.organization.name') IS NEW.organization_name
+              AND json_extract(event.next_snapshot, '$.organization.shortName') IS NEW.organization_short_name
+              AND json_extract(event.next_snapshot, '$.experience.navigationMode') IS NEW.navigation_mode
+              AND json_extract(event.next_snapshot, '$.experience.adminHome') IS NEW.admin_home
+              AND json_extract(event.next_snapshot, '$.experience.managerHome') IS NEW.manager_home
+              AND json_extract(event.next_snapshot, '$.experience.employeeHome') IS NEW.employee_home
+              AND json_extract(event.next_snapshot, '$.features.aiAssistantEnabled') IS NEW.ai_assistant_enabled
+              AND json_extract(event.next_snapshot, '$.features.aiMascotEnabled') IS NEW.ai_mascot_enabled
+              AND json_extract(event.next_snapshot, '$.features.office3dEnabled') IS NEW.office_3d_enabled
+              AND json_extract(event.next_snapshot, '$.features.questRewardLinkingEnabled') IS NEW.quest_reward_linking_enabled
+              AND json_extract(event.next_snapshot, '$.updatedAt') IS NEW.updated_at
+              AND json_extract(event.next_snapshot, '$.updatedByName') IS NEW.updated_by_name
+              AND NOT EXISTS (
+                SELECT 1 FROM json_each(event.changed_keys)
+                WHERE type != 'text' OR value NOT IN (
+                  'organization.name', 'organization.shortName',
+                  'experience.navigationMode', 'experience.adminHome', 'experience.managerHome', 'experience.employeeHome',
+                  'features.aiAssistantEnabled', 'features.aiMascotEnabled',
+                  'features.office3dEnabled', 'features.questRewardLinkingEnabled'
+                )
+              )
+              AND json_array_length(event.changed_keys) = (
+                (NEW.organization_name IS NOT OLD.organization_name)
+                + (NEW.organization_short_name IS NOT OLD.organization_short_name)
+                + (NEW.navigation_mode IS NOT OLD.navigation_mode)
+                + (NEW.admin_home IS NOT OLD.admin_home)
+                + (NEW.manager_home IS NOT OLD.manager_home)
+                + (NEW.employee_home IS NOT OLD.employee_home)
+                + (NEW.ai_assistant_enabled IS NOT OLD.ai_assistant_enabled)
+                + (NEW.ai_mascot_enabled IS NOT OLD.ai_mascot_enabled)
+                + (NEW.office_3d_enabled IS NOT OLD.office_3d_enabled)
+                + (NEW.quest_reward_linking_enabled IS NOT OLD.quest_reward_linking_enabled)
+              )
+              AND json_array_length(event.changed_keys) = (
+                SELECT COUNT(DISTINCT value) FROM json_each(event.changed_keys)
+              )
+              AND (NEW.organization_name IS OLD.organization_name OR EXISTS (
+                SELECT 1 FROM json_each(event.changed_keys) WHERE value = 'organization.name'
+              ))
+              AND (NEW.organization_short_name IS OLD.organization_short_name OR EXISTS (
+                SELECT 1 FROM json_each(event.changed_keys) WHERE value = 'organization.shortName'
+              ))
+              AND (NEW.navigation_mode IS OLD.navigation_mode OR EXISTS (
+                SELECT 1 FROM json_each(event.changed_keys) WHERE value = 'experience.navigationMode'
+              ))
+              AND (NEW.admin_home IS OLD.admin_home OR EXISTS (
+                SELECT 1 FROM json_each(event.changed_keys) WHERE value = 'experience.adminHome'
+              ))
+              AND (NEW.manager_home IS OLD.manager_home OR EXISTS (
+                SELECT 1 FROM json_each(event.changed_keys) WHERE value = 'experience.managerHome'
+              ))
+              AND (NEW.employee_home IS OLD.employee_home OR EXISTS (
+                SELECT 1 FROM json_each(event.changed_keys) WHERE value = 'experience.employeeHome'
+              ))
+              AND (NEW.ai_assistant_enabled IS OLD.ai_assistant_enabled OR EXISTS (
+                SELECT 1 FROM json_each(event.changed_keys) WHERE value = 'features.aiAssistantEnabled'
+              ))
+              AND (NEW.ai_mascot_enabled IS OLD.ai_mascot_enabled OR EXISTS (
+                SELECT 1 FROM json_each(event.changed_keys) WHERE value = 'features.aiMascotEnabled'
+              ))
+              AND (NEW.office_3d_enabled IS OLD.office_3d_enabled OR EXISTS (
+                SELECT 1 FROM json_each(event.changed_keys) WHERE value = 'features.office3dEnabled'
+              ))
+              AND (NEW.quest_reward_linking_enabled IS OLD.quest_reward_linking_enabled OR EXISTS (
+                SELECT 1 FROM json_each(event.changed_keys) WHERE value = 'features.questRewardLinkingEnabled'
+              ))
+          ) THEN RAISE(ABORT, 'SYSTEM_SETTINGS_AUDIT_REQUIRED') END;
+        END`),
+      d1.prepare(`CREATE TRIGGER IF NOT EXISTS system_settings_delete_guard
+        BEFORE DELETE ON system_settings
+        BEGIN
+          SELECT RAISE(ABORT, 'SYSTEM_SETTINGS_IMMUTABLE_SINGLETON');
+        END`),
+      d1.prepare(`CREATE TRIGGER IF NOT EXISTS system_settings_event_insert_guard
+        BEFORE INSERT ON system_settings_events
+        BEGIN
+          SELECT CASE WHEN NEW.settings_id != 'global'
+            OR NEW.next_revision != NEW.previous_revision + 1
+            OR NOT json_valid(NEW.previous_snapshot)
+            OR NOT json_valid(NEW.next_snapshot)
+            OR NOT json_valid(NEW.changed_keys)
+            OR json_type(NEW.changed_keys) != 'array'
+            OR json_array_length(NEW.changed_keys) < 1
+            OR CAST(json_extract(NEW.previous_snapshot, '$.revision') AS INTEGER) != NEW.previous_revision
+            OR CAST(json_extract(NEW.next_snapshot, '$.revision') AS INTEGER) != NEW.next_revision
+            THEN RAISE(ABORT, 'SYSTEM_SETTINGS_EVENT_INVALID') END;
+          SELECT CASE WHEN NEW.actor_user_id != 'user-owner' OR NOT EXISTS (
+            SELECT 1 FROM user_accounts
+            WHERE id = NEW.actor_user_id AND role = 'admin' AND status = 'active'
+          ) THEN RAISE(ABORT, 'SYSTEM_SETTINGS_OWNER_REQUIRED') END;
+          SELECT CASE WHEN NOT EXISTS (
+            SELECT 1 FROM system_settings
+            WHERE id = NEW.settings_id
+              AND revision = NEW.previous_revision
+              AND updated_at = NEW.expected_updated_at
+          ) THEN RAISE(ABORT, 'SYSTEM_SETTINGS_STALE') END;
+        END`),
+      d1.prepare(`CREATE TRIGGER IF NOT EXISTS system_settings_event_update_guard
+        BEFORE UPDATE ON system_settings_events
+        BEGIN
+          SELECT RAISE(ABORT, 'SYSTEM_SETTINGS_EVENT_IMMUTABLE');
+        END`),
+      d1.prepare(`CREATE TRIGGER IF NOT EXISTS system_settings_event_delete_guard
+        BEFORE DELETE ON system_settings_events
+        BEGIN
+          SELECT RAISE(ABORT, 'SYSTEM_SETTINGS_EVENT_IMMUTABLE');
+        END`),
       d1.prepare("PRAGMA optimize"),
-      d1.prepare(`CREATE TABLE IF NOT EXISTS people_pulse_schema_v23_ready (
-        schema_version INTEGER PRIMARY KEY NOT NULL CHECK (schema_version = 23)
+      d1.prepare(`CREATE TABLE IF NOT EXISTS people_pulse_schema_v24_ready (
+        schema_version INTEGER PRIMARY KEY NOT NULL CHECK (schema_version = 24)
       )`),
     ]);
   })().catch((error) => {

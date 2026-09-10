@@ -38,6 +38,42 @@ export const employeePositionEvents = sqliteTable("employee_position_events", {
   index("employee_position_events_actor_created_idx").on(table.actorUserId, table.createdAt),
 ]);
 
+export const systemSettings = sqliteTable("system_settings", {
+  id: text("id").primaryKey(),
+  organizationName: text("organization_name").notNull().default("People Pulse"),
+  organizationShortName: text("organization_short_name").notNull().default("People Pulse"),
+  navigationMode: text("navigation_mode", { enum: ["simple", "full"] }).notNull().default("simple"),
+  adminHome: text("admin_home", { enum: ["overview", "employees", "work"] }).notNull().default("work"),
+  managerHome: text("manager_home", { enum: ["overview", "employees", "work"] }).notNull().default("work"),
+  employeeHome: text("employee_home", { enum: ["work", "portfolio", "peopleOps"] }).notNull().default("work"),
+  aiAssistantEnabled: integer("ai_assistant_enabled", { mode: "boolean" }).notNull().default(true),
+  aiMascotEnabled: integer("ai_mascot_enabled", { mode: "boolean" }).notNull().default(true),
+  office3dEnabled: integer("office_3d_enabled", { mode: "boolean" }).notNull().default(true),
+  questRewardLinkingEnabled: integer("quest_reward_linking_enabled", { mode: "boolean" }).notNull().default(true),
+  revision: integer("revision").notNull().default(0),
+  updatedByUserId: text("updated_by_user_id").notNull().default("system"),
+  updatedByName: text("updated_by_name").notNull().default("ระบบ"),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
+export const systemSettingsEvents = sqliteTable("system_settings_events", {
+  id: text("id").primaryKey(),
+  settingsId: text("settings_id").notNull().references(() => systemSettings.id, { onDelete: "restrict" }),
+  previousRevision: integer("previous_revision").notNull(),
+  nextRevision: integer("next_revision").notNull(),
+  expectedUpdatedAt: text("expected_updated_at").notNull(),
+  resultingUpdatedAt: text("resulting_updated_at").notNull(),
+  previousSnapshot: text("previous_snapshot", { mode: "json" }).$type<Record<string, unknown>>().notNull(),
+  nextSnapshot: text("next_snapshot", { mode: "json" }).$type<Record<string, unknown>>().notNull(),
+  changedKeys: text("changed_keys", { mode: "json" }).$type<string[]>().notNull(),
+  actorUserId: text("actor_user_id").notNull(),
+  actorName: text("actor_name").notNull(),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("system_settings_events_revision_unique").on(table.settingsId, table.nextRevision),
+  index("system_settings_events_created_idx").on(table.settingsId, table.createdAt),
+]);
+
 export const userAccounts = sqliteTable("user_accounts", {
   id: text("id").primaryKey(),
   authUserId: text("auth_user_id").notNull().default(""),

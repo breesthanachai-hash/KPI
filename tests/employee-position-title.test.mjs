@@ -71,7 +71,7 @@ function initializerPreparedSql(prefix) {
 }
 
 const positionRuntimeSql = positionTriggerNames.map((name) => initializerPreparedSql(`CREATE TRIGGER IF NOT EXISTS ${name}`));
-const v23MarkerSql = initializerPreparedSql("CREATE TABLE IF NOT EXISTS people_pulse_schema_v23_ready");
+const latestMarkerSql = initializerPreparedSql("CREATE TABLE IF NOT EXISTS people_pulse_schema_v24_ready");
 
 function createPositionDatabase({ installRuntime = true } = {}) {
   const db = new DatabaseSync(":memory:");
@@ -93,7 +93,7 @@ function createPositionDatabase({ installRuntime = true } = {}) {
   for (const statement of migrationStatements()) db.exec(statement);
   if (installRuntime) {
     for (const statement of positionRuntimeSql) db.exec(statement);
-    db.exec(v23MarkerSql);
+    db.exec(latestMarkerSql);
   }
   return db;
 }
@@ -132,7 +132,7 @@ test("schema v23 adds a backward-compatible display title and durable audit snap
   assert.match(dataSource, /export type EmployeePositionEventRecord = \{[\s\S]*?previousPositionTitle: string;[\s\S]*?nextPositionTitle: string;[\s\S]*?actorUserId: string/);
   assert.match(schemaSource, /positionTitle: text\("position_title"\)\.notNull\(\)\.default\(""\)/);
 
-  const eventSchema = sourceBlock(schemaSource, "export const employeePositionEvents", "export const userAccounts");
+  const eventSchema = sourceBlock(schemaSource, "export const employeePositionEvents", "export const systemSettings");
   for (const column of [
     "employeeId", "employeeNameSnapshot", "roleIdSnapshot", "previousPositionTitle", "nextPositionTitle",
     "expectedUpdatedAt", "resultingUpdatedAt", "actorUserId", "actorName", "createdAt",
@@ -172,29 +172,29 @@ test("migration 0023 is Sites-splitter safe and upgrades existing employee rows 
   }
 });
 
-test("runtime initialization installs all five position guards before the v23 marker and is repeatable", () => {
-  assert.match(initializeSource, /LATEST_SCHEMA_MARKER = "people_pulse_schema_v23_ready"/);
+test("runtime initialization retains all five position guards before the latest marker and is repeatable", () => {
+  assert.match(initializeSource, /LATEST_SCHEMA_MARKER = "people_pulse_schema_v24_ready"/);
   assert.match(initializeSource, /position_title TEXT NOT NULL DEFAULT ''/);
   assert.match(initializeSource, /\["employees", "position_title", "TEXT NOT NULL DEFAULT ''"\]/);
   assert.match(initializeSource, /table: "employees" \| "rewards"/);
-  const markerIndex = initializeSource.lastIndexOf("CREATE TABLE IF NOT EXISTS people_pulse_schema_v23_ready");
+  const markerIndex = initializeSource.lastIndexOf("CREATE TABLE IF NOT EXISTS people_pulse_schema_v24_ready");
   assert.ok(markerIndex > 0);
   for (const trigger of positionTriggerNames) {
     const triggerIndex = initializeSource.indexOf(`CREATE TRIGGER IF NOT EXISTS ${trigger}`);
     assert.ok(triggerIndex >= 0 && triggerIndex < markerIndex, `${trigger} must precede the readiness marker`);
   }
-  assert.match(v23MarkerSql, /CHECK \(schema_version = 23\)/);
+  assert.match(latestMarkerSql, /CHECK \(schema_version = 24\)/);
 
   const db = createPositionDatabase({ installRuntime: false });
   try {
     assert.equal(db.prepare("SELECT COUNT(*) AS count FROM sqlite_master WHERE type='trigger' AND name LIKE 'employee_position_%'").get().count, 0);
-    assert.equal(db.prepare("SELECT COUNT(*) AS count FROM sqlite_master WHERE type='table' AND name='people_pulse_schema_v23_ready'").get().count, 0);
+    assert.equal(db.prepare("SELECT COUNT(*) AS count FROM sqlite_master WHERE type='table' AND name='people_pulse_schema_v24_ready'").get().count, 0);
     for (const statement of positionRuntimeSql) db.exec(statement);
-    db.exec(v23MarkerSql);
+    db.exec(latestMarkerSql);
     assert.equal(db.prepare("SELECT COUNT(*) AS count FROM sqlite_master WHERE type='trigger' AND name LIKE 'employee_position_%'").get().count, 5);
-    assert.equal(db.prepare("SELECT COUNT(*) AS count FROM sqlite_master WHERE type='table' AND name='people_pulse_schema_v23_ready'").get().count, 1);
+    assert.equal(db.prepare("SELECT COUNT(*) AS count FROM sqlite_master WHERE type='table' AND name='people_pulse_schema_v24_ready'").get().count, 1);
     for (const statement of positionRuntimeSql) db.exec(statement);
-    db.exec(v23MarkerSql);
+    db.exec(latestMarkerSql);
     assert.equal(db.prepare("SELECT COUNT(*) AS count FROM sqlite_master WHERE type='trigger' AND name LIKE 'employee_position_%'").get().count, 5);
     assert.equal(db.prepare("PRAGMA foreign_key_check").all().length, 0);
   } finally {

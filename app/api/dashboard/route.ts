@@ -6,6 +6,7 @@ import { authenticatedRequestGate, canAccessEmployee, ensureBootstrapAccounts, r
 import { AuthInputError, credentialMutationValues, getAccountCredential, publicUserAccountDto, publicUserAccountDtos, requestSourceHash } from "../../../lib/auth-service";
 import { internalApiError } from "../../../lib/api-errors";
 import { approveEmployeeRegistration, employeeRegistrationRequestDtos, RegistrationInputError, rejectEmployeeRegistration } from "../../../lib/registration-service";
+import { canManageSystemSettings, getPublicSystemSettings, getSystemSettingsRow } from "../../../lib/system-settings";
 import {
   clampScore,
   clampSkillLevel,
@@ -75,6 +76,12 @@ function apiError(error: unknown) {
   }
   if (message.includes("LAST_ACTIVE_ADMIN_REQUIRED")) {
     return Response.json({ error: "ต้องมีบัญชี HR / Admin ที่ใช้งานอยู่อย่างน้อย 1 บัญชี" }, { status: 409 });
+  }
+  if (message.includes("SYSTEM_OWNER_REQUIRED")) {
+    return Response.json({ error: "บัญชีเจ้าของระบบต้องคงสถานะผู้ดูแลที่ใช้งานอยู่" }, { status: 403 });
+  }
+  if (message.includes("QUEST_REWARD_LINKING_DISABLED")) {
+    return Response.json({ error: "เจ้าของระบบปิดการผูกรางวัลใหม่กับเควสไว้ กรุณาแก้การตั้งค่าระบบก่อน" }, { status: 409 });
   }
   return internalApiError(error, "ระบบไม่สามารถดำเนินการได้ในขณะนี้", "dashboard");
 }
@@ -504,6 +511,7 @@ export async function GET(request: Request) {
     const requestedPreviewEmployeeId = url.searchParams.get("previewEmployeeId")?.trim() ?? "";
     const isEmployeePreviewRequest = authenticatedUser.role === "admin" && Boolean(requestedPreviewEmployeeId);
     const db = getDb();
+    const publicSystemSettings = await getPublicSystemSettings();
     const [employeeRows, employeePositionEventRows, evaluationRows, selfAssessmentRows, hrProfileRows, attendanceRows, skillAchievementRows, talentActionRows, projectRows, workItemRows, workSubmissionRows, questRows, questTargetRows, questCompletionRows, rewardRows, pointRows, pointEventRows, redemptionRows, employeeProfileRows, applicationDocumentRows, employmentContractRows, organizationPolicyRows, policyAcknowledgementRows, organizationDocumentRows, employeeWarningRows, employeeWarningEventRows, employeeRecognitionRows, userAccountRows, registrationRequestRows, notificationReadRows] = await Promise.all([
       db.select().from(employees),
       authenticatedUser.role === "admin" && !isEmployeePreviewRequest ? db.select().from(employeePositionEvents) : Promise.resolve([]),
@@ -686,6 +694,7 @@ export async function GET(request: Request) {
       canManageEmployeeWarnings: currentUser.role === "admin",
       canManageEmployeeRecognitions: currentUser.role === "admin",
       canManageQuests: currentUser.role === "admin",
+      canManageSystemSettings: canManageSystemSettings(currentUser) && !employeePreview,
       canAcknowledgePolicies: Boolean(currentUser.employeeId) && !employeePreview,
     };
     const visibleProfileImages = employeeProfileRows
@@ -762,6 +771,7 @@ export async function GET(request: Request) {
       launchReadiness,
       activePointPolicyId: activePointPolicy?.id ?? null,
       pointPolicyRules: withPointsDisplayTerminology(activePointRules),
+      publicSystemSettings,
       period,
     });
   } catch (error) {
@@ -1360,6 +1370,9 @@ export async function POST(request: Request) {
       const suppliedAccountId = typeof payload.accountId === "string" ? payload.accountId.trim().slice(0, 100) : "";
       if (suppliedAccountId === currentUser.id) {
         return Response.json({ error: "ไม่สามารถแก้ไขบัญชีที่กำลังใช้งานจากหน้าจัดการผู้ใช้ได้ หากต้องการเปลี่ยนรหัสผ่านให้ใช้เมนูความปลอดภัย" }, { status: 409 });
+      }
+      if (suppliedAccountId === "user-owner") {
+        return Response.json({ error: "บัญชีเจ้าของระบบเป็นสิทธิ์สูงสุดและแก้ไขจากหน้าจัดการผู้ใช้ไม่ได้" }, { status: 403 });
       }
       const accountId = suppliedAccountId || `user-${crypto.randomUUID()}`;
       const [existing] = suppliedAccountId ? await db.select().from(userAccounts).where(eq(userAccounts.id, accountId)).limit(1) : [];
@@ -2653,6 +2666,9 @@ export async function POST(request: Request) {
       const [linkedReward] = rewardId ? await db.select().from(rewards).where(eq(rewards.id, rewardId)).limit(1) : [];
       if (rewardId && !linkedReward) return Response.json({ error: "ไม่พบรางวัลที่ผูกกับเควส กรุณาเลือกรางวัลใหม่" }, { status: 400 });
       const preservesExistingReward = Boolean(rewardId && sourceQuest?.rewardId === rewardId);
+      if (rewardId && !preservesExistingReward && !(await getSystemSettingsRow()).questRewardLinkingEnabled) {
+        return Response.json({ error: "เจ้าของระบบปิดการผูกรางวัลใหม่กับเควสไว้ รางวัลเดิมและประวัติที่มีอยู่จะยังคงเดิม" }, { status: 409 });
+      }
       const activatesDraftQuest = sourceQuest?.status === "draft" && status === "active";
       if (rewardId && linkedReward && !linkedReward.isActive && (!preservesExistingReward || activatesDraftQuest)) {
         return Response.json({ error: "รางวัลที่ผูกใหม่หรือใช้เปิดเควสต้องเป็นรางวัลที่เปิดใช้งานอยู่" }, { status: 400 });

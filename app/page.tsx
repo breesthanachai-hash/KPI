@@ -53,7 +53,7 @@ import {
 const Office3D = lazy(() => import("./office-3d"));
 const AI_MASCOT_VISIBILITY_STORAGE_KEY = "people-pulse-ai-mascot-visible:v1";
 
-type View = "overview" | "employees" | "profiles" | "organizationDocs" | "skills" | "power" | "peopleOps" | "hr" | "portfolio" | "work" | "office" | "access";
+type View = "overview" | "employees" | "profiles" | "organizationDocs" | "skills" | "power" | "peopleOps" | "hr" | "portfolio" | "work" | "office" | "access" | "settings";
 
 type PublicUserAccount = Omit<UserAccountRecord, "authUserId"> & {
   loginId?: string;
@@ -128,6 +128,7 @@ type AppPermissions = {
   canManageOrganizationDocuments: boolean;
   canManageEmployeeWarnings: boolean;
   canManageEmployeeRecognitions: boolean;
+  canManageSystemSettings: boolean;
 };
 type EmployeeTeamOverview = { employees: EmployeeRecord[]; evaluations: EvaluationRecord[]; workItems: WorkItemRecord[] };
 
@@ -148,6 +149,84 @@ type LaunchReadiness = {
   realDocumentCount: number;
   submittedWorkCount: number;
 };
+
+type PublicSystemSettings = {
+  revision: number;
+  organization: {
+    name: string;
+    shortName: string;
+  };
+  experience: {
+    navigationMode: "simple" | "full";
+    adminHome: "overview" | "employees" | "work";
+    managerHome: "overview" | "employees" | "work";
+    employeeHome: "work" | "portfolio" | "peopleOps";
+  };
+  features: {
+    aiAssistantEnabled: boolean;
+    aiMascotEnabled: boolean;
+    office3dEnabled: boolean;
+    questRewardLinkingEnabled: boolean;
+  };
+};
+
+type OwnerSystemSettings = PublicSystemSettings & {
+  updatedAt: string;
+  updatedByName: string;
+};
+
+type SystemSettingsAuditEvent = {
+  id: string;
+  previousRevision: number;
+  nextRevision: number;
+  changedKeys: string[];
+  actorName: string;
+  createdAt: string;
+};
+
+type WorkspaceNavigationItem = {
+  id: string;
+  icon: string;
+  label: string;
+  description: string;
+  keywords: string;
+  badge?: string;
+  active: boolean;
+  primarySimple?: boolean;
+  primaryFull?: boolean;
+  visible: boolean;
+};
+
+type WorkspaceNavigationGroup = {
+  id: string;
+  label: string;
+  description: string;
+  items: WorkspaceNavigationItem[];
+};
+
+const fallbackSystemSettings: PublicSystemSettings = {
+  revision: 0,
+  organization: { name: "People Pulse", shortName: "People Pulse" },
+  experience: { navigationMode: "simple", adminHome: "work", managerHome: "work", employeeHome: "work" },
+  features: { aiAssistantEnabled: true, aiMascotEnabled: true, office3dEnabled: true, questRewardLinkingEnabled: true },
+};
+
+const systemSettingLabels: Record<string, string> = {
+  "organization.name": "ชื่อองค์กร",
+  "organization.shortName": "ชื่อย่อองค์กร",
+  "experience.navigationMode": "รูปแบบเมนู",
+  "experience.adminHome": "หน้าแรกของ HR / Admin",
+  "experience.managerHome": "หน้าแรกของหัวหน้าทีม",
+  "experience.employeeHome": "หน้าแรกของพนักงาน",
+  "features.aiAssistantEnabled": "ผู้ช่วย AI",
+  "features.aiMascotEnabled": "หุ่น AI",
+  "features.office3dEnabled": "สำนักงาน 3D",
+  "features.questRewardLinkingEnabled": "การผูกรางวัลกับเควสใหม่",
+};
+
+function systemSettingLabel(key: string) {
+  return systemSettingLabels[key] ?? key;
+}
 
 type OfficeLoadLevel = "available" | "steady" | "busy" | "overloaded";
 
@@ -911,6 +990,7 @@ const viewMeta: Record<View, { eyebrow: string; title: string; description: stri
   work: { eyebrow: "จัดการงาน", title: "งานของทีม", description: "เลือกงาน เริ่มทำ ส่งหลักฐาน และติดตามความคืบหน้าได้จากรายการเดียว" },
   office: { eyebrow: "สำนักงาน 3D ของทีม", title: "สำนักงานจำลอง 3D", description: "ดูตัวละครพนักงานเดิน เลือกห้อง และทำกิจกรรมตามภาระงานจริงในบรรยากาศสำนักงานสมัยใหม่" },
   access: { eyebrow: "ACCESS & PERMISSIONS", title: "ผู้ใช้งานและสิทธิ์เข้าถึง", description: "แยกคนสั่งงานและคนทำงานให้ชัดเจน พร้อมกำหนดข้อมูลที่แต่ละคนเห็นและจัดการได้" },
+  settings: { eyebrow: "OWNER SETTINGS", title: "ศูนย์ตั้งค่าระบบ", description: "กำหนดค่ากลางที่เชื่อมโยงการทำงานของ People Pulse จากจุดเดียว" },
 };
 
 const temporaryPasswordAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%";
@@ -1026,9 +1106,18 @@ export default function Home() {
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [employeePreview, setEmployeePreview] = useState<EmployeePreview | null>(null);
   const isEmployeePreview = Boolean(employeePreview?.readOnly);
-  const [permissions, setPermissions] = useState<AppPermissions>({ canManageAccounts: false, canManagePeople: false, canManageWork: false, canManageQuests: false, canAssignTeamWork: false, canReviewWork: false, canViewTeam: false, canViewTeamOverview: false, canViewOwnGrowth: false, canViewOwnRewards: false, canManageOrganizationDocuments: false, canManageEmployeeWarnings: false, canManageEmployeeRecognitions: false });
+  const [permissions, setPermissions] = useState<AppPermissions>({ canManageAccounts: false, canManagePeople: false, canManageWork: false, canManageQuests: false, canAssignTeamWork: false, canReviewWork: false, canViewTeam: false, canViewTeamOverview: false, canViewOwnGrowth: false, canViewOwnRewards: false, canManageOrganizationDocuments: false, canManageEmployeeWarnings: false, canManageEmployeeRecognitions: false, canManageSystemSettings: false });
   const [teamOverview, setTeamOverview] = useState<EmployeeTeamOverview>({ employees: [], evaluations: [], workItems: [] });
   const [launchReadiness, setLaunchReadiness] = useState<LaunchReadiness | null>(null);
+  const [publicSystemSettings, setPublicSystemSettings] = useState<PublicSystemSettings>(fallbackSystemSettings);
+  const [ownerSystemSettings, setOwnerSystemSettings] = useState<OwnerSystemSettings | null>(null);
+  const [systemSettingsDraft, setSystemSettingsDraft] = useState<PublicSystemSettings>(fallbackSystemSettings);
+  const [systemSettingsAuditEvents, setSystemSettingsAuditEvents] = useState<SystemSettingsAuditEvent[]>([]);
+  const [systemSettingsLoading, setSystemSettingsLoading] = useState(false);
+  const [systemSettingsSaving, setSystemSettingsSaving] = useState(false);
+  const [systemSettingsError, setSystemSettingsError] = useState("");
+  const [systemSettingsReloadKey, setSystemSettingsReloadKey] = useState(0);
+  const defaultHomeAppliedRef = useRef(false);
   const [authGate, setAuthGate] = useState<AuthGateState | null>(null);
   const [accessDenied, setAccessDenied] = useState<{ message: string } | null>(null);
   const [selectedEmployee, setSelectedEmployee] = useState<EmployeeRecord | null>(null);
@@ -1047,6 +1136,9 @@ export default function Home() {
   const [showAiMascot, setShowAiMascot] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showWorkspaceMenu, setShowWorkspaceMenu] = useState(false);
+  const [workspaceMenuSearch, setWorkspaceMenuSearch] = useState("");
+  const workspaceMenuSearchRef = useRef<HTMLInputElement | null>(null);
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [notificationFilter, setNotificationFilter] = useState<NotificationFilter>("all");
@@ -1150,7 +1242,7 @@ export default function Home() {
     if (previewEmployeeId) dashboardParams.set("previewEmployeeId", previewEmployeeId);
     fetch(`/api/dashboard?${dashboardParams.toString()}`, { signal: controller.signal })
       .then(async (response) => {
-        const body = await response.json().catch(() => ({})) as { currentUser?: CurrentUser; employeePreview?: EmployeePreview | null; permissions?: AppPermissions; teamOverview?: EmployeeTeamOverview; launchReadiness?: LaunchReadiness; userAccounts?: PublicUserAccount[]; employeeRegistrationRequests?: EmployeeRegistrationRequest[]; notificationReads?: NotificationReadRecord[]; employees?: EmployeeRecord[]; evaluations?: EvaluationRecord[]; selfAssessments?: EmployeeSelfAssessmentRecord[]; hrProfiles?: HrProfileRecord[]; attendanceRecords?: AttendanceRecord[]; skillAchievements?: SkillAchievementRecord[]; talentActions?: TalentActionRecord[]; projects?: ProjectRecord[]; workItems?: WorkItemRecord[]; workSubmissions?: WorkSubmissionRecord[]; quests?: QuestRecord[]; questCompletions?: QuestCompletionRecord[]; rewards?: RewardRecord[]; pointLedger?: PointLedgerRecord[]; pointEvents?: PointEventRecord[]; pointPolicyRules?: PointPolicyRules; rewardRedemptions?: RewardRedemptionRecord[]; organizationPolicies?: OrganizationPolicyRecord[]; policyAcknowledgements?: PolicyAcknowledgementRecord[]; employeeProfiles?: EmployeeProfileRecord[]; applicationDocuments?: ApplicationDocumentRecord[]; employmentContracts?: EmploymentContractRecord[]; organizationDocuments?: OrganizationDocumentRecord[]; employeeWarnings?: EmployeeWarningRecord[]; employeeRecognitions?: EmployeeRecognitionRecord[]; authRequired?: boolean; passwordChangeRequired?: boolean; accessDenied?: boolean; displayName?: string; loginId?: string; error?: string };
+        const body = await response.json().catch(() => ({})) as { currentUser?: CurrentUser; employeePreview?: EmployeePreview | null; permissions?: AppPermissions; publicSystemSettings?: PublicSystemSettings; teamOverview?: EmployeeTeamOverview; launchReadiness?: LaunchReadiness; userAccounts?: PublicUserAccount[]; employeeRegistrationRequests?: EmployeeRegistrationRequest[]; notificationReads?: NotificationReadRecord[]; employees?: EmployeeRecord[]; evaluations?: EvaluationRecord[]; selfAssessments?: EmployeeSelfAssessmentRecord[]; hrProfiles?: HrProfileRecord[]; attendanceRecords?: AttendanceRecord[]; skillAchievements?: SkillAchievementRecord[]; talentActions?: TalentActionRecord[]; projects?: ProjectRecord[]; workItems?: WorkItemRecord[]; workSubmissions?: WorkSubmissionRecord[]; quests?: QuestRecord[]; questCompletions?: QuestCompletionRecord[]; rewards?: RewardRecord[]; pointLedger?: PointLedgerRecord[]; pointEvents?: PointEventRecord[]; pointPolicyRules?: PointPolicyRules; rewardRedemptions?: RewardRedemptionRecord[]; organizationPolicies?: OrganizationPolicyRecord[]; policyAcknowledgements?: PolicyAcknowledgementRecord[]; employeeProfiles?: EmployeeProfileRecord[]; applicationDocuments?: ApplicationDocumentRecord[]; employmentContracts?: EmploymentContractRecord[]; organizationDocuments?: OrganizationDocumentRecord[]; employeeWarnings?: EmployeeWarningRecord[]; employeeRecognitions?: EmployeeRecognitionRecord[]; authRequired?: boolean; passwordChangeRequired?: boolean; accessDenied?: boolean; displayName?: string; loginId?: string; error?: string };
         if (response.status === 401 || body.authRequired) {
           setAuthGate({ mode: "login" });
           setAccessDenied(null);
@@ -1206,7 +1298,19 @@ export default function Home() {
         setAuthGate(null);
         setCurrentUser(body.currentUser ?? null);
         setEmployeePreview(body.employeePreview ?? null);
-        setPermissions(body.permissions ?? { canManageAccounts: false, canManagePeople: false, canManageWork: false, canManageQuests: false, canAssignTeamWork: false, canReviewWork: false, canViewTeam: false, canViewTeamOverview: false, canViewOwnGrowth: false, canViewOwnRewards: false, canManageOrganizationDocuments: false, canManageEmployeeWarnings: false, canManageEmployeeRecognitions: false });
+        setPermissions(body.permissions ?? { canManageAccounts: false, canManagePeople: false, canManageWork: false, canManageQuests: false, canAssignTeamWork: false, canReviewWork: false, canViewTeam: false, canViewTeamOverview: false, canViewOwnGrowth: false, canViewOwnRewards: false, canManageOrganizationDocuments: false, canManageEmployeeWarnings: false, canManageEmployeeRecognitions: false, canManageSystemSettings: false });
+        const loadedSystemSettings = body.publicSystemSettings ?? fallbackSystemSettings;
+        setPublicSystemSettings(loadedSystemSettings);
+        if (!defaultHomeAppliedRef.current && body.currentUser) {
+          defaultHomeAppliedRef.current = true;
+          const configuredHome = body.currentUser.role === "admin"
+            ? loadedSystemSettings.experience.adminHome
+            : body.currentUser.role === "manager"
+              ? loadedSystemSettings.experience.managerHome
+              : loadedSystemSettings.experience.employeeHome;
+          setView(configuredHome);
+          if (configuredHome === "work") setWorkSection("tasks");
+        }
         setTeamOverview(body.teamOverview ?? { employees: [], evaluations: [], workItems: [] });
         setLaunchReadiness(body.launchReadiness ?? null);
         setUserAccounts(body.userAccounts ?? []);
@@ -1265,7 +1369,6 @@ export default function Home() {
           setWorkForm((form) => ({ ...form, projectId: form.projectId || firstProjectId, assigneeEmployeeId: form.assigneeEmployeeId || firstEmployeeId }));
         }
         if (body.currentUser?.role === "employee") {
-          setView("work");
           setWorkAssigneeFilter(body.currentUser.employeeId ?? "all");
           setPortfolioEmployeeId(body.currentUser.employeeId ?? "all");
           setRewardEmployeeId(body.currentUser.employeeId ?? "");
@@ -1315,7 +1418,55 @@ export default function Home() {
     return () => window.clearTimeout(timer);
   }, [canManageEmployeeFiles, view]);
 
-  const hasBlockingOverlay = Boolean(selectedEmployee || skillProfileEmployee || hrEmployee || showAddEmployee || showWorkForm || showQuestForm || questToFulfill || showProjectForm || submissionWorkItem || rewardToRedeem || showRewardForm || showProfileEditor || showContractForm || contractToSign || showOrganizationDocumentForm || showEmployeeWarningForm || showEmployeeRecognitionForm || showNotifications || showUserMenu || showChangePassword);
+  useEffect(() => {
+    if (view !== "settings" || (permissions.canManageSystemSettings && !isEmployeePreview)) return;
+    const timer = window.setTimeout(() => setView("work"), 0);
+    return () => window.clearTimeout(timer);
+  }, [isEmployeePreview, permissions.canManageSystemSettings, view]);
+
+  useEffect(() => {
+    if (view !== "settings" || !permissions.canManageSystemSettings || isEmployeePreview) return;
+    const controller = new AbortController();
+    const loadSettings = async () => {
+      await Promise.resolve();
+      if (controller.signal.aborted) return;
+      setSystemSettingsLoading(true);
+      setSystemSettingsError("");
+      try {
+        const response = await fetch("/api/system-settings", { signal: controller.signal });
+        const body = await response.json().catch(() => ({})) as { settings?: OwnerSystemSettings; auditEvents?: SystemSettingsAuditEvent[]; error?: string };
+        if (!response.ok || !body.settings) throw new Error(body.error || "โหลดการตั้งค่าระบบไม่สำเร็จ");
+        setOwnerSystemSettings(body.settings);
+        setSystemSettingsDraft(body.settings);
+        setPublicSystemSettings(body.settings);
+        setSystemSettingsAuditEvents(body.auditEvents ?? []);
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setSystemSettingsError(error instanceof Error ? error.message : "โหลดการตั้งค่าระบบไม่สำเร็จ");
+      } finally {
+        if (!controller.signal.aborted) setSystemSettingsLoading(false);
+      }
+    };
+    void loadSettings();
+    return () => controller.abort();
+  }, [isEmployeePreview, permissions.canManageSystemSettings, systemSettingsReloadKey, view]);
+
+  useEffect(() => {
+    if (publicSystemSettings.features.aiAssistantEnabled) return;
+    const timer = window.setTimeout(() => setShowAiAssistant(false), 0);
+    return () => window.clearTimeout(timer);
+  }, [publicSystemSettings.features.aiAssistantEnabled]);
+
+  useEffect(() => {
+    if (publicSystemSettings.features.office3dEnabled || view !== "office") return;
+    const timer = window.setTimeout(() => {
+      setWorkSection("tasks");
+      setView("work");
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [publicSystemSettings.features.office3dEnabled, view]);
+
+  const hasBlockingOverlay = Boolean(selectedEmployee || skillProfileEmployee || hrEmployee || showAddEmployee || showWorkForm || showQuestForm || questToFulfill || showProjectForm || submissionWorkItem || rewardToRedeem || showRewardForm || showProfileEditor || showContractForm || contractToSign || showOrganizationDocumentForm || showEmployeeWarningForm || showEmployeeRecognitionForm || showNotifications || showUserMenu || showWorkspaceMenu || showChangePassword);
 
   useEffect(() => {
     let mascotShouldBeVisible = false;
@@ -1382,6 +1533,7 @@ export default function Home() {
         setShowEmployeeRecognitionForm(false);
         setShowNotifications(false);
         setShowUserMenu(false);
+        setShowWorkspaceMenu(false);
         setShowChangePassword(false);
         setShowAiAssistant(false);
       }
@@ -1394,7 +1546,13 @@ export default function Home() {
       lastFocusedElementRef.current?.focus();
       lastFocusedElementRef.current = null;
     };
-  }, [hasBlockingOverlay, selectedEmployee, skillProfileEmployee, hrEmployee, showAddEmployee, showWorkForm, showQuestForm, questToFulfill, showProjectForm, submissionWorkItem, rewardToRedeem, showRewardForm, showProfileEditor, showContractForm, contractToSign, showOrganizationDocumentForm, showEmployeeWarningForm, showEmployeeRecognitionForm, showNotifications, showUserMenu, showChangePassword, showAiAssistant]);
+  }, [hasBlockingOverlay, selectedEmployee, skillProfileEmployee, hrEmployee, showAddEmployee, showWorkForm, showQuestForm, questToFulfill, showProjectForm, submissionWorkItem, rewardToRedeem, showRewardForm, showProfileEditor, showContractForm, contractToSign, showOrganizationDocumentForm, showEmployeeWarningForm, showEmployeeRecognitionForm, showNotifications, showUserMenu, showWorkspaceMenu, showChangePassword, showAiAssistant]);
+
+  useEffect(() => {
+    if (!showWorkspaceMenu) return;
+    const focusFrame = window.requestAnimationFrame(() => workspaceMenuSearchRef.current?.focus());
+    return () => window.cancelAnimationFrame(focusFrame);
+  }, [showWorkspaceMenu]);
 
   const evaluationsByEmployee = useMemo(
     () => new Map(evaluations.filter((evaluation) => evaluation.period === period).map((evaluation) => [evaluation.employeeId, evaluation])),
@@ -1598,9 +1756,12 @@ export default function Home() {
   const activeQuestPoints = currentQuests.reduce((sum, quest) => sum + quest.pointsReward, 0);
   const activeQuestRewards = currentQuests.filter((quest) => Boolean(quest.rewardId)).length;
   const questProgressAverage = currentQuests.length ? Math.round(currentQuests.reduce((sum, quest) => sum + quest.progress, 0) / currentQuests.length) : 0;
+  const questRewardLinkingEnabled = publicSystemSettings.features.questRewardLinkingEnabled;
+  const questRewardChoices = rewards.filter((reward) => (reward.isActive || reward.id === questForm.rewardId) && (questRewardLinkingEnabled || reward.id === editingQuest?.rewardId));
   const questSelectedReward = questForm.rewardId ? rewards.find((reward) => reward.id === questForm.rewardId) ?? null : null;
   const questPreservesInactiveReward = Boolean(editingQuest?.rewardId && editingQuest.rewardId === questForm.rewardId && !(editingQuest.status === "draft" && questForm.status === "active"));
   const questRewardUnavailable = Boolean(questForm.rewardId) && !questSelectedReward?.isActive && !questPreservesInactiveReward;
+  const questCreatesBlockedRewardLink = Boolean(!questRewardLinkingEnabled && questForm.rewardId && questForm.rewardId !== editingQuest?.rewardId);
   const questPointsInvalid = !Number.isInteger(questForm.pointsReward) || questForm.pointsReward < 0 || questForm.pointsReward > questPointLimit;
   const questStatusRequiresPolicy = questForm.status === "active" || questForm.status === "completed";
   const questPolicyUnavailable = questStatusRequiresPolicy && !activePointPolicyRecord;
@@ -3714,6 +3875,16 @@ export default function Home() {
 
   const isAdmin = currentUser?.role === "admin";
   const isEmployeeUser = currentUser?.role === "employee";
+  const canManageSystemSettings = Boolean(permissions.canManageSystemSettings && !isEmployeePreview);
+  const usesSimpleNavigation = publicSystemSettings.experience.navigationMode === "simple";
+  const systemSettingsHasChanges = Boolean(ownerSystemSettings) && JSON.stringify({ organization: systemSettingsDraft.organization, experience: systemSettingsDraft.experience, features: systemSettingsDraft.features }) !== JSON.stringify({ organization: ownerSystemSettings?.organization, experience: ownerSystemSettings?.experience, features: ownerSystemSettings?.features });
+  const systemSettingsOrganizationNameLength = Array.from(systemSettingsDraft.organization.name.normalize("NFC").trim()).length;
+  const systemSettingsShortNameLength = Array.from(systemSettingsDraft.organization.shortName.normalize("NFC").trim()).length;
+  const systemSettingsInvalid = systemSettingsOrganizationNameLength < 2
+    || systemSettingsOrganizationNameLength > 80
+    || systemSettingsShortNameLength < 2
+    || systemSettingsShortNameLength > 30
+    || (systemSettingsDraft.features.aiMascotEnabled && !systemSettingsDraft.features.aiAssistantEnabled);
   const canManageRewardCatalog = Boolean(isAdmin && !isEmployeePreview);
   const rewardCatalog = canManageRewardCatalog ? rewards : rewards.filter((reward) => reward.isActive);
   const isEmployeeCoordinationCreate = Boolean(isEmployeeUser && !editingWorkItem);
@@ -3863,11 +4034,224 @@ export default function Home() {
   };
 
   const openPeopleAi = () => {
+    if (!publicSystemSettings.features.aiAssistantEnabled) {
+      showToast("ผู้ช่วย AI ถูกซ่อนจากพื้นที่ทำงานโดยเจ้าของระบบ", "error");
+      return;
+    }
     lastFocusedElementRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setShowNotifications(false);
     setShowUserMenu(false);
+    setShowWorkspaceMenu(false);
     setShowAiAssistant(true);
   };
+
+  const openWorkspaceMenu = () => {
+    lastFocusedElementRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setShowNotifications(false);
+    setShowUserMenu(false);
+    setShowAiAssistant(false);
+    setWorkspaceMenuSearch("");
+    setShowWorkspaceMenu(true);
+  };
+
+  const closeWorkspaceMenu = () => {
+    setShowWorkspaceMenu(false);
+    setWorkspaceMenuSearch("");
+  };
+
+  const navigateFromWorkspaceMenu = (destination: View, prepare?: () => void) => {
+    prepare?.();
+    setView(destination);
+    closeWorkspaceMenu();
+  };
+
+  const navigateToConfiguredHome = () => {
+    const configuredHome = currentUser?.role === "admin"
+      ? publicSystemSettings.experience.adminHome
+      : currentUser?.role === "manager"
+        ? publicSystemSettings.experience.managerHome
+        : publicSystemSettings.experience.employeeHome;
+    setActiveDepartment("all");
+    if (configuredHome === "work") {
+      setWorkSection("tasks");
+      setWorkDueFilter("all");
+      setWorkSearch("");
+    }
+    setView(configuredHome);
+    closeWorkspaceMenu();
+  };
+
+  const workspaceMenuMatches = (label: string, description: string, keywords = "") => {
+    const query = workspaceMenuSearch.trim().toLocaleLowerCase("th");
+    return !query || `${label} ${description} ${keywords}`.toLocaleLowerCase("th").includes(query);
+  };
+
+  const openWorkspaceDestination = (destinationId: string) => {
+    if (destinationId === "my-tasks" || destinationId === "tasks") {
+      navigateFromWorkspaceMenu("work", () => {
+        setActiveDepartment("all");
+        setEmployeeTaskScope("assigned");
+        setWorkSection("tasks");
+        setWorkAssigneeFilter(isEmployeeUser ? currentUser?.employeeId ?? "all" : "all");
+        setWorkDueFilter("all");
+        setWorkSearch("");
+      });
+    } else if (destinationId === "my-quests" || destinationId === "quests") {
+      navigateFromWorkspaceMenu("work", () => { setQuestTypeFilter("all"); setWorkSection("quests"); });
+    } else if (destinationId === "my-portfolio" || destinationId === "portfolio") {
+      navigateFromWorkspaceMenu("portfolio", () => { if (isEmployeeUser) setPortfolioEmployeeId(currentUser?.employeeId ?? "all"); });
+    } else if (destinationId === "my-growth" || destinationId === "people-ops") {
+      navigateFromWorkspaceMenu("peopleOps");
+    } else if (destinationId === "my-points" || destinationId === "points") {
+      navigateFromWorkspaceMenu("work", () => { setPointPanel("overview"); setWorkSection("points"); });
+    } else if (destinationId === "my-rewards" || destinationId === "rewards") {
+      navigateFromWorkspaceMenu("work", () => setWorkSection("rewards"));
+    } else if (destinationId === "my-policies" || destinationId === "policies") {
+      navigateFromWorkspaceMenu("work", () => { setPointPanel("policies"); setWorkSection("points"); });
+    } else if (destinationId === "team-office" || destinationId === "office") {
+      navigateFromWorkspaceMenu("office");
+    } else if (destinationId === "team-power" || destinationId === "power") {
+      navigateFromWorkspaceMenu("power");
+    } else if (destinationId === "overview" || destinationId === "employees" || destinationId === "skills" || destinationId === "profiles" || destinationId === "hr" || destinationId === "access" || destinationId === "settings") {
+      navigateFromWorkspaceMenu(destinationId);
+    } else if (destinationId === "projects") {
+      navigateFromWorkspaceMenu("work", () => setWorkSection("projects"));
+    } else if (destinationId === "organization-docs") {
+      navigateFromWorkspaceMenu("organizationDocs");
+    } else if (destinationId === "ai") {
+      openPeopleAi();
+    }
+  };
+
+  const saveSystemSettings = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!permissions.canManageSystemSettings || isEmployeePreview || systemSettingsSaving) return;
+    const organizationName = systemSettingsDraft.organization.name.trim();
+    const organizationShortName = systemSettingsDraft.organization.shortName.trim();
+    const organizationNameLength = Array.from(organizationName.normalize("NFC")).length;
+    const organizationShortNameLength = Array.from(organizationShortName.normalize("NFC")).length;
+    if (organizationNameLength < 2 || organizationNameLength > 80 || organizationShortNameLength < 2 || organizationShortNameLength > 30) {
+      setSystemSettingsError("ชื่อองค์กรต้องมี 2–80 ตัวอักษร และชื่อย่อต้องมี 2–30 ตัวอักษร");
+      return;
+    }
+    if (systemSettingsDraft.features.aiMascotEnabled && !systemSettingsDraft.features.aiAssistantEnabled) {
+      setSystemSettingsError("ต้องเปิดผู้ช่วย AI ก่อน จึงจะแสดงหุ่น AI ได้");
+      return;
+    }
+    setSystemSettingsSaving(true);
+    setSystemSettingsError("");
+    try {
+      const response = await fetch("/api/system-settings", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "saveSystemSettings",
+          expectedRevision: systemSettingsDraft.revision,
+          organization: { name: organizationName, shortName: organizationShortName },
+          experience: systemSettingsDraft.experience,
+          features: systemSettingsDraft.features,
+        }),
+      });
+      const body = await response.json().catch(() => ({})) as { settings?: OwnerSystemSettings; auditEvent?: SystemSettingsAuditEvent; error?: string };
+      if (!response.ok || !body.settings) throw new Error(body.error || "บันทึกการตั้งค่าระบบไม่สำเร็จ");
+      setOwnerSystemSettings(body.settings);
+      setSystemSettingsDraft(body.settings);
+      setPublicSystemSettings(body.settings);
+      if (body.auditEvent) setSystemSettingsAuditEvents((items) => [body.auditEvent!, ...items.filter((item) => item.id !== body.auditEvent!.id)]);
+      showToast("บันทึกการตั้งค่าและเชื่อมโยงกับพื้นที่ทำงานแล้ว");
+    } catch (error) {
+      setSystemSettingsError(error instanceof Error ? error.message : "บันทึกการตั้งค่าระบบไม่สำเร็จ");
+    } finally {
+      setSystemSettingsSaving(false);
+    }
+  };
+
+  const workspaceNavigationGroups: WorkspaceNavigationGroup[] = isEmployeeUser ? [
+    {
+      id: "my-work",
+      label: "งานของฉัน",
+      description: "เริ่มงาน ส่งหลักฐาน และติดตามภารกิจ",
+      items: [
+        { id: "my-tasks", icon: "✓", label: "งานของฉัน", description: "สิ่งที่ต้องทำและงานใกล้กำหนด", keywords: "todo task วันนี้", badge: String(employeeAssignedWorkItems.filter((item) => item.status !== "done").length), active: view === "work" && workSection === "tasks", primarySimple: true, primaryFull: true, visible: true },
+        { id: "my-quests", icon: "Q", label: "เควสของฉัน", description: "เป้าหมายรายบุคคล ทีม และกิจกรรม", keywords: "quest ภารกิจ", badge: String(currentQuests.length), active: view === "work" && workSection === "quests", primarySimple: true, primaryFull: true, visible: true },
+        { id: "my-portfolio", icon: "◇", label: "แฟ้มผลงาน", description: "งานและหลักฐานที่ฉันส่งไว้", keywords: "portfolio evidence ผลงาน หลักฐาน", active: view === "portfolio", primaryFull: true, visible: true },
+      ],
+    },
+    {
+      id: "growth-rewards",
+      label: "การเติบโตและรางวัล",
+      description: "สกิล ค่าตอบแทน Points และสิทธิประโยชน์",
+      items: [
+        { id: "my-growth", icon: "↗", label: "การเติบโตของฉัน", description: "สกิล เป้าหมายตำแหน่ง และเงินเดือน", keywords: "growth salary skill เติบโต เงินเดือน", active: view === "peopleOps", primarySimple: true, primaryFull: true, visible: true },
+        { id: "my-points", icon: "★", label: "Points ของฉัน", description: "ยอดสะสมและประวัติได้–เสีย Points", keywords: "point คะแนน แต้ม", badge: formatMoney(currentUser?.employeeId ? pointBalances.get(currentUser.employeeId) ?? 0 : 0), active: view === "work" && workSection === "points" && pointPanel !== "policies", primarySimple: true, primaryFull: true, visible: true },
+        { id: "my-rewards", icon: "♢", label: "ร้านรางวัล", description: "เลือกรางวัลและติดตามคำขอแลก", keywords: "reward redeem แลก", active: view === "work" && workSection === "rewards", primaryFull: true, visible: true },
+        { id: "my-policies", icon: "§", label: "กฎองค์กร", description: "อ่านกฎและยืนยันการรับทราบ", keywords: "policy rule นโยบาย", badge: pendingPolicyAcknowledgementCount > 0 ? String(pendingPolicyAcknowledgementCount) : undefined, active: view === "work" && workSection === "points" && pointPanel === "policies", primaryFull: true, visible: true },
+      ],
+    },
+    {
+      id: "my-team",
+      label: "ทีมของฉัน",
+      description: "มุมมองทีมที่แชร์ได้ตามสิทธิ์",
+      items: [
+        { id: "team-office", icon: "⌂", label: "สำนักงานของทีม", description: "ดูภาระงานรวมในสำนักงาน 3D", keywords: "office team สำนักงาน", badge: String(officePressureCount), active: view === "office", primaryFull: true, visible: publicSystemSettings.features.office3dEnabled },
+        { id: "team-power", icon: "◆", label: "ค่าพลังทีม", description: "เปรียบเทียบจุดแข็งและทักษะ", keywords: "power rating skill", active: view === "power", primaryFull: true, visible: true },
+      ],
+    },
+  ] : [
+    {
+      id: "daily-work",
+      label: "งานประจำวัน",
+      description: "ดูสิ่งที่ต้องทำ เควส โปรเจกต์ และผลงาน",
+      items: [
+        { id: "overview", icon: "◫", label: "ภาพรวมทีม", description: "KPI และสถานะสำคัญขององค์กร", keywords: "dashboard summary ภาพรวม", active: view === "overview", primarySimple: true, primaryFull: true, visible: true },
+        { id: "tasks", icon: "✓", label: "รายการงาน", description: "งานที่ต้องทำและงานรอตรวจ", keywords: "todo task งาน", badge: String(workItems.filter((item) => item.status !== "done").length), active: view === "work" && workSection === "tasks", primarySimple: true, primaryFull: true, visible: true },
+        { id: "quests", icon: "Q", label: "ศูนย์เควส", description: "เควสรายบุคคล ทีม และกิจกรรม", keywords: "quest ภารกิจ", badge: String(currentQuests.length), active: view === "work" && workSection === "quests", primarySimple: true, primaryFull: true, visible: true },
+        { id: "projects", icon: "◇", label: "โปรเจกต์", description: "ติดตามกลุ่มงานและผู้รับผิดชอบ", keywords: "project โครงการ", badge: String(projects.length), active: view === "work" && workSection === "projects", primaryFull: true, visible: true },
+        { id: "portfolio", icon: "▱", label: "แฟ้มผลงาน", description: "ค้นหางาน ไฟล์ และหลักฐาน", keywords: "portfolio evidence ผลงาน หลักฐาน", active: view === "portfolio", primaryFull: true, visible: true },
+        { id: "points", icon: "★", label: "จัดการ Points", description: "ยอด กฎ และประวัติ Points", keywords: "point คะแนน แต้ม", active: view === "work" && workSection === "points" && pointPanel !== "policies", primaryFull: true, visible: true },
+        { id: "rewards", icon: "♢", label: "รางวัล", description: "แคตตาล็อกและคำขอแลกรางวัล", keywords: "reward redemption แลก", active: view === "work" && workSection === "rewards", primaryFull: true, visible: true },
+      ],
+    },
+    {
+      id: "team-performance",
+      label: "ทีมและผลงาน",
+      description: "ค้นหาคน ประเมินสกิล และดูความพร้อมของทีม",
+      items: [
+        { id: "employees", icon: "♙", label: "พนักงาน", description: "รายชื่อ ตำแหน่ง และผลประเมิน", keywords: "employee kpi คน บุคลากร", active: view === "employees", primarySimple: true, primaryFull: true, visible: true },
+        { id: "skills", icon: "✦", label: "สกิลทีม", description: "Skill Matrix และช่องว่างทักษะ", keywords: "skill competency", active: view === "skills", primaryFull: true, visible: true },
+        { id: "power", icon: "◆", label: "ค่าพลัง", description: "เปรียบเทียบศักยภาพของทีม", keywords: "power rating", active: view === "power", primaryFull: true, visible: true },
+        { id: "office", icon: "⌂", label: "สำนักงานจำลอง", description: "ภาระงานของทีมในมุมมอง 3D", keywords: "office 3d สำนักงาน", badge: String(officePressureCount), active: view === "office", primaryFull: true, visible: publicSystemSettings.features.office3dEnabled },
+      ],
+    },
+    {
+      id: "people-system",
+      label: "HR และระบบ",
+      description: "แฟ้มบุคลากร เอกสาร กฎ และสิทธิ์ผู้ใช้",
+      items: [
+        { id: "people-ops", icon: "◷", label: "เวลาและการเติบโต", description: "ลงเวลา วันลา และเส้นทางเติบโต", keywords: "attendance leave growth salary", badge: pendingLeaveRecords.length ? String(pendingLeaveRecords.length) : undefined, active: view === "peopleOps", primaryFull: true, visible: Boolean(isAdmin) },
+        { id: "profiles", icon: "▣", label: "แฟ้มพนักงาน", description: "ข้อมูลส่วนตัว เอกสาร และสัญญา", keywords: "dossier profile contract", active: view === "profiles", primaryFull: true, visible: Boolean(isAdmin) },
+        { id: "organization-docs", icon: "▤", label: "เอกสารองค์กร", description: "คลังเอกสารและแม่แบบ", keywords: "document template เอกสาร", badge: String(organizationDocuments.length), active: view === "organizationDocs", primaryFull: true, visible: Boolean(isAdmin && permissions.canManageOrganizationDocuments) },
+        { id: "hr", icon: "⬡", label: "บริหารบุคลากร", description: "แผนพัฒนา ตำแหน่ง และค่าตอบแทน", keywords: "hr talent workforce salary", active: view === "hr", primaryFull: true, visible: Boolean(isAdmin) },
+        { id: "policies", icon: "§", label: "กฎองค์กร", description: "ร่าง ประกาศ และติดตามการรับทราบ", keywords: "policy rule นโยบาย", active: view === "work" && workSection === "points" && pointPanel === "policies", primaryFull: true, visible: Boolean(isAdmin) },
+        { id: "access", icon: "◎", label: "ผู้ใช้งานและสิทธิ์", description: "อนุมัติสมาชิกและจัดการบัญชี", keywords: "user access permission สมาชิก สิทธิ์", badge: String(userAccounts.filter((account) => account.status === "active").length), active: view === "access", primaryFull: true, visible: Boolean(isAdmin) },
+      ],
+    },
+    {
+      id: "owner-tools",
+      label: "เครื่องมือและการตั้งค่า",
+      description: "ผู้ช่วยทำงานและค่ากลางของระบบ",
+      items: [
+        { id: "ai", icon: "AI", label: "ผู้ช่วย AI", description: "ถามข้อมูลและเปิดหน้าที่ต้องการ", keywords: "assistant help ช่วยเหลือ", active: showAiAssistant, primaryFull: true, visible: publicSystemSettings.features.aiAssistantEnabled },
+        { id: "settings", icon: "⚙", label: "ตั้งค่าระบบ", description: "ชื่อองค์กร เมนูเริ่มต้น และฟีเจอร์เชื่อมโยง", keywords: "setting owner config ตั้งค่า", badge: "เจ้าของ", active: view === "settings", primarySimple: true, primaryFull: true, visible: canManageSystemSettings },
+      ],
+    },
+  ];
+  const visibleWorkspaceNavigationGroups = workspaceNavigationGroups
+    .map((group) => ({ ...group, items: group.items.filter((item) => item.visible && workspaceMenuMatches(item.label, item.description, item.keywords)) }))
+    .filter((group) => group.items.length > 0);
+  const primaryWorkspaceNavigationItems = workspaceNavigationGroups
+    .flatMap((group) => group.items)
+    .filter((item) => item.visible && (usesSimpleNavigation ? item.primarySimple : item.primaryFull));
 
   const updateAiMascotVisibility = (visible: boolean) => {
     setShowAiMascot(visible);
@@ -3950,45 +4334,13 @@ export default function Home() {
   return (
     <main className={`app-shell calm-shell ${isEmployeeUser ? "employee-portal-shell" : ""}`}>
       <header className="topbar">
-        <button className="brand" onClick={() => { setActiveDepartment("all"); setWorkSection("quests"); setView("work"); }} aria-label="ไปที่ศูนย์เควส">
+        <button className="brand" onClick={navigateToConfiguredHome} aria-label="ไปหน้าแรกที่กำหนดไว้">
           <span className="brand-mark" aria-hidden="true"><i /><i /><i /></span>
-          <span><strong>{isEmployeeUser ? "MY PEOPLE PULSE" : "PEOPLE PULSE"}</strong><small>{isEmployeeUser ? "EMPLOYEE PORTAL" : "PEOPLE &amp; WORK OS"}</small></span>
+          <span><strong>{publicSystemSettings.organization.name}</strong><small>{isEmployeeUser ? "EMPLOYEE PORTAL" : `${publicSystemSettings.organization.shortName} · PEOPLE & WORK OS`}</small></span>
         </button>
-        <nav aria-label="เมนูหลัก">
-          {isEmployeeUser ? <>
-            <span className="nav-section-label">พื้นที่ของฉัน</span>
-            <button className={view === "work" && workSection === "quests" ? "active quest-nav-button" : "quest-nav-button"} onClick={() => { setQuestTypeFilter("all"); setWorkSection("quests"); setView("work"); }}><span aria-hidden="true">Q</span><b>เควสของฉัน</b><em>{currentQuests.length}</em></button>
-            <button className={view === "work" && workSection === "tasks" ? "active" : ""} onClick={() => { setActiveDepartment("all"); setEmployeeTaskScope("assigned"); setWorkSection("tasks"); setWorkAssigneeFilter(currentUser?.employeeId ?? "all"); setWorkDueFilter("all"); setWorkSearch(""); setView("work"); }}><span aria-hidden="true">✓</span><b>งานของฉัน</b><em>{employeeAssignedWorkItems.filter((item) => item.status !== "done").length}</em></button>
-            <button className={view === "portfolio" ? "active" : ""} onClick={() => { setPortfolioEmployeeId(currentUser?.employeeId ?? "all"); setView("portfolio"); }}><span aria-hidden="true">◇</span><b>แฟ้มผลงานของฉัน</b></button>
-            <span className="nav-section-label">ทีมของฉัน</span>
-            <button className={view === "office" ? "active" : ""} onClick={() => setView("office")}><span aria-hidden="true">⌂</span><b>สำนักงานของทีม</b><em>{officePressureCount}</em></button>
-            <button className={view === "power" ? "active" : ""} onClick={() => setView("power")}><span aria-hidden="true">◆</span><b>ค่าพลังทีม</b></button>
-            <span className="nav-section-label">การเติบโต</span>
-            <button className={view === "peopleOps" ? "active" : ""} onClick={() => setView("peopleOps")}><span aria-hidden="true">↗</span><b>เติบโต &amp; เงินเดือน</b></button>
-            <button className={view === "work" && (workSection === "rewards" || (workSection === "points" && pointPanel !== "policies")) ? "active" : ""} onClick={() => { setPointPanel("overview"); setWorkSection("points"); setView("work"); }}><span aria-hidden="true">★</span><b>Points &amp; รางวัล</b><em>{formatMoney(currentUser?.employeeId ? pointBalances.get(currentUser.employeeId) ?? 0 : 0)}</em></button>
-            <button className={view === "work" && workSection === "points" && pointPanel === "policies" ? "active" : ""} onClick={() => { setPointPanel("policies"); setWorkSection("points"); setView("work"); }}><span aria-hidden="true">§</span><b>กฎองค์กร</b>{pendingPolicyAcknowledgementCount > 0 && <em>{pendingPolicyAcknowledgementCount}</em>}</button>
-          </> : <>
-            <span className="nav-section-label">พื้นที่ทำงาน</span>
-            <button className={view === "work" && workSection === "quests" ? "active quest-nav-button" : "quest-nav-button"} onClick={() => { setQuestTypeFilter("all"); setWorkSection("quests"); setView("work"); }}><span aria-hidden="true">Q</span><b>ศูนย์เควส</b><em>{currentQuests.length}</em></button>
-            <button className={view === "work" && workSection !== "quests" && !(workSection === "points" && pointPanel === "policies") ? "active" : ""} onClick={() => { setActiveDepartment("all"); setWorkSection("tasks"); setWorkDueFilter("all"); setWorkSearch(""); setView("work"); }}><span aria-hidden="true">✓</span><b>งาน</b><em>{workItems.filter((item) => item.status !== "done").length}</em></button>
-            <button className={view === "portfolio" ? "active" : ""} onClick={() => setView("portfolio")}><span aria-hidden="true">◇</span><b>แฟ้มผลงาน</b></button>
-            <button className={showAiAssistant ? "active" : ""} onClick={openPeopleAi}><span aria-hidden="true">AI</span><b>ผู้ช่วย AI</b><em>ใหม่</em></button>
-            <button className={view === "office" ? "active" : ""} onClick={() => setView("office")}><span aria-hidden="true">⌂</span><b>สำนักงานจำลอง</b><em>{officePressureCount}</em></button>
-            <button className={view === "overview" ? "active" : ""} onClick={() => setView("overview")}><span aria-hidden="true">◫</span><b>ภาพรวมทีม</b></button>
-            <span className="nav-section-label">ทีมและผลงาน</span>
-            <button className={view === "employees" ? "active" : ""} onClick={() => setView("employees")}><span aria-hidden="true">♙</span><b>พนักงาน</b></button>
-            <button className={view === "skills" ? "active" : ""} onClick={() => setView("skills")}><span aria-hidden="true">✦</span><b>สกิลทีม</b></button>
-            <button className={view === "power" ? "active" : ""} onClick={() => setView("power")}><span aria-hidden="true">◆</span><b>ค่าพลัง</b></button>
-            {isAdmin && <>
-            <span className="nav-section-label">HR และระบบ</span>
-            <button className={view === "peopleOps" ? "active" : ""} onClick={() => setView("peopleOps")}><span aria-hidden="true">◷</span><b>เวลา &amp; เติบโต</b><em>{pendingLeaveRecords.length}</em></button>
-            <button className={view === "profiles" ? "active" : ""} onClick={() => setView("profiles")}><span aria-hidden="true">▣</span><b>แฟ้มพนักงาน</b></button>
-            {permissions.canManageOrganizationDocuments && <button className={view === "organizationDocs" ? "active" : ""} onClick={() => setView("organizationDocs")}><span aria-hidden="true">▤</span><b>เอกสารองค์กร</b><em>{organizationDocuments.length}</em></button>}
-            <button className={view === "hr" ? "active" : ""} onClick={() => setView("hr")}><span aria-hidden="true">⬡</span><b>บริหารบุคลากร</b></button>
-            <button className={view === "work" && workSection === "points" && pointPanel === "policies" ? "active" : ""} onClick={() => { setPointPanel("policies"); setWorkSection("points"); setView("work"); }}><span aria-hidden="true">§</span><b>กฎองค์กร</b></button>
-            <button className={view === "access" ? "active" : ""} onClick={() => setView("access")}><span aria-hidden="true">◎</span><b>ผู้ใช้งานและสิทธิ์</b><em>{userAccounts.filter((account) => account.status === "active").length}</em></button>
-            </>}
-          </>}
+        <nav className="primary-workspace-nav" aria-label="เมนูหลัก">
+          {primaryWorkspaceNavigationItems.map((item) => <button key={item.id} type="button" className={item.active ? "active" : ""} onClick={() => openWorkspaceDestination(item.id)} aria-current={item.active ? "page" : undefined}><span aria-hidden="true">{item.icon}</span><b>{item.label}</b>{item.badge && <em>{item.badge}</em>}</button>)}
+          <button type="button" className={`workspace-menu-trigger ${showWorkspaceMenu ? "active" : ""}`} onClick={openWorkspaceMenu} aria-haspopup="dialog" aria-expanded={showWorkspaceMenu} aria-controls="workspace-menu"><span aria-hidden="true">☷</span><b>เมนูทั้งหมด</b><em>{workspaceNavigationGroups.flatMap((group) => group.items).filter((item) => item.visible).length}</em></button>
         </nav>
         <div className="header-actions">
           {!isEmployeeUser && <label className="period-select">
@@ -4000,6 +4352,36 @@ export default function Home() {
           </button>}
         </div>
       </header>
+
+      {showWorkspaceMenu && <div className="workspace-menu-layer" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && closeWorkspaceMenu()}>
+        <aside id="workspace-menu" className="workspace-menu-panel" role="dialog" aria-modal="true" aria-labelledby="workspace-menu-title" aria-describedby="workspace-menu-description" tabIndex={-1}>
+          <header className="workspace-menu-header">
+            <span className="workspace-menu-mark" aria-hidden="true">☷</span>
+            <div><p className="eyebrow">WORKSPACE NAVIGATOR</p><h2 id="workspace-menu-title">ไปส่วนที่ต้องการได้ทันที</h2><p id="workspace-menu-description">ค้นหาจากชื่องาน ฟีเจอร์ หรือสิ่งที่ต้องการทำ</p></div>
+            <button type="button" onClick={closeWorkspaceMenu} aria-label="ปิดเมนูทั้งหมด">×</button>
+          </header>
+          <label className="workspace-menu-search" htmlFor="workspace-menu-search-input">
+            <span aria-hidden="true">⌕</span>
+            <input ref={workspaceMenuSearchRef} id="workspace-menu-search-input" type="search" autoComplete="off" value={workspaceMenuSearch} onChange={(event) => setWorkspaceMenuSearch(event.target.value)} placeholder="เช่น พนักงาน, สร้างเควส, Points หรือเอกสาร" />
+            {workspaceMenuSearch && <button type="button" onClick={() => { setWorkspaceMenuSearch(""); workspaceMenuSearchRef.current?.focus(); }} aria-label="ล้างคำค้นหา">×</button>}
+          </label>
+          <div className="workspace-menu-groups" aria-live="polite">
+            {visibleWorkspaceNavigationGroups.map((group) => <section key={group.id} className="workspace-menu-group" aria-labelledby={`workspace-menu-group-${group.id}`}>
+              <header><div><h3 id={`workspace-menu-group-${group.id}`}>{group.label}</h3><p>{group.description}</p></div><span>{group.items.length}</span></header>
+              <div>{group.items.map((item) => <button key={item.id} type="button" className={item.active ? "active" : ""} onClick={() => openWorkspaceDestination(item.id)} aria-current={item.active ? "page" : undefined}>
+                <span aria-hidden="true">{item.icon}</span>
+                <p><strong>{item.label}</strong><small>{item.description}</small></p>
+                {item.badge ? <em>{item.badge}</em> : <i aria-hidden="true">→</i>}
+              </button>)}</div>
+            </section>)}
+            {!visibleWorkspaceNavigationGroups.length && <div className="workspace-menu-empty" role="status"><span aria-hidden="true">⌕</span><strong>ไม่พบเมนูที่ค้นหา</strong><p>ลองใช้คำสั้นลง เช่น “งาน”, “คน”, “Points” หรือ “เอกสาร”</p><button type="button" onClick={() => { setWorkspaceMenuSearch(""); workspaceMenuSearchRef.current?.focus(); }}>แสดงทุกเมนู</button></div>}
+          </div>
+          <footer className="workspace-menu-footer">
+            <span><i aria-hidden="true" />กำลังใช้เมนูแบบ{usesSimpleNavigation ? "เรียบง่าย" : "ครบทุกส่วน"}</span>
+            {canManageSystemSettings ? <button type="button" onClick={() => navigateFromWorkspaceMenu("settings")}><b>สิทธิ์เจ้าของระบบ</b> ปรับเมนูและหน้าแรกได้ที่ตั้งค่า <span aria-hidden="true">→</span></button> : <small>รายการที่แสดงเป็นไปตามบทบาทและสิทธิ์ของคุณ</small>}
+          </footer>
+        </aside>
+      </div>}
 
       {showUserMenu && <button type="button" className="user-menu-backdrop" onClick={() => setShowUserMenu(false)} aria-label="ปิดเมนูโปรไฟล์" />}
       <div className="top-right-utilities" aria-label="แจ้งเตือนและโปรไฟล์">
@@ -4027,7 +4409,8 @@ export default function Home() {
             <button type="button" onClick={() => { setShowUserMenu(false); setView("work"); setWorkSection("points"); setPointPanel("policies"); }}><span>§</span><p><strong>กฎองค์กร</strong><small>{isAdmin ? "ร่าง ประกาศ และติดตามการรับทราบ" : "อ่านกฎที่ประกาศใช้และยืนยันรับทราบ"}</small></p></button>
             {isEmployeeUser && <button type="button" onClick={() => { setShowUserMenu(false); setView("peopleOps"); }}><span>↗</span><p><strong>การเติบโตและเงินเดือน</strong><small>ดูเป้าหมาย สกิล และค่าตอบแทนของฉัน</small></p></button>}
             {isEmployeeUser && <button type="button" onClick={() => { setShowUserMenu(false); setView("work"); setWorkSection("points"); setPointPanel("overview"); }}><span>★</span><p><strong>Points และรางวัล</strong><small>ดูยอด Points และเลือกรางวัล</small></p></button>}
-            {!isEmployeeUser && <button type="button" className="profile-ai-toggle" role="switch" aria-checked={showAiMascot} onClick={() => updateAiMascotVisibility(!showAiMascot)}><span aria-hidden="true">AI</span><p><strong>แสดงหุ่น AI ผู้ช่วย</strong><small>{showAiMascot ? "เปิดอยู่ · กดเพื่อซ่อนจากหน้าเว็บ" : "ปิดอยู่ · กดเมื่อต้องการให้หุ่นกลับมา"}</small></p><i className="profile-ai-switch" aria-hidden="true" /></button>}
+            {canManageSystemSettings && <button type="button" onClick={() => { setShowUserMenu(false); setView("settings"); }}><span>⚙</span><p><strong>ตั้งค่าระบบ</strong><small>ชื่อองค์กร เมนูเริ่มต้น และฟีเจอร์เชื่อมโยง</small></p></button>}
+            {!isEmployeeUser && publicSystemSettings.features.aiAssistantEnabled && publicSystemSettings.features.aiMascotEnabled && <button type="button" className="profile-ai-toggle" role="switch" aria-checked={showAiMascot} onClick={() => updateAiMascotVisibility(!showAiMascot)}><span aria-hidden="true">AI</span><p><strong>แสดงหุ่น AI ผู้ช่วย</strong><small>{showAiMascot ? "เปิดอยู่ · กดเพื่อซ่อนจากหน้าเว็บ" : "ปิดอยู่ · กดเมื่อต้องการให้หุ่นกลับมา"}</small></p><i className="profile-ai-switch" aria-hidden="true" /></button>}
             {isEmployeePreview ? <button type="button" onClick={() => window.location.assign("/")}><span>←</span><p><strong>กลับมุมมองผู้ดูแล</strong><small>ออกจากโหมดทดลองพนักงาน</small></p></button> : <>
               <button type="button" onClick={() => { setShowUserMenu(false); setShowChangePassword(true); }}><span>⌁</span><p><strong>เปลี่ยนรหัสผ่าน</strong><small>ยืนยันรหัสปัจจุบันและตั้งรหัสใหม่</small></p></button>
               <button type="button" disabled={isLoggingOut} onClick={() => void logout(false)}><span>↗</span><p><strong>ออกจากระบบ</strong><small>ออกจากอุปกรณ์เครื่องนี้</small></p></button>
@@ -4110,7 +4493,7 @@ export default function Home() {
             <h1>{activeViewTitle}</h1>
             <p>{activeViewDescription}</p>
           </div>
-          {!isEmployeeUser && view !== "access" && view !== "work" && view !== "organizationDocs" && <div className="heading-actions">
+          {!isEmployeeUser && view !== "access" && view !== "work" && view !== "organizationDocs" && view !== "settings" && <div className="heading-actions">
             <button className="secondary-button" onClick={() => view === "office" ? setView("work") : view === "peopleOps" ? buildGrowthTeam() : view === "profiles" ? showToast(`${requiredDocumentTypes.length - verifiedRequiredDocuments} เอกสารจำเป็นยังตรวจไม่ครบ`) : view === "power" ? showToast("ค่าพลังรวมมาจากค่าสกิล 70% และ KPI 30%") : view === "portfolio" ? exportPortfolioReport() : exportReport()}><span aria-hidden="true">{view === "office" ? "✓" : view === "peopleOps" ? "♙" : view === "profiles" ? "▣" : view === "power" ? "i" : "↓"}</span> {view === "office" ? "เปิดทูดูลิส" : view === "peopleOps" ? "สร้างทีมจากสกิล" : view === "profiles" ? "เช็กเอกสารที่ขาด" : view === "power" ? "วิธีคำนวณ" : view === "portfolio" ? "ส่งออกแฟ้ม CSV" : "ส่งออกรายงาน"}</button>
             <button className="primary-button" onClick={() => {
               if (view === "office") {
@@ -4147,7 +4530,7 @@ export default function Home() {
           </div>}
         </div>
 
-        {!isEmployeeUser && view !== "access" && view !== "work" && view !== "organizationDocs" && <div className="filter-row" aria-label="กรองตามแผนก">
+        {!isEmployeeUser && view !== "access" && view !== "work" && view !== "organizationDocs" && view !== "settings" && <div className="filter-row" aria-label="กรองตามแผนก">
           {departmentFilters.map((filter) => (
             <button key={filter.id} className={activeDepartment === filter.id ? "active" : ""} onClick={() => setActiveDepartment(filter.id)}>{filter.label}</button>
           ))}
@@ -5112,6 +5495,71 @@ export default function Home() {
           </section>
         )}
 
+        {view === "settings" && canManageSystemSettings && (
+          <section className="system-settings-layout" aria-labelledby="system-settings-title">
+            <header className="system-settings-hero">
+              <div className="system-settings-owner-mark" aria-hidden="true">⚙</div>
+              <div><span className="owner-only-badge">สิทธิ์เจ้าของระบบเท่านั้น</span><h2 id="system-settings-title">ตั้งค่าจุดเดียว เชื่อมทั้งพื้นที่ทำงาน</h2><p>กำหนดชื่อองค์กร เมนูเริ่มต้น และส่วนเสริมที่แสดงให้แต่ละบทบาท โดยไม่เปลี่ยนสิทธิ์เข้าถึงข้อมูล</p></div>
+              <dl>
+                <div><dt>เวอร์ชันตั้งค่า</dt><dd>#{ownerSystemSettings?.revision ?? publicSystemSettings.revision}</dd></div>
+                <div><dt>แก้ไขล่าสุด</dt><dd>{ownerSystemSettings?.updatedAt ? formatUpdatedAt(ownerSystemSettings.updatedAt) : "กำลังตรวจสอบ"}</dd></div>
+              </dl>
+            </header>
+
+            {systemSettingsError && <div className="system-settings-alert" role="alert" aria-live="assertive"><span aria-hidden="true">!</span><p><strong>ยังดำเนินการตั้งค่าไม่สำเร็จ</strong><small>{systemSettingsError}</small></p><button type="button" disabled={systemSettingsLoading} onClick={() => setSystemSettingsReloadKey((key) => key + 1)}>{systemSettingsLoading ? "กำลังโหลด..." : "โหลดค่าล่าสุด"}</button></div>}
+
+            {systemSettingsLoading && !ownerSystemSettings ? <div className="system-settings-loading" role="status"><span /><strong>กำลังโหลดค่ากลางและประวัติการแก้ไข...</strong></div> : ownerSystemSettings ? <form className="system-settings-workspace" onSubmit={saveSystemSettings}>
+              <div className="system-settings-main">
+                <section className="system-setting-card identity" aria-labelledby="organization-settings-title">
+                  <header><span aria-hidden="true">01</span><div><p className="eyebrow">ORGANIZATION IDENTITY</p><h3 id="organization-settings-title">ชื่อที่ทุกคนเห็นตรงกัน</h3><p>ใช้ในหัวระบบและตัวช่วยนำทาง เพื่อให้พนักงานรู้ว่ากำลังอยู่ในพื้นที่ขององค์กรใด</p></div></header>
+                  <div className="system-setting-fields two-columns">
+                    <label><span>ชื่อองค์กร <em>{systemSettingsOrganizationNameLength}/80</em></span><input required minLength={2} maxLength={80} aria-invalid={systemSettingsOrganizationNameLength > 0 && systemSettingsOrganizationNameLength < 2} value={systemSettingsDraft.organization.name} onChange={(event) => setSystemSettingsDraft((settings) => ({ ...settings, organization: { ...settings.organization, name: event.target.value } }))} placeholder="เช่น People Pulse" /><small>แสดงเป็นชื่อหลักด้านบนของพื้นที่ทำงาน · 2–80 ตัวอักษร</small></label>
+                    <label><span>ชื่อย่อสำหรับพื้นที่แคบ <em>{systemSettingsShortNameLength}/30</em></span><input required minLength={2} maxLength={30} aria-invalid={systemSettingsShortNameLength > 0 && systemSettingsShortNameLength < 2} value={systemSettingsDraft.organization.shortName} onChange={(event) => setSystemSettingsDraft((settings) => ({ ...settings, organization: { ...settings.organization, shortName: event.target.value } }))} placeholder="เช่น People Pulse" /><small>ใช้ร่วมกับชื่อระบบในแถบเมนู · 2–30 ตัวอักษร</small></label>
+                  </div>
+                  <div className="system-brand-preview" aria-live="polite"><span className="brand-mark" aria-hidden="true"><i /><i /><i /></span><p><small>ตัวอย่างหัวระบบ</small><strong>{systemSettingsDraft.organization.name.trim() || "ชื่อองค์กร"}</strong><em>{systemSettingsDraft.organization.shortName.trim() || "ชื่อย่อ"} · PEOPLE &amp; WORK OS</em></p></div>
+                </section>
+
+                <section className="system-setting-card navigation" aria-labelledby="navigation-settings-title">
+                  <header><span aria-hidden="true">02</span><div><p className="eyebrow">NAVIGATION &amp; HOME</p><h3 id="navigation-settings-title">เริ่มงานง่ายตามบทบาท</h3><p>เลือกจำนวนทางลัดที่เห็นก่อน และหน้าที่เปิดเมื่อเข้าสู่ระบบครั้งถัดไป</p></div></header>
+                  <fieldset className="navigation-mode-picker"><legend>รูปแบบเมนูหลัก</legend>
+                    <label className={systemSettingsDraft.experience.navigationMode === "simple" ? "selected" : ""}><input type="radio" name="navigation-mode" value="simple" checked={systemSettingsDraft.experience.navigationMode === "simple"} onChange={() => setSystemSettingsDraft((settings) => ({ ...settings, experience: { ...settings.experience, navigationMode: "simple" } }))} /><span aria-hidden="true">☰</span><p><strong>เรียบง่าย</strong><small>แสดงเฉพาะงานที่ใช้บ่อย ส่วนอื่นค้นหาได้จาก “เมนูทั้งหมด”</small></p><b>แนะนำ</b></label>
+                    <label className={systemSettingsDraft.experience.navigationMode === "full" ? "selected" : ""}><input type="radio" name="navigation-mode" value="full" checked={systemSettingsDraft.experience.navigationMode === "full"} onChange={() => setSystemSettingsDraft((settings) => ({ ...settings, experience: { ...settings.experience, navigationMode: "full" } }))} /><span aria-hidden="true">☷</span><p><strong>ครบทุกส่วน</strong><small>แสดงทางลัดทุกโมดูลที่บทบาทนั้นมีสิทธิ์ใช้</small></p></label>
+                  </fieldset>
+                  <div className="system-setting-fields home-fields">
+                    <label><span>หน้าแรกของ HR / Admin</span><select value={systemSettingsDraft.experience.adminHome} onChange={(event) => setSystemSettingsDraft((settings) => ({ ...settings, experience: { ...settings.experience, adminHome: event.target.value as PublicSystemSettings["experience"]["adminHome"] } }))}><option value="work">รายการงาน</option><option value="overview">ภาพรวมทีม</option><option value="employees">พนักงานและผลประเมิน</option></select></label>
+                    <label><span>หน้าแรกของหัวหน้าทีม</span><select value={systemSettingsDraft.experience.managerHome} onChange={(event) => setSystemSettingsDraft((settings) => ({ ...settings, experience: { ...settings.experience, managerHome: event.target.value as PublicSystemSettings["experience"]["managerHome"] } }))}><option value="work">รายการงาน</option><option value="overview">ภาพรวมทีม</option><option value="employees">พนักงานและผลประเมิน</option></select></label>
+                    <label><span>หน้าแรกของพนักงาน</span><select value={systemSettingsDraft.experience.employeeHome} onChange={(event) => setSystemSettingsDraft((settings) => ({ ...settings, experience: { ...settings.experience, employeeHome: event.target.value as PublicSystemSettings["experience"]["employeeHome"] } }))}><option value="work">งานของฉัน</option><option value="portfolio">แฟ้มผลงานของฉัน</option><option value="peopleOps">การเติบโตและเงินเดือน</option></select></label>
+                  </div>
+                  <div className="system-setting-impact"><span aria-hidden="true">↗</span><p><strong>สิ่งที่จะเกิดขึ้น</strong><small>ค่าหน้าแรกมีผลเมื่อผู้ใช้เปิดพื้นที่ทำงานครั้งถัดไป การเปลี่ยนเมนูไม่เพิ่มหรือลดสิทธิ์ และทุกคนยังค้นหาส่วนที่ได้รับอนุญาตจาก “เมนูทั้งหมด” ได้</small></p></div>
+                </section>
+
+                <section className="system-setting-card features" aria-labelledby="feature-settings-title">
+                  <header><span aria-hidden="true">03</span><div><p className="eyebrow">CONNECTED FEATURES</p><h3 id="feature-settings-title">ส่วนเสริมที่เชื่อมกับงานจริง</h3><p>ควบคุมสิ่งที่แสดงในหน้าจอ และกำหนดเฉพาะการผูกรางวัลกับเควสใหม่</p></div></header>
+                  <div className="system-feature-list">
+                    <label><input type="checkbox" role="switch" checked={systemSettingsDraft.features.aiAssistantEnabled} onChange={(event) => { const enabled = event.target.checked; setSystemSettingsDraft((settings) => ({ ...settings, features: { ...settings.features, aiAssistantEnabled: enabled, aiMascotEnabled: enabled ? settings.features.aiMascotEnabled : false } })); }} /><span className="system-toggle" aria-hidden="true" /><span className="system-feature-icon ai" aria-hidden="true">AI</span><p><strong>ผู้ช่วย AI</strong><small>แสดงปุ่มผู้ช่วยและเปิดคำถามเกี่ยวกับงานตามข้อมูลที่ผู้ใช้นั้นมีสิทธิ์เห็น</small></p><em>การแสดงผล</em></label>
+                    <label className={!systemSettingsDraft.features.aiAssistantEnabled ? "dependent-disabled" : ""}><input type="checkbox" role="switch" disabled={!systemSettingsDraft.features.aiAssistantEnabled} checked={systemSettingsDraft.features.aiMascotEnabled} onChange={(event) => setSystemSettingsDraft((settings) => ({ ...settings, features: { ...settings.features, aiMascotEnabled: event.target.checked } }))} /><span className="system-toggle" aria-hidden="true" /><span className="system-feature-icon mascot" aria-hidden="true">BOT</span><p><strong>หุ่น AI เคลื่อนไหว</strong><small>แสดงหุ่นทางลัดบนหน้าเว็บ ต้องเปิดผู้ช่วย AI ก่อนเสมอ</small></p><em>ขึ้นกับ AI</em></label>
+                    <label><input type="checkbox" role="switch" checked={systemSettingsDraft.features.office3dEnabled} onChange={(event) => setSystemSettingsDraft((settings) => ({ ...settings, features: { ...settings.features, office3dEnabled: event.target.checked } }))} /><span className="system-toggle" aria-hidden="true" /><span className="system-feature-icon office" aria-hidden="true">3D</span><p><strong>สำนักงานจำลอง 3D</strong><small>เปิดทางลัดมุมมองสำนักงานในเมนู การปิดจะไม่ลบงานหรือข้อมูลบุคลากร</small></p><em>การแสดงผล</em></label>
+                    <label><input type="checkbox" role="switch" checked={systemSettingsDraft.features.questRewardLinkingEnabled} onChange={(event) => setSystemSettingsDraft((settings) => ({ ...settings, features: { ...settings.features, questRewardLinkingEnabled: event.target.checked } }))} /><span className="system-toggle" aria-hidden="true" /><span className="system-feature-icon quest" aria-hidden="true">Q+</span><p><strong>ผูกรางวัลพิเศษกับเควสใหม่</strong><small>เมื่อปิด ระบบจะกันการสร้างความสัมพันธ์ใหม่ แต่เควสเดิม ประวัติ และการมอบรางวัลเดิมยังทำงานต่อ</small></p><em>ควบคุม Workflow</em></label>
+                  </div>
+                  <div className="system-setting-impact warning"><span aria-hidden="true">i</span><p><strong>ค่าที่ไม่ถูกเปลี่ยนจากหน้านี้</strong><small>Points และเพดานรางวัลยึดตามกฎ Points ที่ประกาศใช้ ส่วนบทบาทและสิทธิ์เข้าถึงจัดการใน “ผู้ใช้งานและสิทธิ์” เท่านั้น</small></p></div>
+                </section>
+
+                <div className="system-settings-savebar" role="region" aria-label="บันทึกการตั้งค่าระบบ">
+                  <div><span className={systemSettingsHasChanges ? "changed" : "saved"} aria-hidden="true">{systemSettingsHasChanges ? "!" : "✓"}</span><p><strong>{systemSettingsHasChanges ? "มีการเปลี่ยนแปลงที่ยังไม่บันทึก" : "ค่าบนหน้าจอตรงกับระบบแล้ว"}</strong><small>{systemSettingsHasChanges ? "ตรวจผลกระทบด้านบนก่อนยืนยัน" : `เวอร์ชัน #${ownerSystemSettings.revision} · แก้ไขโดย ${ownerSystemSettings.updatedByName}`}</small></p></div>
+                  <button type="button" className="secondary-button" disabled={!systemSettingsHasChanges || systemSettingsSaving} onClick={() => { setSystemSettingsDraft(ownerSystemSettings); setSystemSettingsError(""); }}>ยกเลิกการแก้ไข</button>
+                  <button className="primary-button" disabled={!systemSettingsHasChanges || systemSettingsInvalid || systemSettingsSaving}>{systemSettingsSaving ? "กำลังบันทึก..." : "บันทึกและเชื่อมต่อการตั้งค่า"}</button>
+                </div>
+              </div>
+
+              <aside className="system-settings-side">
+                <section className="system-settings-scope" aria-labelledby="settings-scope-title"><span aria-hidden="true">⌁</span><div><p className="eyebrow">SECURITY SCOPE</p><h3 id="settings-scope-title">เฉพาะเจ้าของระบบ</h3><p>แม้บัญชี HR / Admin อื่นจะดูแลพนักงานได้ แต่จะไม่เห็นเมนูนี้และเรียกบันทึกการตั้งค่าไม่ได้</p></div><dl><div><dt>บัญชีปัจจุบัน</dt><dd>{currentUser?.displayName}</dd></div><div><dt>สิทธิ์</dt><dd>เจ้าของระบบ</dd></div></dl></section>
+                <section className="system-settings-connections" aria-labelledby="settings-connections-title"><header><p className="eyebrow">CONNECTED IMPACT</p><h3 id="settings-connections-title">การตั้งค่าเชื่อมไปที่ไหน</h3></header><ol><li><span>1</span><p><strong>หัวและเมนูระบบ</strong><small>ชื่อองค์กร รูปแบบทางลัด และเมนูทั้งหมด</small></p></li><li><span>2</span><p><strong>หน้าแรกตามบทบาท</strong><small>HR / Admin หัวหน้าทีม และพนักงานเริ่มคนละจุดได้</small></p></li><li><span>3</span><p><strong>ส่วนเสริมการทำงาน</strong><small>AI หุ่น และ Office 3D เป็นการแสดงผล ไม่ใช่สิทธิ์ข้อมูล</small></p></li><li><span>4</span><p><strong>Quest → Reward</strong><small>ควบคุมการผูกรางวัลใหม่โดยเซิร์ฟเวอร์</small></p></li></ol></section>
+                <section className="system-settings-audit" aria-labelledby="settings-audit-title"><header><div><p className="eyebrow">AUDIT HISTORY</p><h3 id="settings-audit-title">ประวัติการเปลี่ยนแปลง</h3></div><button type="button" disabled={systemSettingsLoading} onClick={() => setSystemSettingsReloadKey((key) => key + 1)} aria-label="โหลดประวัติการตั้งค่าล่าสุด">↻</button></header><div>{systemSettingsAuditEvents.map((auditEvent) => <article key={auditEvent.id}><span>{auditEvent.previousRevision}→{auditEvent.nextRevision}</span><p><strong>{auditEvent.actorName}</strong><small>{formatUpdatedAt(auditEvent.createdAt)}</small><em>{auditEvent.changedKeys.map(systemSettingLabel).join(" · ")}</em></p></article>)}{!systemSettingsAuditEvents.length && <div className="system-settings-audit-empty"><span aria-hidden="true">✓</span><p><strong>ยังไม่มีรายการเปลี่ยนแปลง</strong><small>เมื่อบันทึกครั้งแรก ประวัติจะปรากฏที่นี่</small></p></div>}</div></section>
+              </aside>
+            </form> : <div className="system-settings-unavailable"><span aria-hidden="true">!</span><h3>ยังเปิดค่ากลางไม่ได้</h3><p>ระบบหยุดไว้ก่อนเพื่อไม่ให้แก้ไขจากข้อมูลที่ไม่สมบูรณ์</p><button type="button" onClick={() => setSystemSettingsReloadKey((key) => key + 1)}>ลองโหลดอีกครั้ง</button></div>}
+          </section>
+        )}
+
         {view === "portfolio" && (
           <section className="portfolio-layout">
             <div className="portfolio-summary-grid">
@@ -5741,19 +6189,20 @@ export default function Home() {
                 <label><span>วันเริ่ม</span><input required disabled={editingQuestHasCompletions} type="date" value={questForm.startDate} onChange={(event) => setQuestForm((form) => ({ ...form, startDate: event.target.value, endDate: form.endDate < event.target.value ? event.target.value : form.endDate }))} /></label>
                 <label><span>วันสิ้นสุด</span><input required disabled={editingQuestHasCompletions} type="date" min={questForm.startDate} value={questForm.endDate} onChange={(event) => setQuestForm((form) => ({ ...form, endDate: event.target.value }))} /></label>
                 <label><span>Points เมื่อสำเร็จ</span><input required disabled={editingQuestHasCompletions} type="number" inputMode="numeric" min={0} max={questPointLimit} step={1} value={questForm.pointsReward} onChange={(event) => setQuestForm((form) => ({ ...form, pointsReward: Number(event.target.value) }))} /><small>สูงสุด {formatMoney(questPointLimit)} Points จากค่าที่ต่ำกว่าระหว่างเพดานเควสกับเพดานบวกรายเดือน</small>{questPointsInvalid && <small className="quest-form-error" role="alert">กรอกจำนวนเต็มตั้งแต่ 0 ถึง {formatMoney(questPointLimit)} Points</small>}</label>
-                <label><span>รางวัลพิเศษ <em>ไม่บังคับ</em></span><select disabled={editingQuestHasCompletions} value={questForm.rewardId ?? ""} onChange={(event) => setQuestForm((form) => ({ ...form, rewardId: event.target.value || null }))}><option value="">ไม่มีรางวัลพิเศษ</option>{rewards.filter((reward) => reward.isActive || reward.id === questForm.rewardId).map((reward) => <option key={reward.id} value={reward.id}>{reward.icon} {reward.title}{reward.isActive ? ` · เหลือ ${reward.stock}` : " · ปิดอยู่"}</option>)}</select>{questRewardUnavailable && <small className="quest-form-error" role="alert">รางวัลที่ผูกกับเควสต้องเปิดใช้งาน กรุณาเลือกรางวัลอื่นหรือนำรางวัลนี้ออก</small>}</label>
+                <label><span>รางวัลพิเศษ <em>ไม่บังคับ</em></span><select disabled={editingQuestHasCompletions || (!questRewardLinkingEnabled && !editingQuest?.rewardId)} value={questForm.rewardId ?? ""} onChange={(event) => setQuestForm((form) => ({ ...form, rewardId: event.target.value || null }))}><option value="">ไม่มีรางวัลพิเศษ</option>{questRewardChoices.map((reward) => <option key={reward.id} value={reward.id}>{reward.icon} {reward.title}{reward.isActive ? ` · เหลือ ${reward.stock}` : " · ปิดอยู่"}</option>)}</select>{questRewardUnavailable && <small className="quest-form-error" role="alert">รางวัลที่ผูกกับเควสต้องเปิดใช้งาน กรุณาเลือกรางวัลอื่นหรือนำรางวัลนี้ออก</small>}{!questRewardLinkingEnabled && <small>เจ้าของระบบปิดการผูกรางวัลใหม่ คุณยังเก็บหรือนำรางวัลเดิมออกจากเควสที่มีอยู่ได้</small>}</label>
                 <label><span>สถานะ</span><select value={questForm.status} onChange={(event) => { const status = event.target.value as QuestRecord["status"]; setQuestForm((form) => ({ ...form, status, progress: status === "completed" ? 100 : form.progress })); }}>{questAllowedStatuses.map((status) => <option key={status} value={status}>{status === "draft" ? "ฉบับร่าง · ยังไม่แสดง" : status === "active" ? "เปิดใช้งาน · แสดงตามขอบเขต" : "สำเร็จแล้ว · ปิดผล"}</option>)}</select><small>{questStatusMeta[questForm.status].description}</small></label>
                 <label className="quest-feature-toggle"><input type="checkbox" checked={questForm.isFeatured} onChange={(event) => setQuestForm((form) => ({ ...form, isFeatured: event.target.checked }))} /><span><strong>แสดงเป็นเควสเด่น</strong><small>ปักไว้ก่อนเควสทั่วไปและติดป้ายเด่น</small></span></label>
                 <label className="wide quest-progress-field"><span>ความคืบหน้า <b>{questForm.status === "completed" ? 100 : questForm.progress}%</b></span><input type="range" min={0} max={100} step={5} disabled={questForm.status === "completed"} value={questForm.status === "completed" ? 100 : questForm.progress} onChange={(event) => setQuestForm((form) => ({ ...form, progress: Number(event.target.value) }))} style={{ "--range-value": `${questForm.status === "completed" ? 100 : questForm.progress}%` } as React.CSSProperties} /><small>HR / Admin อัปเดตตามผลที่ตรวจสอบแล้ว สถานะสำเร็จจะตั้งเป็น 100%</small></label>
               </div>
 
               {questTargetInvalid && <div className="quest-form-validation" role="alert"><span aria-hidden="true">!</span><p><strong>ยังกำหนดผู้เข้าร่วมไม่ครบ</strong><small>{questForm.type === "individual" ? "เลือกพนักงาน 1 คนสำหรับเควสรายบุคคล" : questForm.type === "team" ? "เลือกอย่างน้อย 1 แผนกสำหรับเควสทีม" : "กิจกรรมองค์กรไม่ต้องกำหนดผู้เข้าร่วม"}</small></p></div>}
+              {questCreatesBlockedRewardLink && <div className="quest-form-validation" role="alert"><span aria-hidden="true">!</span><p><strong>ไม่สามารถผูกรางวัลใหม่กับเควสได้</strong><small>เจ้าของระบบปิด Workflow นี้แล้ว กรุณาเลือก “ไม่มีรางวัลพิเศษ” ก่อนบันทึก</small></p></div>}
               {editingQuestHasCompletions && <div className="quest-form-validation locked" role="status"><span aria-hidden="true">⌁</span><p><strong>เงื่อนไขเควสถูกล็อกหลังมอบสิทธิ์ครั้งแรก</strong><small>เพื่อรักษาประวัติเดิม จะแก้ประเภท ชื่อ รายละเอียด ผู้เข้าร่วม ช่วงเวลา Points หรือรางวัลไม่ได้ แต่ยังอัปเดตสถานะ ความคืบหน้า และการแสดงเควสเด่นได้</small></p></div>}
               {questPolicyUnavailable && <div className="quest-form-validation" role="alert"><span aria-hidden="true">!</span><p><strong>ยังบันทึกสถานะนี้ไม่ได้ เพราะไม่มีกฎ Points ที่มีผลอยู่</strong><small>บันทึกเควสใหม่เป็นฉบับร่างได้ หรือเผยแพร่นโยบายใน “จัดการ Points” → “กฎ Points” ก่อนเปิดหรือปิดสำเร็จ</small></p></div>}
               {questPolicyDisablesCompletions && <div className="quest-form-validation" role="alert"><span aria-hidden="true">!</span><p><strong>กฎ Points ไม่อนุญาตให้ Admin มอบสิทธิ์จากเควส</strong><small>ตั้งกฎเควสเป็น manual เพิ่ม Admin ในผู้มีสิทธิ์ และกำหนดจำนวนครั้งที่ให้ Points บวกแบบ manual ต่อเดือนอย่างน้อย 1 ก่อนเปิดหรือปิดเควส</small></p></div>}
               <div className="quest-form-policy" role="note"><span aria-hidden="true">i</span><p><strong>กำหนดได้ไม่เกิน {formatMoney(questPointLimit)} Points ต่อผู้สำเร็จหนึ่งคน</strong><small>ระบบใช้ค่าที่ต่ำกว่าระหว่างเพดานเควสกับเพดาน Points บวกมาตรฐานรายเดือน · {pointEventRules.quest.description} หากต้องการเปลี่ยนเพดาน ให้แก้ที่แท็บ “จัดการ Points” → “กฎ Points”</small></p></div>
             </div>
-            <div className="modal-actions quest-form-actions"><div>{editingQuest && editingQuest.status !== "archived" && <button type="button" className="quest-delete-button" disabled={isSaving} onClick={() => void deleteQuest(editingQuest)}>ลบเควส</button>}</div><button type="button" className="secondary-button" onClick={closeQuestEditor}>ยกเลิก</button><button className="primary-button" disabled={isSaving || questTargetInvalid || questRewardUnavailable || questPointsInvalid || questPolicyUnavailable || questPolicyDisablesCompletions}>{isSaving ? "กำลังบันทึก..." : editingQuest ? "บันทึกการแก้ไข" : "สร้างเควส"}</button></div>
+            <div className="modal-actions quest-form-actions"><div>{editingQuest && editingQuest.status !== "archived" && <button type="button" className="quest-delete-button" disabled={isSaving} onClick={() => void deleteQuest(editingQuest)}>ลบเควส</button>}</div><button type="button" className="secondary-button" onClick={closeQuestEditor}>ยกเลิก</button><button className="primary-button" disabled={isSaving || questTargetInvalid || questRewardUnavailable || questCreatesBlockedRewardLink || questPointsInvalid || questPolicyUnavailable || questPolicyDisablesCompletions}>{isSaving ? "กำลังบันทึก..." : editingQuest ? "บันทึกการแก้ไข" : "สร้างเควส"}</button></div>
           </form>
         </div>
       )}
@@ -6137,8 +6586,8 @@ export default function Home() {
         />
       )}
 
-      {!isEmployeeUser && <>
-        {showAiMascot && <AiRobotMascot open={showAiAssistant} suspended={hasBlockingOverlay} onOpen={openPeopleAi} onHide={hideAiMascot} />}
+      {!isEmployeeUser && publicSystemSettings.features.aiAssistantEnabled && <>
+        {publicSystemSettings.features.aiMascotEnabled && showAiMascot && <AiRobotMascot open={showAiAssistant} suspended={hasBlockingOverlay} onOpen={openPeopleAi} onHide={hideAiMascot} />}
         <AiAssistant open={showAiAssistant} context={peopleAiContext} onClose={() => setShowAiAssistant(false)} onSystemAction={handlePeopleAiAction} />
       </>}
       <div className={`toast ${toast ? `show ${toast.tone}` : ""}`} role={toast?.tone === "error" ? "alert" : "status"} aria-live={toast?.tone === "error" ? "assertive" : "polite"} aria-atomic="true"><span>{toast?.tone === "error" ? "!" : "✓"}</span>{toast?.message}</div>
