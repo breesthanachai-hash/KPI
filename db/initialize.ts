@@ -2,10 +2,10 @@ import { getD1 } from ".";
 
 let initialization: Promise<unknown> | null = null;
 // Runtime initialization creates this object only after every schema object and
-// compound trigger has been installed. Migration 0022 intentionally omits it so
-// Sites cannot skip runtime trigger installation after applying split statements.
+// compound trigger has been installed. Forward migrations intentionally omit it
+// so Sites cannot skip runtime compatibility checks after applying split statements.
 // Future schema versions must keep their readiness marker runtime-owned and last.
-const LATEST_SCHEMA_MARKER = "people_pulse_schema_v22_ready";
+const LATEST_SCHEMA_MARKER = "people_pulse_schema_v23_ready";
 
 async function latestSchemaIsReady(d1: ReturnType<typeof getD1>) {
   const marker = await d1.prepare(
@@ -16,7 +16,7 @@ async function latestSchemaIsReady(d1: ReturnType<typeof getD1>) {
 
 async function ensureColumn(
   d1: ReturnType<typeof getD1>,
-  table: "rewards" | "point_ledger" | "point_events" | "organization_policy_publish_claims" | "work_items" | "user_accounts",
+  table: "employees" | "rewards" | "point_ledger" | "point_events" | "organization_policy_publish_claims" | "work_items" | "user_accounts",
   column: string,
   definition: string,
 ) {
@@ -38,6 +38,7 @@ export function ensureDatabase() {
       name TEXT NOT NULL,
       email TEXT NOT NULL,
       role_id TEXT NOT NULL,
+      position_title TEXT NOT NULL DEFAULT '',
       manager TEXT NOT NULL DEFAULT '',
       status TEXT NOT NULL DEFAULT 'active',
       latest_score REAL,
@@ -48,6 +49,22 @@ export function ensureDatabase() {
     )`),
     d1.prepare("CREATE UNIQUE INDEX IF NOT EXISTS employees_email_unique ON employees (email)"),
     d1.prepare("CREATE INDEX IF NOT EXISTS employees_role_idx ON employees (role_id)"),
+    d1.prepare(`CREATE TABLE IF NOT EXISTS employee_position_events (
+      id TEXT PRIMARY KEY NOT NULL,
+      employee_id TEXT NOT NULL,
+      employee_name_snapshot TEXT NOT NULL,
+      role_id_snapshot TEXT NOT NULL,
+      previous_position_title TEXT NOT NULL DEFAULT '',
+      next_position_title TEXT NOT NULL DEFAULT '',
+      expected_updated_at TEXT NOT NULL,
+      resulting_updated_at TEXT NOT NULL,
+      actor_user_id TEXT NOT NULL,
+      actor_name TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`),
+    d1.prepare("CREATE UNIQUE INDEX IF NOT EXISTS employee_position_events_employee_result_unique ON employee_position_events (employee_id, resulting_updated_at)"),
+    d1.prepare("CREATE INDEX IF NOT EXISTS employee_position_events_employee_created_idx ON employee_position_events (employee_id, created_at)"),
+    d1.prepare("CREATE INDEX IF NOT EXISTS employee_position_events_actor_created_idx ON employee_position_events (actor_user_id, created_at)"),
     d1.prepare(`CREATE TABLE IF NOT EXISTS user_accounts (
       id TEXT PRIMARY KEY NOT NULL,
       auth_user_id TEXT NOT NULL DEFAULT '',
@@ -854,6 +871,7 @@ export function ensureDatabase() {
     ]);
 
     const compatibilityColumns = [
+      ["employees", "position_title", "TEXT NOT NULL DEFAULT ''"],
       ["user_accounts", "nickname", "TEXT NOT NULL DEFAULT ''"],
       ["organization_policy_publish_claims", "expected_content_hash", "TEXT NOT NULL DEFAULT ''"],
       ["work_items", "created_by_employee_id", "TEXT REFERENCES employees(id) ON DELETE SET NULL"],
@@ -1061,6 +1079,76 @@ export function ensureDatabase() {
         WHEN NEW.revision <> OLD.revision + 1
         BEGIN
           SELECT RAISE(ABORT, 'EMPLOYEE_RECOGNITION_STALE_REVISION');
+        END`),
+      d1.prepare(`CREATE TRIGGER IF NOT EXISTS employee_position_event_insert_guard
+        BEFORE INSERT ON employee_position_events
+        BEGIN
+          SELECT CASE WHEN length(NEW.next_position_title) > 120
+            OR trim(NEW.next_position_title) <> NEW.next_position_title
+            OR instr(NEW.next_position_title, '  ') > 0
+            OR instr(NEW.next_position_title, char(9)) > 0
+            OR instr(NEW.next_position_title, char(10)) > 0
+            OR instr(NEW.next_position_title, char(13)) > 0
+            OR instr(NEW.next_position_title, char(0)) > 0
+            THEN RAISE(ABORT, 'EMPLOYEE_POSITION_INVALID') END;
+          SELECT CASE WHEN NEW.previous_position_title IS NEW.next_position_title
+            OR NEW.resulting_updated_at <= NEW.expected_updated_at
+            OR NEW.created_at IS NOT NEW.resulting_updated_at
+            THEN RAISE(ABORT, 'EMPLOYEE_POSITION_INVALID_CHANGE') END;
+          SELECT CASE WHEN NOT EXISTS (
+            SELECT 1 FROM user_accounts
+            WHERE id = NEW.actor_user_id AND role = 'admin' AND status = 'active'
+          ) THEN RAISE(ABORT, 'EMPLOYEE_POSITION_ACTOR_INVALID') END;
+          SELECT CASE WHEN NOT EXISTS (
+            SELECT 1 FROM employees
+            WHERE id = NEW.employee_id
+              AND name = NEW.employee_name_snapshot
+              AND role_id = NEW.role_id_snapshot
+              AND position_title = NEW.previous_position_title
+              AND updated_at = NEW.expected_updated_at
+              AND status <> 'archived'
+          ) THEN RAISE(ABORT, 'EMPLOYEE_POSITION_STALE') END;
+        END`),
+      d1.prepare(`CREATE TRIGGER IF NOT EXISTS employee_position_update_guard
+        BEFORE UPDATE OF position_title ON employees
+        WHEN NEW.position_title IS NOT OLD.position_title
+          AND NOT EXISTS (
+            SELECT 1 FROM employee_position_events
+            WHERE employee_id = OLD.id
+              AND employee_name_snapshot = OLD.name
+              AND role_id_snapshot = OLD.role_id
+              AND previous_position_title = OLD.position_title
+              AND next_position_title = NEW.position_title
+              AND expected_updated_at = OLD.updated_at
+              AND resulting_updated_at = NEW.updated_at
+          )
+        BEGIN
+          SELECT RAISE(ABORT, 'EMPLOYEE_POSITION_AUDIT_REQUIRED');
+        END`),
+      d1.prepare(`CREATE TRIGGER IF NOT EXISTS employee_position_event_apply
+        AFTER INSERT ON employee_position_events
+        BEGIN
+          UPDATE employees
+          SET position_title = NEW.next_position_title,
+              updated_at = NEW.resulting_updated_at
+          WHERE id = NEW.employee_id
+            AND name = NEW.employee_name_snapshot
+            AND role_id = NEW.role_id_snapshot
+            AND position_title = NEW.previous_position_title
+            AND updated_at = NEW.expected_updated_at
+            AND status <> 'archived';
+          SELECT CASE WHEN changes() <> 1
+            THEN RAISE(ABORT, 'EMPLOYEE_POSITION_STALE') END;
+        END`),
+      d1.prepare(`CREATE TRIGGER IF NOT EXISTS employee_position_event_update_guard
+        BEFORE UPDATE ON employee_position_events
+        BEGIN
+          SELECT RAISE(ABORT, 'EMPLOYEE_POSITION_EVENT_IMMUTABLE');
+        END`),
+      d1.prepare(`CREATE TRIGGER IF NOT EXISTS employee_position_event_delete_guard
+        BEFORE DELETE ON employee_position_events
+        BEGIN
+          SELECT RAISE(ABORT, 'EMPLOYEE_POSITION_EVENT_IMMUTABLE');
         END`),
       d1.prepare(`CREATE TRIGGER IF NOT EXISTS quest_completion_insert_guard
         BEFORE INSERT ON quest_completions
@@ -1279,8 +1367,8 @@ export function ensureDatabase() {
           SELECT RAISE(ABORT, 'QUEST_MUTATION_EVENT_IMMUTABLE');
         END`),
       d1.prepare("PRAGMA optimize"),
-      d1.prepare(`CREATE TABLE IF NOT EXISTS people_pulse_schema_v22_ready (
-        schema_version INTEGER PRIMARY KEY NOT NULL CHECK (schema_version = 22)
+      d1.prepare(`CREATE TABLE IF NOT EXISTS people_pulse_schema_v23_ready (
+        schema_version INTEGER PRIMARY KEY NOT NULL CHECK (schema_version = 23)
       )`),
     ]);
   })().catch((error) => {

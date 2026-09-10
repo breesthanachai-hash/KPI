@@ -70,7 +70,7 @@ test("permanent employee deletion is admin-only, archived-only and requires an e
 });
 
 test("permanent deletion reassigns owned projects instead of deleting team work", () => {
-  assert.match(dashboardRoute, /ownedProjectRows[\s\S]*?activeEmployeeRows[\s\S]*?getRole\(candidate\.roleId\)\.departmentId === employeeDepartmentId/);
+  assert.match(dashboardRoute, /ownedProjectRows[\s\S]*?activeEmployeeRows[\s\S]*?roleDepartmentId\(candidate\.roleId\) === employeeDepartmentId/);
   assert.match(dashboardRoute, /ownedProjectRows\.length && !replacementEmployee[\s\S]*?ไม่มีพนักงานที่ทำงานอยู่ในแผนกเดียวกันให้รับช่วง/);
   assert.match(dashboardRoute, /UPDATE projects SET owner_employee_id = \?, updated_at = \? WHERE owner_employee_id = \? AND \$\{employeeGuard\}/);
   assert.match(dashboardRoute, /reassignedProjectCount: ownedProjectRows\.length/);
@@ -101,7 +101,7 @@ test("permanent deletion collects private R2 files before the database purge and
 
 test("archived dossiers expose an explicit irreversible permanent-delete control", () => {
   assert.match(pageSource, /const confirmationPhrase = `ลบถาวร \$\{employee\.name\}`/);
-  assert.match(pageSource, /window\.prompt\(`[\s\S]*?การดำเนินการนี้กู้คืนไม่ได้[\s\S]*?\$\{confirmationPhrase\}`\)/);
+  assert.match(pageSource, /window\.prompt\(`[\s\S]*?ระบบจะคงหลักฐานตรวจสอบขั้นต่ำบางรายการเป็น snapshot ตามประวัติองค์กร[\s\S]*?ข้อมูลใช้งานและไฟล์ที่ลบแล้วกู้คืนไม่ได้[\s\S]*?\$\{confirmationPhrase\}`\)/);
   assert.match(pageSource, /action: "deleteEmployeePermanently"[\s\S]*?expectedUpdatedAt: employee\.updatedAt[\s\S]*?confirmation/);
   assert.match(pageSource, /className="purge-employee"[\s\S]*?>ลบถาวร<\/button>/);
   assert.match(pageSource, /setEmployees\(\(items\) => items\.filter\(\(item\) => item\.id !== employee\.id\)\)/);
@@ -117,5 +117,6 @@ test("the built site ships the employee lifecycle controls", async () => {
   assert.match(bundle, /ลบออกจากรายชื่อ/);
   assert.match(bundle, /กู้คืนแฟ้ม/);
   assert.match(bundle, /ลบถาวร/);
-  assert.match(bundle, /การดำเนินการนี้กู้คืนไม่ได้/);
+  assert.match(bundle, /ระบบจะคงหลักฐานตรวจสอบขั้นต่ำบางรายการเป็น snapshot ตามประวัติองค์กร/);
+  assert.match(bundle, /ข้อมูลใช้งานและไฟล์ที่ลบแล้วกู้คืนไม่ได้/);
 });

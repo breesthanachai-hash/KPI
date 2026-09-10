@@ -53,7 +53,6 @@ function initializerPreparedSql(prefix) {
 
 const questRuntimeSql = [
   ...questTriggerNames.map((name) => initializerPreparedSql(`CREATE TRIGGER IF NOT EXISTS ${name}`)),
-  initializerPreparedSql("CREATE TABLE IF NOT EXISTS people_pulse_schema_v22_ready"),
 ];
 
 function installQuestRuntimeContract(db) {
@@ -222,28 +221,25 @@ const uiCompleteQuestBlock = sourceBlock(pageSource, "const openQuestFulfillment
 const notificationBlock = sourceBlock(pageSource, "const notifications = useMemo", "const unreadNotifications =");
 const openNotificationBlock = sourceBlock(pageSource, "const openNotification =", "const comparePowerProfile =");
 
-test("migration 0022 stays Sites-safe while runtime installs the durable quest guards and marker", async () => {
+test("migration 0022 stays Sites-safe while runtime installs the durable quest guards", async () => {
   for (const table of ["quests", "quest_targets", "quest_mutation_events", "quest_completions"]) {
     assert.match(schemaSource, new RegExp(`sqliteTable\\("${table}"`));
     assert.ok(migrationSource.includes(`CREATE TABLE \`${table}\``), `migration must create ${table}`);
     assert.ok(migrationSnapshot.tables[table], `snapshot must include ${table}`);
   }
   assert.match(schemaSource, /export const questCompletions = sqliteTable\("quest_completions"[\s\S]*?employeeId: text\("employee_id"\)\.notNull\(\)[\s\S]*?employeeRoleIdSnapshot: text\("employee_role_id_snapshot"\)\.notNull\(\)[\s\S]*?uniqueIndex\("quest_completions_quest_employee_unique"\)/);
-  assert.match(initializeSource, /LATEST_SCHEMA_MARKER = "people_pulse_schema_v22_ready"/);
   assert.ok(migrationStatements().every((statement) => /^CREATE (?:TABLE|(?:UNIQUE )?INDEX)\b/.test(statement)), "migration 0022 must contain only splitter-safe table and index statements");
   assert.doesNotMatch(migrationSource, /\bCREATE\s+TRIGGER\b/i);
   assert.doesNotMatch(migrationSource, /\bBEGIN\b/i);
   assert.doesNotMatch(migrationSource, /\bPRAGMA\b/i);
   assert.doesNotMatch(migrationSource, /people_pulse_schema_v22_ready/);
-  assert.equal(migrationJournal.entries.at(-1)?.idx, 22);
-  assert.equal(migrationJournal.entries.at(-1)?.tag, migrationName);
+  const journalEntry = migrationJournal.entries.find((entry) => entry.idx === 22);
+  assert.equal(journalEntry?.tag, migrationName);
 
   for (const trigger of questTriggerNames) {
     assert.match(initializeSource, new RegExp(`CREATE TRIGGER IF NOT EXISTS ${trigger}`));
   }
   assert.equal((initializeSource.match(/CREATE TRIGGER IF NOT EXISTS quest_[a-z_]+/g) ?? []).length, 10);
-  assert.match(questRuntimeSql.at(-1), /^CREATE TABLE IF NOT EXISTS people_pulse_schema_v22_ready[\s\S]*?CHECK \(schema_version = 22\)/);
-
   const db = createMigrationDatabase({ installRuntime: false });
   try {
     assert.equal(db.prepare("SELECT COUNT(*) AS count FROM pragma_table_info('quest_completions')").get().count, 33);
@@ -253,12 +249,10 @@ test("migration 0022 stays Sites-safe while runtime installs the durable quest g
 
     installQuestRuntimeContract(db);
     assert.equal(db.prepare("SELECT COUNT(*) AS count FROM sqlite_master WHERE type='trigger' AND name LIKE 'quest_%'").get().count, 10);
-    assert.equal(db.prepare("SELECT COUNT(*) AS count FROM sqlite_master WHERE type='table' AND name='people_pulse_schema_v22_ready'").get().count, 1);
     assert.equal(db.prepare("PRAGMA foreign_key_check").all().length, 0);
 
     installQuestRuntimeContract(db);
     assert.equal(db.prepare("SELECT COUNT(*) AS count FROM sqlite_master WHERE type='trigger' AND name LIKE 'quest_%'").get().count, 10, "runtime initialization must be idempotent");
-    assert.equal(db.prepare("SELECT COUNT(*) AS count FROM sqlite_master WHERE type='table' AND name='people_pulse_schema_v22_ready'").get().count, 1, "runtime marker creation must be idempotent");
   } finally {
     db.close();
   }

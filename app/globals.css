@@ -5967,3 +5967,24 @@ input::placeholder,textarea::placeholder { color: #526f8d !important; opacity: 1
 .quest-card-actions button,
 .quest-team-picker button,
 .quest-empty button { min-height: 44px; }
+
+/* Employee position titles stay display-only; the base role continues to own KPI, department and access scope. */
+.employee-modal { max-height: calc(100dvh - 44px); overflow-y: auto; }
+.form-grid :is(.employee-position-choice,.employee-custom-position,.employee-base-role) { min-width: 0; }
+.form-grid :is(.employee-position-choice,.employee-custom-position,.employee-base-role) > span { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.form-grid :is(.employee-position-choice,.employee-custom-position,.employee-base-role) > small { color: #597795; font-size: 11px; line-height: 1.5; }
+.form-grid .employee-custom-position > span em { color: #55728f; font-size: 10px; font-style: normal; font-weight: 750; }
+.form-grid :is(.employee-position-choice select,.employee-custom-position input,.employee-base-role select) { min-height: 46px; }
+.form-grid .employee-custom-position input[aria-invalid="true"] { border-color: #c53161; box-shadow: 0 0 0 3px rgba(197,49,97,.12); }
+.employee-position-context { min-width: 0; border: 1px solid #bed2e7; border-radius: 14px; padding: 13px 14px; background: linear-gradient(135deg,#eef5ff,#f8fbff); display: grid; grid-template-columns: 42px minmax(0,1fr); align-items: center; gap: 11px; }
+.employee-position-context > span { width: 42px; height: 42px; border-radius: 12px; background: #245fbe; color: #fff; display: grid; place-items: center; font-size: 11px; font-weight: 950; }
+.employee-position-context > p { min-width: 0; margin: 0; display: grid; gap: 2px; }
+.employee-position-context small { color: #597795; font-size: 10px; font-weight: 750; }
+.employee-position-context strong { overflow-wrap: anywhere; color: #173f70; font-size: 13px; }
+.employee-position-context em { overflow-wrap: anywhere; color: #416586; font-size: 10px; line-height: 1.5; font-style: normal; }
+:is(.employee-position-choice select,.employee-custom-position input,.employee-base-role select):focus-visible { outline: 3px solid #0d4fa8; outline-offset: 2px; box-shadow: 0 0 0 1px #fff; }
+
+@media (max-width: 640px) {
+  .employee-position-context { grid-template-columns: 38px minmax(0,1fr); padding: 12px; }
+  .employee-position-context > span { width: 38px; height: 38px; }
+}

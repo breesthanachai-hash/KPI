@@ -1,7 +1,7 @@
 import { and, eq, inArray, isNull, lt, sql } from "drizzle-orm";
 import { getDb } from "../db";
 import { authCredentials, authEvents, authRateLimits, authSessions, employees, userAccounts } from "../db/schema";
-import type { UserAccountRecord } from "./kpi-data";
+import { findRole, type UserAccountRecord } from "./kpi-data";
 import {
   canonicalizeLoginId,
   dummyVerifyPassword,
@@ -100,6 +100,7 @@ export async function authenticateLogin(request: Request, loginIdInput: unknown,
       account: userAccounts,
       employee: {
         status: employees.status,
+        roleId: employees.roleId,
       },
     }).from(authCredentials)
       .innerJoin(userAccounts, eq(userAccounts.id, authCredentials.userAccountId))
@@ -133,7 +134,13 @@ export async function authenticateLogin(request: Request, loginIdInput: unknown,
     return { ok: false, status: 401 };
   }
 
-  const refreshedAccount = { ...account, lastLoginAt: now, updatedAt: now };
+  const linkedRole = loginContext?.employee ? findRole(loginContext.employee.roleId) : undefined;
+  const refreshedAccount = {
+    ...account,
+    departmentId: account.role === "admin" ? "" : linkedRole?.departmentId ?? "",
+    lastLoginAt: now,
+    updatedAt: now,
+  };
   const preparedSession = await prepareSession(request, refreshedAccount, credential.credentialVersion);
   const cleanupQueries = cleanupExpiredAuthRecordQueries(nowDate);
   await db.batch([
@@ -299,12 +306,12 @@ function credentialVerifier(credential: AuthCredential): PasswordVerifier {
 
 function accountIsEligible(
   account: UserAccountRecord | null,
-  linkedEmployee: { status: string } | null,
+  linkedEmployee: { status: string; roleId: string } | null,
 ) {
   if (!account || account.status !== "active") return false;
   if (account.role === "admin") return true;
   if (!account.employeeId) return false;
-  return linkedEmployee?.status === "active";
+  return linkedEmployee?.status === "active" && Boolean(findRole(linkedEmployee.roleId));
 }
 
 function requestSource(request: Request) {

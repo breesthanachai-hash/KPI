@@ -100,6 +100,7 @@ type EmployeeRegistrationRequest = {
 
 type AccessPanel = "users" | "requests" | "rights";
 type DossierStatusFilter = "all" | "active" | "resigned" | "archived";
+type EmployeePositionMode = "standard" | "custom";
 
 type CredentialResult = {
   displayName: string;
@@ -716,7 +717,8 @@ function fallbackEvaluation(employee: EmployeeRecord): EvaluationRecord | null {
 
 function csvCell(value: string | number | null) {
   const text = value === null ? "" : String(value);
-  return `"${text.replaceAll('"', '""')}"`;
+  const formulaSafeText = /^\s*[=+\-@]/u.test(text) ? `'${text}` : text;
+  return `"${formulaSafeText.replaceAll('"', '""')}"`;
 }
 
 function formatUpdatedAt(value: string) {
@@ -827,6 +829,14 @@ function employeeLifecycleLabel(status: EmployeeRecord["status"]) {
   if (status === "active") return "ทำงานอยู่";
   if (status === "archived") return "ลบออกจากรายชื่อแล้ว";
   return "ลาออกแล้ว";
+}
+
+function normalizedEmployeePositionTitle(value: string) {
+  return value.normalize("NFC").trim().replace(/\s+/g, " ");
+}
+
+function employeePositionLabel(employee: Pick<EmployeeRecord, "roleId" | "positionTitle">) {
+  return normalizedEmployeePositionTitle(employee.positionTitle) || getRole(employee.roleId).name;
 }
 
 function contractStatusLabel(status: EmploymentContractRecord["status"]) {
@@ -1100,13 +1110,15 @@ export default function Home() {
   const [attendanceDate, setAttendanceDate] = useState(bangkokIsoDate());
   const [officeClock, setOfficeClock] = useState("--:--");
   const [todayDate, setTodayDate] = useState(() => bangkokIsoDate());
-  const [employeeForm, setEmployeeForm] = useState({ name: "", email: "", roleId: roles[0].id, manager: "" });
+  const [employeeForm, setEmployeeForm] = useState({ name: "", email: "", roleId: roles[0].id, positionTitle: "", positionMode: "standard" as EmployeePositionMode, manager: "" });
   const [hrForm, setHrForm] = useState({ actionId: "", currentSalary: 0, salaryReviewMonth: "มกราคม 2570", planType: "upskill" as TalentActionRecord["type"], title: "", dueDate: "2026-09-30", targetRoleId: roles[0].id });
   const [workForm, setWorkForm] = useState({ projectId: "", assigneeEmployeeId: "", kind: "task" as WorkItemRecord["kind"], title: "", description: "", priority: "medium" as WorkItemRecord["priority"], status: "todo" as WorkItemRecord["status"], progress: 0, points: workPointValue("task", "medium", defaultPointPolicyRules), dueDate: "2026-09-05" });
   const [submissionForm, setSubmissionForm] = useState({ submissionType: "document" as WorkSubmissionRecord["submissionType"], title: "", linkUrl: "", note: "" });
   const [projectForm, setProjectForm] = useState({ name: "", description: "", ownerEmployeeId: "", status: "active" as ProjectRecord["status"], dueDate: "2026-10-30", color: "forest" });
   const [rewardEmployeeId, setRewardEmployeeId] = useState("");
   const [profileForm, setProfileForm] = useState<Omit<EmployeeProfileRecord, "employeeId" | "updatedAt">>({ personalEmail: "", phone: "", birthDate: "", nationalIdLast4: "", address: "", emergencyName: "", emergencyPhone: "", startDate: "", employmentType: "permanent", education: "", experienceYears: 0, applicationSource: "" });
+  const [profilePositionMode, setProfilePositionMode] = useState<EmployeePositionMode>("standard");
+  const [profilePositionTitle, setProfilePositionTitle] = useState("");
   const [contractForm, setContractForm] = useState({ title: "สัญญาจ้างพนักงาน", version: "1.0", status: "sent" as "draft" | "sent", effectiveDate: "2026-09-01", expiryDate: "", documentId: "" });
   const [signatureForm, setSignatureForm] = useState({ signedName: "", consent: false });
   const [organizationDocumentForm, setOrganizationDocumentForm] = useState({ title: "", category: "other" as OrganizationDocumentCategory, description: "", documentNumber: "", version: "1.0", owner: "ฝ่ายทรัพยากรบุคคล", effectiveDate: bangkokIsoDate(), expiryDate: "", note: "", status: "draft" as "draft" | "active" });
@@ -1126,6 +1138,10 @@ export default function Home() {
   const [registrationRoleSelections, setRegistrationRoleSelections] = useState<Record<string, UserAccountRecord["role"]>>({});
   const [registrationRejectionReasons, setRegistrationRejectionReasons] = useState<Record<string, string>>({});
   const canManageEmployeeFiles = currentUser?.role === "admin" && permissions.canManagePeople && !isEmployeePreview;
+  const employeePositionTitleLength = Array.from(normalizedEmployeePositionTitle(employeeForm.positionTitle)).length;
+  const employeeCustomPositionInvalid = employeeForm.positionMode === "custom" && (employeePositionTitleLength === 0 || employeePositionTitleLength > 120);
+  const profilePositionTitleLength = Array.from(normalizedEmployeePositionTitle(profilePositionTitle)).length;
+  const profileCustomPositionInvalid = profilePositionMode === "custom" && (profilePositionTitleLength === 0 || profilePositionTitleLength > 120);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -1405,7 +1421,7 @@ export default function Home() {
     return employees.filter((employee) => {
       const role = getRole(employee.roleId);
       const departmentMatches = activeDepartment === "all" || role.departmentId === activeDepartment;
-      const queryMatches = !query || `${employee.name} ${employee.email} ${role.name} ${role.department}`.toLocaleLowerCase("th").includes(query);
+      const queryMatches = !query || `${employee.name} ${employee.email} ${employeePositionLabel(employee)} ${role.name} ${role.department}`.toLocaleLowerCase("th").includes(query);
       return employee.status === "active" && departmentMatches && queryMatches;
     });
   }, [activeDepartment, employees, search]);
@@ -1415,7 +1431,7 @@ export default function Home() {
     return employees.filter((employee) => {
       const role = getRole(employee.roleId);
       const departmentMatches = activeDepartment === "all" || role.departmentId === activeDepartment;
-      const queryMatches = !query || `${employee.name} ${employee.email} ${role.name} ${role.department}`.toLocaleLowerCase("th").includes(query);
+      const queryMatches = !query || `${employee.name} ${employee.email} ${employeePositionLabel(employee)} ${role.name} ${role.department}`.toLocaleLowerCase("th").includes(query);
       const isResigned = employee.status === "resigned" || employee.status === "inactive";
       const statusMatches = dossierStatusFilter === "all"
         ? employee.status !== "archived"
@@ -1862,7 +1878,7 @@ export default function Home() {
   const office3DPeople: Office3DPerson[] = visibleOfficePeople.map((person, index) => ({
     id: person.employee.id,
     name: person.employee.name,
-    role: person.role.name,
+    role: employeePositionLabel(person.employee),
     initials: person.employee.initials,
     level: person.level,
     behavior: officeBehaviorFor(person.level, index),
@@ -1985,7 +2001,7 @@ export default function Home() {
     const role = getRole(employee.roleId);
     const query = search.trim().toLocaleLowerCase("th");
     const departmentMatches = activeDepartment === "all" || role.departmentId === activeDepartment;
-    const queryMatches = !query || `${employee.name} ${role.name} ${role.department}`.toLocaleLowerCase("th").includes(query);
+    const queryMatches = !query || `${employee.name} ${employeePositionLabel(employee)} ${role.name} ${role.department}`.toLocaleLowerCase("th").includes(query);
     return departmentMatches && queryMatches;
   });
   const ratedPowerProfiles = allPowerProfiles.filter((profile) => profile.overall !== null);
@@ -2330,7 +2346,7 @@ export default function Home() {
 
   const buildGrowthTeam = () => {
     const lead = growthTeam[0]?.employee;
-    setProjectForm({ name: "Growth Quest Squad", description: `ทีมข้ามสายงานเพื่อทำเควสต์ใหม่ · ${growthTeam.map(({ employee, role }) => `${employee.name} (${role.shortName})`).join(" · ")}`, ownerEmployeeId: lead?.id ?? activeEmployees[0]?.id ?? "", status: "planned", dueDate: addIsoDays(todayDate, 30), color: "mustard" });
+    setProjectForm({ name: "Growth Quest Squad", description: `ทีมข้ามสายงานเพื่อทำเควสต์ใหม่ · ${growthTeam.map(({ employee }) => `${employee.name} (${employeePositionLabel(employee)})`).join(" · ")}`, ownerEmployeeId: lead?.id ?? activeEmployees[0]?.id ?? "", status: "planned", dueDate: addIsoDays(todayDate, 30), color: "mustard" });
     setShowProjectForm(true);
   };
 
@@ -2945,7 +2961,10 @@ export default function Home() {
   };
 
   const openProfileEditor = () => {
-    if (!profileEmployee) return;
+    if (!profileEmployee || profileEmployee.status === "archived" || isEmployeePreview) return;
+    const positionTitle = normalizedEmployeePositionTitle(profileEmployee.positionTitle);
+    setProfilePositionMode(positionTitle ? "custom" : "standard");
+    setProfilePositionTitle(positionTitle);
     setProfileForm(profileRecord ? {
       personalEmail: profileRecord.personalEmail,
       phone: profileRecord.phone,
@@ -2965,13 +2984,19 @@ export default function Home() {
 
   const saveEmployeeProfile = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!profileEmployee) return;
+    if (!profileEmployee || profileEmployee.status === "archived" || isEmployeePreview) return;
+    const positionTitle = profilePositionMode === "custom" ? normalizedEmployeePositionTitle(profilePositionTitle) : "";
+    if (profilePositionMode === "custom" && (!positionTitle || Array.from(positionTitle).length > 120)) {
+      showToast("กรุณาระบุชื่อตำแหน่งกำหนดเองไม่เกิน 120 ตัวอักษร", "error");
+      return;
+    }
     setIsSaving(true);
     try {
-      const response = await fetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "saveEmployeeProfile", employeeId: profileEmployee.id, ...profileForm }) });
-      const body = await response.json() as { employeeProfile?: EmployeeProfileRecord; error?: string };
-      if (!response.ok || !body.employeeProfile) throw new Error(body.error ?? "บันทึกโปรไฟล์ไม่สำเร็จ");
+      const response = await fetch("/api/dashboard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "saveEmployeeProfile", employeeId: profileEmployee.id, expectedEmployeeUpdatedAt: profileEmployee.updatedAt, positionTitle, ...profileForm }) });
+      const body = await response.json() as { employeeProfile?: EmployeeProfileRecord; employee?: EmployeeRecord; error?: string };
+      if (!response.ok || !body.employeeProfile || !body.employee) throw new Error(body.error ?? "บันทึกโปรไฟล์ไม่สำเร็จ");
       setEmployeeProfiles((items) => [...items.filter((item) => item.employeeId !== body.employeeProfile?.employeeId), body.employeeProfile as EmployeeProfileRecord]);
+      setEmployees((items) => items.map((employee) => employee.id === body.employee?.id ? body.employee as EmployeeRecord : employee));
       setShowProfileEditor(false);
       showToast(`อัปเดตแฟ้มประวัติของ ${profileEmployee.name} แล้ว`);
     } catch (error) {
@@ -3294,12 +3319,17 @@ export default function Home() {
 
   const addEmployee = async (event: React.FormEvent) => {
     event.preventDefault();
+    const positionTitle = employeeForm.positionMode === "custom" ? normalizedEmployeePositionTitle(employeeForm.positionTitle) : "";
+    if (employeeForm.positionMode === "custom" && (!positionTitle || Array.from(positionTitle).length > 120)) {
+      showToast("กรุณาระบุชื่อตำแหน่งกำหนดเองไม่เกิน 120 ตัวอักษร", "error");
+      return;
+    }
     setIsSaving(true);
     try {
       const response = await fetch("/api/dashboard", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "createEmployee", ...employeeForm }),
+        body: JSON.stringify({ action: "createEmployee", name: employeeForm.name, email: employeeForm.email, roleId: employeeForm.roleId, positionTitle, manager: employeeForm.manager }),
       });
       const body = await response.json() as { employee?: EmployeeRecord; hrProfile?: HrProfileRecord; employeeProfile?: EmployeeProfileRecord; error?: string };
       if (!response.ok || !body.employee) throw new Error(body.error ?? "เพิ่มพนักงานไม่สำเร็จ");
@@ -3307,7 +3337,7 @@ export default function Home() {
       if (body.hrProfile) setHrProfiles((items) => [...items, body.hrProfile as HrProfileRecord]);
       if (body.employeeProfile) setEmployeeProfiles((items) => [...items, body.employeeProfile as EmployeeProfileRecord]);
       setShowAddEmployee(false);
-      setEmployeeForm({ name: "", email: "", roleId: roles[0].id, manager: "" });
+      setEmployeeForm({ name: "", email: "", roleId: roles[0].id, positionTitle: "", positionMode: "standard", manager: "" });
       showToast(`เพิ่ม ${body.employee.name} ในระบบแล้ว`);
     } catch (error) {
       showErrorToast(error, "เพิ่มพนักงานไม่สำเร็จ");
@@ -3384,7 +3414,7 @@ export default function Home() {
       return;
     }
     const confirmationPhrase = `ลบถาวร ${employee.name}`;
-    const confirmation = window.prompt(`การลบถาวรจะลบข้อมูลส่วนบุคคล ประวัติงาน การประเมิน สัญญา เอกสาร และไฟล์แนบทั้งหมดของ ${employee.name}\n\nการดำเนินการนี้กู้คืนไม่ได้ หากยืนยันให้พิมพ์:\n${confirmationPhrase}`);
+    const confirmation = window.prompt(`การลบถาวรจะนำแฟ้มของ ${employee.name} ออกจากระบบใช้งาน และลบข้อมูลส่วนบุคคล เอกสารกับไฟล์แนบที่ผูกกับแฟ้ม\n\nระบบจะคงหลักฐานตรวจสอบขั้นต่ำบางรายการเป็น snapshot ตามประวัติองค์กร เช่น ผู้ที่เคยได้รับสิทธิ์จากเควสและประวัติการเปลี่ยนชื่อตำแหน่ง โดยไม่ใช้เป็นแฟ้มพนักงานอีกต่อไป\n\nข้อมูลใช้งานและไฟล์ที่ลบแล้วกู้คืนไม่ได้ หากยืนยันให้พิมพ์:\n${confirmationPhrase}`);
     if (confirmation === null) return;
     if (confirmation !== confirmationPhrase) {
       showToast(`ข้อความไม่ตรง กรุณาพิมพ์ “${confirmationPhrase}”`, "error");
@@ -3581,7 +3611,7 @@ export default function Home() {
         employee.name,
         employee.email,
         role.department,
-        role.name,
+        employeePositionLabel(employee),
         period,
         evaluation?.kpiScore ?? null,
         evaluation?.skillScore ?? null,
@@ -3616,7 +3646,7 @@ export default function Home() {
       return proofRows.map((submission) => [
         entry.employee?.name ?? "",
         role?.department ?? "",
-        role?.name ?? "",
+        entry.employee ? employeePositionLabel(entry.employee) : "",
         entry.project?.name ?? "",
         entry.item.title,
         workKindLabel(entry.item.kind),
@@ -3660,7 +3690,7 @@ export default function Home() {
         account.role === "admin" ? "HR / Admin" : account.role === "manager" ? "หัวหน้าทีม" : "พนักงาน",
         account.status === "active" ? "ใช้งาน" : "พักสิทธิ์",
         employee?.name ?? (account.role === "admin" ? "ระดับองค์กร" : "ยังไม่ผูก"),
-        employee ? getRole(employee.roleId).name : "",
+        employee ? employeePositionLabel(employee) : "",
         account.email,
         account.hasPassword ? "มีรหัสผ่าน" : "ไม่มีรหัสผ่าน",
         account.mustChangePassword ? "ต้องเปลี่ยนรหัส" : "ไม่ต้องเปลี่ยนรหัส",
@@ -3810,7 +3840,7 @@ export default function Home() {
       id: employee.id,
       name: employee.name,
       roleId: role.id,
-      roleName: role.name,
+      roleName: employeePositionLabel(employee),
       department: role.department,
       kpiScore: evaluation?.kpiScore ?? null,
       skillScore: evaluation?.skillScore ?? null,
@@ -3990,7 +4020,7 @@ export default function Home() {
         </button>
         {showUserMenu && <aside className="top-profile-menu" aria-label="จัดการโปรไฟล์">
           <div className="top-profile-menu-head"><span>{currentUser?.displayName ? makeInitials(currentUser.displayName) : "PP"}</span><p><strong>{currentUser?.displayName ?? "ผู้ใช้งาน"}</strong><small>ชื่อผู้ใช้ {currentUser?.loginId || "—"}</small><b>{currentUserRoleLabel}</b></p></div>
-          {currentUserEmployee && <div className="top-profile-work-summary"><span><small>ตำแหน่ง</small><strong>{getRole(currentUserEmployee.roleId).name}</strong></span><span><small>Points คงเหลือ</small><strong>{formatMoney(pointBalances.get(currentUserEmployee.id) ?? 0)}</strong></span></div>}
+          {currentUserEmployee && <div className="top-profile-work-summary"><span><small>ตำแหน่ง</small><strong>{employeePositionLabel(currentUserEmployee)}</strong></span><span><small>Points คงเหลือ</small><strong>{formatMoney(pointBalances.get(currentUserEmployee.id) ?? 0)}</strong></span></div>}
           <nav>
             <button type="button" onClick={() => { setShowUserMenu(false); if (isAdmin) { if (currentUser?.employeeId) setProfileEmployeeId(currentUser.employeeId); setView("profiles"); } else { setPortfolioEmployeeId(currentUser?.employeeId ?? "all"); setView("portfolio"); } }}><span>▣</span><p><strong>{isAdmin ? "จัดการโปรไฟล์" : "แฟ้มผลงานของฉัน"}</strong><small>{isAdmin ? "ข้อมูล เอกสาร และสัญญา" : "ดูผลงานและหลักฐานที่ส่งไว้"}</small></p></button>
             <button type="button" onClick={() => { setShowUserMenu(false); setView("work"); setWorkSection("tasks"); setWorkAssigneeFilter(currentUser?.employeeId ?? "all"); }}><span>✓</span><p><strong>งานของฉัน</strong><small>เปิดรายการสิ่งที่ต้องทำ</small></p></button>
@@ -4059,7 +4089,7 @@ export default function Home() {
           <section className="employee-portal-welcome">
             <div className="employee-welcome-person">
               <EmployeeAvatar employee={currentUserEmployee} profile={employeeProfilesById.get(currentUserEmployee.id)} className="avatar-growth" />
-              <div><p className="eyebrow">MY WORKSPACE</p><h2>สวัสดี {currentUserEmployee.name}</h2><p>{getRole(currentUserEmployee.roleId).name} · วันนี้จัดการงานและการเติบโตของคุณได้จากหน้าจอเดียว</p></div>
+              <div><p className="eyebrow">MY WORKSPACE</p><h2>สวัสดี {currentUserEmployee.name}</h2><p>{employeePositionLabel(currentUserEmployee)} · วันนี้จัดการงานและการเติบโตของคุณได้จากหน้าจอเดียว</p></div>
             </div>
             <div className="employee-welcome-stats">
               <button onClick={() => { setEmployeeTaskScope("assigned"); setWorkDueFilter("today"); setWorkSection("tasks"); }}><span>✓</span><p><small>งานวันนี้</small><strong>{employeeAssignedTodayCount}</strong></p></button>
@@ -4136,7 +4166,7 @@ export default function Home() {
               </div>
               <div className="office-command-focus">
                 <span>ภาระงานสูงสุดตอนนี้</span>
-                {officeMostLoaded ? <><strong>{officeMostLoaded.employee.name}</strong><small>{officeMostLoaded.role.name} · {officeMostLoaded.openItems.length} งานเปิดอยู่</small><div><i><b style={{ width: `${Math.min(100, Math.round(officeMostLoaded.loadRatio * 100))}%` }} /></i><em>{Math.round(officeMostLoaded.loadRatio * 100)}%</em></div></> : <strong>ยังไม่มีข้อมูล</strong>}
+                {officeMostLoaded ? <><strong>{officeMostLoaded.employee.name}</strong><small>{employeePositionLabel(officeMostLoaded.employee)} · {officeMostLoaded.openItems.length} งานเปิดอยู่</small><div><i><b style={{ width: `${Math.min(100, Math.round(officeMostLoaded.loadRatio * 100))}%` }} /></i><em>{Math.round(officeMostLoaded.loadRatio * 100)}%</em></div></> : <strong>ยังไม่มีข้อมูล</strong>}
               </div>
               <div className="office-command-stats">
                 <span><b>{officePeople.length}</b><small>คนในสำนักงาน</small></span>
@@ -4244,7 +4274,7 @@ export default function Home() {
                 return (
                   <div className="employee-table-row" role="row" key={employee.id}>
                     <span className="employee-identity"><EmployeeAvatar employee={employee} profile={employeeProfilesById.get(employee.id)} className="avatar-table" /><span><strong>{employee.name}</strong><small>{employee.email}</small></span></span>
-                    <span><strong>{role.name}</strong><small>{role.department} · ผู้จัดการ {employee.manager || "—"}</small></span>
+                    <span><strong>{employeePositionLabel(employee)}</strong><small>{role.department} · ผู้จัดการ {employee.manager || "—"}</small></span>
                     <ScoreCell value={evaluation?.kpiScore ?? null} />
                     <ScoreCell value={evaluation?.skillScore ?? null} />
                     <span><b className={`status-pill ${status === "ควรติดตาม" ? "alert" : status === "รอประเมิน" ? "pending" : ""}`}>{status}</b><small>{evaluation ? `อัปเดต ${formatUpdatedAt(evaluation.evaluatedAt)}` : "ยังไม่มีผลรอบนี้"}</small></span>
@@ -4281,7 +4311,7 @@ export default function Home() {
                   const employeeDocuments = applicationDocuments.filter((document) => document.employeeId === employee.id);
                   const verified = requiredDocumentTypes.filter((type) => employeeDocuments.some((document) => document.documentType === type && document.status === "verified")).length;
                   const signed = employmentContracts.some((contract) => contract.employeeId === employee.id && contract.status === "signed");
-                  return <button key={employee.id} className={`${profileEmployee?.id === employee.id ? "active" : ""} status-${employee.status}`} onClick={() => setProfileEmployeeId(employee.id)}><EmployeeAvatar employee={employee} profile={employeeProfilesById.get(employee.id)} className="avatar-roster" /><span><strong>{employee.name}</strong><small>{employeeLifecycleLabel(employee.status)} · {getRole(employee.roleId).shortName} · เอกสาร {verified}/{requiredDocumentTypes.length}</small></span><b className={signed ? "signed" : ""}>{signed ? "✓" : "!"}</b></button>;
+                  return <button key={employee.id} className={`${profileEmployee?.id === employee.id ? "active" : ""} status-${employee.status}`} onClick={() => setProfileEmployeeId(employee.id)}><EmployeeAvatar employee={employee} profile={employeeProfilesById.get(employee.id)} className="avatar-roster" /><span><strong>{employee.name}</strong><small>{employeeLifecycleLabel(employee.status)} · {employeePositionLabel(employee)} · เอกสาร {verified}/{requiredDocumentTypes.length}</small></span><b className={signed ? "signed" : ""}>{signed ? "✓" : "!"}</b></button>;
                 })}
                 {!dossierEmployees.length && <div className="dossier-roster-empty">ไม่พบพนักงานตามสถานะที่เลือก</div>}
               </div>
@@ -4290,10 +4320,10 @@ export default function Home() {
             {profileEmployee ? (
               <section className="dossier-main">
                 <header className="dossier-hero">
-                  <div className="dossier-person"><div className="profile-photo-control"><EmployeeAvatar employee={profileEmployee} profile={profileRecord} className="avatar-dossier" /><label>{uploadingProfileImage ? "กำลังอัปโหลด" : "เปลี่ยนรูป"}<input type="file" accept=".jpg,.jpeg,.png,.webp" disabled={uploadingProfileImage || profileEmployee.status === "archived"} onChange={(event) => { const file = event.target.files?.[0]; void uploadProfileImage(file); event.currentTarget.value = ""; }} /></label></div><div><p className="eyebrow">DIGITAL EMPLOYEE FILE</p><h2>{profileEmployee.name}</h2><small>{getRole(profileEmployee.roleId).name} · {getRole(profileEmployee.roleId).department}</small><em className={`employee-lifecycle-badge status-${profileEmployee.status}`}>{employeeLifecycleLabel(profileEmployee.status)}</em></div></div>
+                  <div className="dossier-person"><div className="profile-photo-control"><EmployeeAvatar employee={profileEmployee} profile={profileRecord} className="avatar-dossier" /><label>{uploadingProfileImage ? "กำลังอัปโหลด" : "เปลี่ยนรูป"}<input type="file" accept=".jpg,.jpeg,.png,.webp" disabled={uploadingProfileImage || profileEmployee.status === "archived"} onChange={(event) => { const file = event.target.files?.[0]; void uploadProfileImage(file); event.currentTarget.value = ""; }} /></label></div><div><p className="eyebrow">DIGITAL EMPLOYEE FILE</p><h2>{profileEmployee.name}</h2><small>{employeePositionLabel(profileEmployee)} · {getRole(profileEmployee.roleId).department}</small><em className={`employee-lifecycle-badge status-${profileEmployee.status}`}>{employeeLifecycleLabel(profileEmployee.status)}</em></div></div>
                   <div className="dossier-completeness"><span style={{ "--dossier-score": `${dossierCompleteness}%` } as React.CSSProperties}><b>{dossierCompleteness}%</b></span><div><strong>ความสมบูรณ์ของแฟ้ม</strong><small>{dossierCompleteness >= 85 ? "ข้อมูลพร้อมใช้งาน" : "ยังมีข้อมูลหรือเอกสารที่ต้องเติม"}</small></div></div>
                   <div className="dossier-lifecycle-actions">
-                    {profileEmployee.status === "archived" ? <><button type="button" className="restore-employee" disabled={isSaving} onClick={() => void updateEmployeeLifecycleStatus(profileEmployee, "resigned")}>กู้คืนแฟ้ม</button><button type="button" className="purge-employee" disabled={isSaving} title="ลบข้อมูลและไฟล์ทั้งหมดถาวร กู้คืนไม่ได้" onClick={() => void deleteEmployeePermanently(profileEmployee)}>ลบถาวร</button></> : <>
+                    {profileEmployee.status === "archived" ? <><button type="button" className="restore-employee" disabled={isSaving} onClick={() => void updateEmployeeLifecycleStatus(profileEmployee, "resigned")}>กู้คืนแฟ้ม</button><button type="button" className="purge-employee" disabled={isSaving} title="ลบแฟ้มใช้งานและไฟล์ส่วนบุคคล โดยคงหลักฐานตรวจสอบขั้นต่ำแบบ snapshot" onClick={() => void deleteEmployeePermanently(profileEmployee)}>ลบถาวร</button></> : <>
                       <label><span>สถานะการจ้าง</span><select value={profileEmployee.status === "active" ? "active" : "resigned"} disabled={isSaving} onChange={(event) => void updateEmployeeLifecycleStatus(profileEmployee, event.target.value as "active" | "resigned")}><option value="active">ทำงานอยู่</option><option value="resigned">ลาออกแล้ว</option></select></label>
                       <button type="button" onClick={openProfileEditor}>แก้ไขข้อมูล</button>
                       <button type="button" className="archive-employee" disabled={isSaving || profileEmployee.status === "active"} title={profileEmployee.status === "active" ? "เลือก “ลาออกแล้ว” ก่อนลบออกจากรายชื่อ" : "ซ่อนจากรายชื่อโดยเก็บประวัติไว้"} onClick={() => void archiveEmployeeRecord(profileEmployee)}>ลบออกจากรายชื่อ</button>
@@ -4560,7 +4590,7 @@ export default function Home() {
                     <article className="individual-skill-card" key={employee.id}>
                       <div className="person-skill-head">
                         <EmployeeAvatar employee={employee} profile={employeeProfilesById.get(employee.id)} className="avatar-skill" />
-                        <span><strong>{employee.name}</strong><small>{role.name}</small></span>
+                        <span><strong>{employee.name}</strong><small>{employeePositionLabel(employee)}</small></span>
                         <b className={competencyScore !== null && competencyScore < 80 ? "develop" : ""}>{competencyScore !== null ? competencyScore.toFixed(0) : "—"}<small>/100</small></b>
                       </div>
                       <div className="person-competency-summary">
@@ -4626,14 +4656,14 @@ export default function Home() {
               {powerLeft && powerRight ? (
                 <>
                   <div className="power-selectors">
-                    <label><span>การ์ด A</span><select value={powerLeft.employee.id} onChange={(event) => setPowerLeftId(event.target.value)}>{allPowerProfiles.filter((profile) => profile.employee.id !== powerRight.employee.id).map((profile) => <option key={profile.employee.id} value={profile.employee.id}>{profile.employee.name} · {profile.role.shortName}</option>)}</select></label>
+                    <label><span>การ์ด A</span><select value={powerLeft.employee.id} onChange={(event) => setPowerLeftId(event.target.value)}>{allPowerProfiles.filter((profile) => profile.employee.id !== powerRight.employee.id).map((profile) => <option key={profile.employee.id} value={profile.employee.id}>{profile.employee.name} · {employeePositionLabel(profile.employee)}</option>)}</select></label>
                     <i aria-hidden="true">VS</i>
-                    <label><span>การ์ด B</span><select value={powerRight.employee.id} onChange={(event) => setPowerRightId(event.target.value)}>{allPowerProfiles.filter((profile) => profile.employee.id !== powerLeft.employee.id).map((profile) => <option key={profile.employee.id} value={profile.employee.id}>{profile.employee.name} · {profile.role.shortName}</option>)}</select></label>
+                    <label><span>การ์ด B</span><select value={powerRight.employee.id} onChange={(event) => setPowerRightId(event.target.value)}>{allPowerProfiles.filter((profile) => profile.employee.id !== powerLeft.employee.id).map((profile) => <option key={profile.employee.id} value={profile.employee.id}>{profile.employee.name} · {employeePositionLabel(profile.employee)}</option>)}</select></label>
                   </div>
                   <div className="power-matchup">
                     <div className={`matchup-person ${powerDifference !== null && powerDifference > 0 ? "winner" : ""}`}>
                       <EmployeeAvatar employee={powerLeft.employee} profile={employeeProfilesById.get(powerLeft.employee.id)} className="avatar-matchup" />
-                      <div><small>{powerLeft.role.department}</small><strong>{powerLeft.employee.name}</strong><p>{powerLeft.role.name}</p></div>
+                      <div><small>{powerLeft.role.department}</small><strong>{powerLeft.employee.name}</strong><p>{employeePositionLabel(powerLeft.employee)}</p></div>
                       <b>{powerLeft.overall ?? "—"}<small>OVR</small></b>
                     </div>
                     <div className="matchup-verdict">
@@ -4642,7 +4672,7 @@ export default function Home() {
                     </div>
                     <div className={`matchup-person right ${powerDifference !== null && powerDifference < 0 ? "winner" : ""}`}>
                       <b>{powerRight.overall ?? "—"}<small>OVR</small></b>
-                      <div><small>{powerRight.role.department}</small><strong>{powerRight.employee.name}</strong><p>{powerRight.role.name}</p></div>
+                      <div><small>{powerRight.role.department}</small><strong>{powerRight.employee.name}</strong><p>{employeePositionLabel(powerRight.employee)}</p></div>
                       <EmployeeAvatar employee={powerRight.employee} profile={employeeProfilesById.get(powerRight.employee.id)} className="avatar-matchup" />
                     </div>
                   </div>
@@ -4673,7 +4703,7 @@ export default function Home() {
             <section className="employee-growth-hero">
               <div className="employee-growth-identity">
                 <EmployeeAvatar employee={peopleOpsEmployee} profile={employeeProfilesById.get(peopleOpsEmployee.id)} className="avatar-growth" />
-                <div><p className="eyebrow">MY GROWTH PATH</p><h2>เส้นทางของ {peopleOpsEmployee.name}</h2><p>{peopleOpsRole.name} · ข้อมูลส่วนนี้เห็นได้เฉพาะคุณและ HR</p></div>
+                <div><p className="eyebrow">MY GROWTH PATH</p><h2>เส้นทางของ {peopleOpsEmployee.name}</h2><p>{employeePositionLabel(peopleOpsEmployee)} · ข้อมูลส่วนนี้เห็นได้เฉพาะคุณและ HR</p></div>
               </div>
               <div className="employee-growth-readiness"><small>ความพร้อมก้าวต่อไป</small><strong>{promotionReadiness}</strong><span>/100</span><i><b style={{ width: `${promotionReadiness}%` }} /></i><em>{promotionReadiness >= 80 ? "พร้อมเสนอพิจารณา" : promotionReadiness >= 65 ? "พร้อมรับงานระดับถัดไป" : "กำลังสะสมทักษะและผลงาน"}</em></div>
             </section>
@@ -4688,7 +4718,7 @@ export default function Home() {
             <section className="employee-growth-roadmap">
               <div className="employee-growth-section-heading"><div><p className="eyebrow">CAREER ROADMAP</p><h2>ฉันอยู่ตรงไหน และต้องทำอะไรต่อ</h2></div><button onClick={() => { setPortfolioEmployeeId(peopleOpsEmployee.id); setView("portfolio"); }}>ดูหลักฐานผลงาน →</button></div>
               <div>
-                <article className="done"><span>01</span><div><small>ตำแหน่งปัจจุบัน</small><strong>{peopleOpsRole.name}</strong><p>KPI {peopleOpsEvaluation?.kpiScore.toFixed(0) ?? "รอประเมิน"} · สกิล {peopleOpsEvaluation?.skillScore.toFixed(0) ?? "รอประเมิน"}</p></div><b>ปัจจุบัน</b></article>
+                <article className="done"><span>01</span><div><small>ตำแหน่งปัจจุบัน</small><strong>{employeePositionLabel(peopleOpsEmployee)}</strong><p>KPI {peopleOpsEvaluation?.kpiScore.toFixed(0) ?? "รอประเมิน"} · สกิล {peopleOpsEvaluation?.skillScore.toFixed(0) ?? "รอประเมิน"}</p></div><b>ปัจจุบัน</b></article>
                 <i>→</i>
                 <article className={promotionReadiness >= 65 ? "active" : "locked"}><span>02</span><div><small>ด่านถัดไป</small><strong>รับงานและเควสต์ระดับสูงขึ้น</strong><p>ปลดล็อกเมื่อความพร้อมถึง 65%</p></div><b>{promotionReadiness >= 65 ? "ปลดล็อกแล้ว" : `อีก ${Math.max(0, 65 - promotionReadiness)}%`}</b></article>
                 <i>→</i>
@@ -4780,7 +4810,7 @@ export default function Home() {
                     const meta = record ? attendanceStatusMeta[record.status] : null;
                     return <article key={employee.id} className={record ? meta?.tone : "missing"}>
                       <EmployeeAvatar employee={employee} profile={employeeProfilesById.get(employee.id)} className="avatar-sm" />
-                      <div><strong>{employee.name}</strong><small>{getRole(employee.roleId).name}</small></div>
+                      <div><strong>{employee.name}</strong><small>{employeePositionLabel(employee)}</small></div>
                       <span className="attendance-times"><b>{record?.clockIn ?? "—"}</b><i>→</i><b>{record?.clockOut ?? "—"}</b></span>
                       <span className={"attendance-status " + (meta?.tone ?? "missing")}>{record ? record.status === "leave" && record.leaveType ? leaveTypeLabels[record.leaveType] : meta?.label : "ยังไม่ลงเวลา"}</span>
                       <small className="attendance-detail">{record?.status === "late" ? "สาย " + record.minutesLate + " นาที" : record?.status === "leave" ? record.approvalStatus === "approved" ? "อนุมัติแล้ว" : record.approvalStatus === "rejected" ? "ไม่อนุมัติ" : "รออนุมัติ" : record?.note || "—"}</small>
@@ -4806,8 +4836,8 @@ export default function Home() {
             {peopleOpsEmployee && peopleOpsRole && (
               <section className="growth-command-center">
                 <div className="growth-heading">
-                  <div className="growth-person"><EmployeeAvatar employee={peopleOpsEmployee} profile={employeeProfilesById.get(peopleOpsEmployee.id)} className="avatar-growth" /><div><p className="eyebrow">GROWTH &amp; REWARD PATH</p><h2>เส้นทางเติบโตของ {peopleOpsEmployee.name}</h2><p>{peopleOpsRole.name} · ทุกขั้นเชื่อมจากหลักฐานผลงานและสกิล</p></div></div>
-                  <label><span>เลือกพนักงาน</span><select value={peopleOpsEmployeeId} onChange={(event) => selectPeopleOpsEmployee(event.target.value)}>{activeEmployees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name} · {getRole(employee.roleId).shortName}</option>)}</select></label>
+                  <div className="growth-person"><EmployeeAvatar employee={peopleOpsEmployee} profile={employeeProfilesById.get(peopleOpsEmployee.id)} className="avatar-growth" /><div><p className="eyebrow">GROWTH &amp; REWARD PATH</p><h2>เส้นทางเติบโตของ {peopleOpsEmployee.name}</h2><p>{employeePositionLabel(peopleOpsEmployee)} · ทุกขั้นเชื่อมจากหลักฐานผลงานและสกิล</p></div></div>
+                  <label><span>เลือกพนักงาน</span><select value={peopleOpsEmployeeId} onChange={(event) => selectPeopleOpsEmployee(event.target.value)}>{activeEmployees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name} · {employeePositionLabel(employee)}</option>)}</select></label>
                 </div>
                 <div className="growth-summary-grid">
                   <article><small>เงินเดือนปัจจุบัน</small><strong>฿{formatMoney(peopleOpsHrProfile?.currentSalary ?? 0)}</strong><span>อัปเดตล่าสุด {peopleOpsHrProfile ? formatUpdatedAt(peopleOpsHrProfile.updatedAt) : "—"}</span></article>
@@ -4817,7 +4847,7 @@ export default function Home() {
                 </div>
 
                 <div className="growth-roadmap">
-                  <article className="done"><span>01</span><div><small>ตำแหน่งปัจจุบัน</small><strong>{peopleOpsRole.name}</strong><p>KPI {peopleOpsEvaluation?.kpiScore.toFixed(0) ?? "—"} · สกิล {peopleOpsEvaluation?.skillScore.toFixed(0) ?? "—"}</p></div><b>กำลังทำอยู่</b></article>
+                  <article className="done"><span>01</span><div><small>ตำแหน่งปัจจุบัน</small><strong>{employeePositionLabel(peopleOpsEmployee)}</strong><p>KPI {peopleOpsEvaluation?.kpiScore.toFixed(0) ?? "—"} · สกิล {peopleOpsEvaluation?.skillScore.toFixed(0) ?? "—"}</p></div><b>กำลังทำอยู่</b></article>
                   <i>→</i>
                   <article className={promotionReadiness >= 65 ? "active" : "locked"}><span>02</span><div><small>ด่านความพร้อม</small><strong>รับงานและเควสต์ระดับถัดไป</strong><p>{peopleOpsMissions.filter((item) => item.status === "done").length}/{peopleOpsMissions.length} เควสต์สำเร็จ · งานเปิด {peopleOpsWork.filter((item) => item.status !== "done").length}</p></div><b>{promotionReadiness >= 65 ? "ปลดล็อกแล้ว" : "กำลังพัฒนา"}</b></article>
                   <i>→</i>
@@ -4862,7 +4892,7 @@ export default function Home() {
 
                 <section className="team-builder-card">
                   <div><p className="eyebrow">SMART TEAM BUILDER</p><h2>สร้างทีมจากจุดแข็งและภาระงาน</h2><p>แนะนำทีมข้ามสายงานจากคนที่มีงานเปิดน้อย พร้อมระบุสกิลเด่นก่อนสร้างโปรเจกต์และเควสต์</p></div>
-                  <div className="growth-team-list">{growthTeam.map(({ employee, role, openWork, strength }, index) => <article key={employee.id}><span className="team-slot">{String(index + 1).padStart(2, "0")}</span><EmployeeAvatar employee={employee} profile={employeeProfilesById.get(employee.id)} className="avatar-sm" /><div><strong>{employee.name}</strong><small>{role.name}</small></div><span><small>จุดแข็ง</small><b>{strength}</b></span><em>{openWork} งานเปิด</em></article>)}</div>
+                  <div className="growth-team-list">{growthTeam.map(({ employee, openWork, strength }, index) => <article key={employee.id}><span className="team-slot">{String(index + 1).padStart(2, "0")}</span><EmployeeAvatar employee={employee} profile={employeeProfilesById.get(employee.id)} className="avatar-sm" /><div><strong>{employee.name}</strong><small>{employeePositionLabel(employee)}</small></div><span><small>จุดแข็ง</small><b>{strength}</b></span><em>{openWork} งานเปิด</em></article>)}</div>
                   <button onClick={buildGrowthTeam}>สร้างโปรเจกต์ให้ทีมนี้</button>
                 </section>
               </section>
@@ -4892,7 +4922,7 @@ export default function Home() {
                     const salaryPoint = hrProfile ? Math.min(100, Math.max(0, (hrProfile.currentSalary - salaryBand.min) / (salaryBand.max - salaryBand.min) * 100)) : 0;
                     return (
                       <article className="workforce-row" role="row" key={employee.id}>
-                        <span className="workforce-person"><EmployeeAvatar employee={employee} profile={employeeProfilesById.get(employee.id)} className="avatar-workforce" /><span><strong>{employee.name}</strong><small>{role.name} · {role.department}</small></span></span>
+                        <span className="workforce-person"><EmployeeAvatar employee={employee} profile={employeeProfilesById.get(employee.id)} className="avatar-workforce" /><span><strong>{employee.name}</strong><small>{employeePositionLabel(employee)} · {role.department}</small></span></span>
                         <span className="workforce-scores"><b>{evaluation ? evaluation.totalScore.toFixed(0) : "—"}<small>KPI รวม</small></b><b className={evaluation && evaluation.skillScore < 80 ? "attention" : ""}>{evaluation ? evaluation.skillScore.toFixed(0) : "—"}<small>สกิล</small></b></span>
                         <span className="workforce-fit"><strong>{bestFit ? `${bestFit.score}%` : "รอประเมิน"}</strong><small>{bestFit?.role.name ?? "ยังไม่มีข้อมูลสกิล"}</small><i><b style={{ width: `${bestFit?.score ?? 0}%` }} /></i></span>
                         <span className="workforce-salary"><strong>{hrProfile ? `฿${formatMoney(hrProfile.currentSalary)}` : "—"}</strong><small>กรอบ ฿{formatMoney(salaryBand.min)}–{formatMoney(salaryBand.max)}</small><i><b style={{ left: `${salaryPoint}%` }} /></i></span>
@@ -5012,7 +5042,7 @@ export default function Home() {
                   ] as const).map((option) => <label key={option.role} className={`${option.role} ${userAccountForm.role === option.role ? "selected" : ""}`}><input type="radio" name="access-role" value={option.role} checked={userAccountForm.role === option.role} onChange={() => setUserAccountForm((form) => ({ ...form, role: option.role }))} /><span aria-hidden="true">{option.icon}</span><div><strong>{option.label}</strong><small>{option.group} · {option.scope}</small></div><code>{option.role}</code></label>)}<p id="access-role-help">เลือกจากข้อมูลที่ต้องเห็นและงานที่ต้องทำ ระบบยังคงใช้บทบาทจริง admin, manager และ employee</p></fieldset>
                   <label className="wide"><span>สถานะบัญชี</span><select value={userAccountForm.status} onChange={(event) => setUserAccountForm((form) => ({ ...form, status: event.target.value as UserAccountRecord["status"] }))}><option value="active">ใช้งาน</option><option value="inactive">เพิกถอนสิทธิ์</option></select></label>
                   <div className={`access-selected-role-note wide ${selectedUserKind}`} aria-live="polite"><strong>{selectedUserKindLabel} · {userAccountForm.role === "admin" ? "HR / Admin" : userAccountForm.role === "manager" ? "หัวหน้าทีม" : "พนักงาน"}</strong><span>{selectedUserRoleGuide}</span></div>
-                  {userAccountForm.role !== "admin" && <label className="wide"><span>ผูกกับโปรไฟล์พนักงาน</span><select required value={userAccountForm.employeeId} onChange={(event) => setUserAccountForm((form) => ({ ...form, employeeId: event.target.value }))}><option value="">เลือกพนักงาน</option>{employees.filter((employee) => employee.status === "active" && (!userAccounts.some((account) => account.employeeId === employee.id && account.id !== userAccountForm.accountId))).map((employee) => <option key={employee.id} value={employee.id}>{employee.name} · {getRole(employee.roleId).name}</option>)}</select></label>}
+                  {userAccountForm.role !== "admin" && <label className="wide"><span>ผูกกับโปรไฟล์พนักงาน</span><select required value={userAccountForm.employeeId} onChange={(event) => setUserAccountForm((form) => ({ ...form, employeeId: event.target.value }))}><option value="">เลือกพนักงาน</option>{employees.filter((employee) => employee.status === "active" && (!userAccounts.some((account) => account.employeeId === employee.id && account.id !== userAccountForm.accountId))).map((employee) => <option key={employee.id} value={employee.id}>{employee.name} · {employeePositionLabel(employee)}</option>)}</select></label>}
                   {userAccountForm.role === "manager" && <label className="wide"><span>ทีมที่ดูแล</span><select value={userAccountForm.departmentId} onChange={(event) => setUserAccountForm((form) => ({ ...form, departmentId: event.target.value }))}><option value="">ใช้แผนกตามโปรไฟล์พนักงาน</option>{Array.from(new Map(roles.map((role) => [role.departmentId, role.department])).entries()).map(([departmentId, department]) => <option key={departmentId} value={departmentId}>{department}</option>)}</select></label>}
                 </div>
                 <div className="access-form-actions">{userAccountForm.accountId && <button type="button" onClick={() => { setUserAccountForm(blankUserAccountForm()); setShowTemporaryPassword(false); }}>ยกเลิกการแก้ไข</button>}<button className="primary" disabled={isSaving}>{isSaving ? "กำลังบันทึก..." : userAccountForm.accountId ? "บันทึกบัญชี" : "สร้างบัญชีและรหัสชั่วคราว"}</button></div>
@@ -5052,7 +5082,7 @@ export default function Home() {
                     <header><span className="access-account-avatar">{makeInitials(`${registrationRequest.firstName} ${registrationRequest.lastName}`)}</span><div><strong>{registrationRequest.firstName} {registrationRequest.lastName}</strong><small>ชื่อเล่น {registrationRequest.nickname} · ส่งเมื่อ {formatUpdatedAt(registrationRequest.submittedAt)}</small></div><b>รออนุมัติ</b></header>
                     <dl><div><dt>ชื่อผู้ใช้</dt><dd><code>{registrationRequest.loginId}</code></dd></div><div><dt>อีเมล</dt><dd>{registrationRequest.email}</dd></div><div><dt>รหัสผ่าน</dt><dd>ตั้งแล้ว · ไม่แสดงข้อมูลลับ</dd></div></dl>
                     <label><span>สิทธิ์หลังอนุมัติ</span><select value={selectedRole} onChange={(event) => setRegistrationRoleSelections((items) => ({ ...items, [registrationRequest.id]: event.target.value as UserAccountRecord["role"] }))}><option value="employee">พนักงาน — ดูและจัดการข้อมูลของตนเอง</option><option value="manager">หัวหน้าทีม — จัดการงานและประเมินทีม</option><option value="admin">HR / Admin — จัดการข้อมูลทั้งองค์กร</option></select><small>{selectedRole === "admin" ? "สิทธิ์ระดับสูง: เข้าถึงบัญชี ข้อมูล HR และการตั้งค่าทั้งองค์กร" : selectedRole === "manager" ? "ขอบเขตทีมจะยึดตามแผนกของโปรไฟล์พนักงานที่เลือก" : "เหมาะสำหรับสมาชิกทั่วไปและไม่มีสิทธิ์อนุมัติงานของตนเอง"}</small></label>
-                    <label><span>ผูกกับโปรไฟล์พนักงาน</span><select value={selectedEmployeeId} onChange={(event) => setRegistrationEmployeeSelections((items) => ({ ...items, [registrationRequest.id]: event.target.value }))}><option value="">เลือกโปรไฟล์พนักงาน</option>{availableEmployees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name} · {getRole(employee.roleId).name}{employee.email.toLowerCase() === registrationRequest.email.toLowerCase() ? " · อีเมลตรงกัน" : ""}</option>)}</select><small>หากยังไม่มีโปรไฟล์ ให้เพิ่มพนักงานในทะเบียนก่อน แล้วกลับมาอนุมัติ</small></label>
+                    <label><span>ผูกกับโปรไฟล์พนักงาน</span><select value={selectedEmployeeId} onChange={(event) => setRegistrationEmployeeSelections((items) => ({ ...items, [registrationRequest.id]: event.target.value }))}><option value="">เลือกโปรไฟล์พนักงาน</option>{availableEmployees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name} · {employeePositionLabel(employee)}{employee.email.toLowerCase() === registrationRequest.email.toLowerCase() ? " · อีเมลตรงกัน" : ""}</option>)}</select><small>หากยังไม่มีโปรไฟล์ ให้เพิ่มพนักงานในทะเบียนก่อน แล้วกลับมาอนุมัติ</small></label>
                     <label><span>เหตุผลกรณีปฏิเสธ</span><input maxLength={500} value={registrationRejectionReasons[registrationRequest.id] ?? ""} onChange={(event) => setRegistrationRejectionReasons((items) => ({ ...items, [registrationRequest.id]: event.target.value }))} placeholder="เช่น ข้อมูลไม่ตรงกับทะเบียนพนักงาน" /></label>
                     <footer><button type="button" className="reject" disabled={isSaving} onClick={() => void rejectRegistrationRequest(registrationRequest)}>ปฏิเสธ</button><button type="button" className="approve" disabled={isSaving || !selectedEmployeeId} onClick={() => void approveRegistrationRequest(registrationRequest)}>อนุมัติและเปิดบัญชี</button></footer>
                   </article>;
@@ -5073,7 +5103,7 @@ export default function Home() {
                     const credentialState = accountCredentialState(account);
                     const roleName = account.role === "admin" ? "HR / Admin" : account.role === "manager" ? "หัวหน้าทีม" : "พนักงาน";
                     const locked = credentialState.id === "locked";
-                    return <tr key={account.id} className={account.status}><td><code>{account.loginId || "ยังไม่กำหนด"}</code></td><td><strong>{account.displayName}</strong><small>{account.nickname ? `ชื่อเล่น ${account.nickname}` : "ไม่ระบุชื่อเล่น"}</small></td><td><span className={`access-role-pill ${account.role}`}>{roleName}</span></td><td><span className={`access-status ${account.status}`}>{account.status === "active" ? "ใช้งาน" : "เพิกถอนสิทธิ์"}</span></td><td><strong>{employee?.name ?? (account.role === "admin" ? "ระดับองค์กร" : "ยังไม่ผูก")}</strong><small>{employee ? getRole(employee.roleId).name : "—"}</small></td><td>{account.email}</td><td>{account.hasPassword ? "มี" : "ไม่มี"}</td><td>{account.mustChangePassword ? "ต้องเปลี่ยน" : "ไม่ต้องเปลี่ยน"}</td><td>{locked ? "ล็อก" : "ปกติ"}</td><td>{account.lastLoginAt ? formatUpdatedAt(account.lastLoginAt) : credentialState.label}</td><td><span className="access-account-actions"><button aria-label={`แก้ไขบัญชีของ ${account.displayName}`} disabled={isSaving || account.id === currentUser?.id} onClick={() => editUserAccount(account)}>แก้ไข</button><button aria-label={`สร้างรหัสผ่านชั่วคราวใหม่ให้ ${account.displayName}`} disabled={isSaving || account.id === currentUser?.id} onClick={() => prepareUserAccountPasswordReset(account)}>รีเซ็ต</button><button className={account.status === "active" ? "revoke-account" : "restore-account"} aria-label={`${account.status === "active" ? "เพิกถอนสิทธิ์" : "คืนสิทธิ์"}ของ ${account.displayName}`} disabled={isSaving || account.id === currentUser?.id} onClick={() => void toggleUserAccount(account)}>{account.status === "active" ? "เพิกถอน" : "คืนสิทธิ์"}</button><button className="delete-account" aria-label={`ลบบัญชีของ ${account.displayName}`} disabled={isSaving || account.id === currentUser?.id || account.id === "user-owner"} onClick={() => void deleteUserAccount(account)}>ลบ</button></span></td></tr>;
+                    return <tr key={account.id} className={account.status}><td><code>{account.loginId || "ยังไม่กำหนด"}</code></td><td><strong>{account.displayName}</strong><small>{account.nickname ? `ชื่อเล่น ${account.nickname}` : "ไม่ระบุชื่อเล่น"}</small></td><td><span className={`access-role-pill ${account.role}`}>{roleName}</span></td><td><span className={`access-status ${account.status}`}>{account.status === "active" ? "ใช้งาน" : "เพิกถอนสิทธิ์"}</span></td><td><strong>{employee?.name ?? (account.role === "admin" ? "ระดับองค์กร" : "ยังไม่ผูก")}</strong><small>{employee ? employeePositionLabel(employee) : "—"}</small></td><td>{account.email}</td><td>{account.hasPassword ? "มี" : "ไม่มี"}</td><td>{account.mustChangePassword ? "ต้องเปลี่ยน" : "ไม่ต้องเปลี่ยน"}</td><td>{locked ? "ล็อก" : "ปกติ"}</td><td>{account.lastLoginAt ? formatUpdatedAt(account.lastLoginAt) : credentialState.label}</td><td><span className="access-account-actions"><button aria-label={`แก้ไขบัญชีของ ${account.displayName}`} disabled={isSaving || account.id === currentUser?.id} onClick={() => editUserAccount(account)}>แก้ไข</button><button aria-label={`สร้างรหัสผ่านชั่วคราวใหม่ให้ ${account.displayName}`} disabled={isSaving || account.id === currentUser?.id} onClick={() => prepareUserAccountPasswordReset(account)}>รีเซ็ต</button><button className={account.status === "active" ? "revoke-account" : "restore-account"} aria-label={`${account.status === "active" ? "เพิกถอนสิทธิ์" : "คืนสิทธิ์"}ของ ${account.displayName}`} disabled={isSaving || account.id === currentUser?.id} onClick={() => void toggleUserAccount(account)}>{account.status === "active" ? "เพิกถอน" : "คืนสิทธิ์"}</button><button className="delete-account" aria-label={`ลบบัญชีของ ${account.displayName}`} disabled={isSaving || account.id === currentUser?.id || account.id === "user-owner"} onClick={() => void deleteUserAccount(account)}>ลบ</button></span></td></tr>;
                   })}</tbody>
                 </table>
                 {!userAccounts.length && <div className="empty-state">ยังไม่มีบัญชีผู้ใช้งาน</div>}
@@ -5107,7 +5137,7 @@ export default function Home() {
                   <small>ระบบค้นหาทั้งชื่องาน รายละเอียด หลักฐาน ผู้ส่ง และผู้ตรวจในครั้งเดียว</small>
                 </div>
                 <div className="portfolio-filter-grid">
-                  {!isEmployeeUser && <label><span>พนักงาน</span><select value={portfolioEmployeeId} onChange={(event) => setPortfolioEmployeeId(event.target.value)}><option value="all">พนักงานทั้งหมด</option>{employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name} · {getRole(employee.roleId).shortName}{employee.status !== "active" ? " · พ้นสภาพ" : ""}</option>)}</select></label>}
+                  {!isEmployeeUser && <label><span>พนักงาน</span><select value={portfolioEmployeeId} onChange={(event) => setPortfolioEmployeeId(event.target.value)}><option value="all">พนักงานทั้งหมด</option>{employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name} · {employeePositionLabel(employee)}{employee.status !== "active" ? " · พ้นสภาพ" : ""}</option>)}</select></label>}
                   <label><span>โปรเจกต์</span><select value={portfolioProjectId} onChange={(event) => setPortfolioProjectId(event.target.value)}><option value="all">ทุกโปรเจกต์</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
                   <button type="button" className="portfolio-reset-button" disabled={!hasPortfolioFilters} onClick={() => { setPortfolioSearch(""); setPortfolioEmployeeId(isEmployeeUser ? currentUser?.employeeId ?? "all" : "all"); setPortfolioProjectId("all"); setPortfolioStatus("all"); setActiveDepartment("all"); }}><span aria-hidden="true">↺</span> ล้างตัวกรองทั้งหมด</button>
                 </div>
@@ -5128,7 +5158,7 @@ export default function Home() {
               {focusedPortfolioEmployee && (
                 <article className="portfolio-owner-banner">
                   <EmployeeAvatar employee={focusedPortfolioEmployee} profile={employeeProfilesById.get(focusedPortfolioEmployee.id)} className="avatar-portfolio" />
-                  <div><p className="eyebrow">INDIVIDUAL PORTFOLIO</p><h3>{focusedPortfolioEmployee.name}</h3><small>{getRole(focusedPortfolioEmployee.roleId).name} · {getRole(focusedPortfolioEmployee.roleId).department}</small></div>
+                  <div><p className="eyebrow">INDIVIDUAL PORTFOLIO</p><h3>{focusedPortfolioEmployee.name}</h3><small>{employeePositionLabel(focusedPortfolioEmployee)} · {getRole(focusedPortfolioEmployee.roleId).department}</small></div>
                   <span><small>ผลงาน</small><strong>{portfolioEntries.filter((entry) => entry.item.assigneeEmployeeId === focusedPortfolioEmployee.id).length}</strong></span>
                   <span><small>KPI</small><strong>{focusedPortfolioEvaluation?.kpiScore.toFixed(0) ?? "—"}</strong></span>
                   <span><small>สกิล</small><strong>{focusedPortfolioEvaluation?.skillScore.toFixed(0) ?? "—"}</strong></span>
@@ -5343,7 +5373,7 @@ export default function Home() {
               <aside className="points-leaderboard-card">
                 <div className="section-heading compact"><div><p className="eyebrow">POINTS {isEmployeeUser ? "BALANCE" : "LEADERBOARD"}</p><h2>{isEmployeeUser ? "Points สะสมของฉัน" : "อันดับ Points สะสม"}</h2></div><span className="points-crown">★</span></div>
                 <div className="points-leaderboard-list">
-                  {leaderboard.slice(0, 6).map(({ employee, points }, index) => <article key={employee.id} className={index === 0 ? "champion" : ""}><span className="leader-rank">{index + 1}</span><EmployeeAvatar employee={employee} profile={employeeProfilesById.get(employee.id)} className="avatar-leader" /><p><strong>{employee.name}</strong><small>{getRole(employee.roleId).name}</small></p><b>{formatMoney(points)}<small> Points</small></b></article>)}
+                  {leaderboard.slice(0, 6).map(({ employee, points }, index) => <article key={employee.id} className={index === 0 ? "champion" : ""}><span className="leader-rank">{index + 1}</span><EmployeeAvatar employee={employee} profile={employeeProfilesById.get(employee.id)} className="avatar-leader" /><p><strong>{employee.name}</strong><small>{employeePositionLabel(employee)}</small></p><b>{formatMoney(points)}<small> Points</small></b></article>)}
                 </div>
                 <p className="points-note">ยอดคงเหลือรวม Points จากการประเมิน งาน เควสต์ เวลาเข้างาน โบนัส รายการหัก และการแลกรางวัล</p>
               </aside>
@@ -5453,7 +5483,7 @@ export default function Home() {
                   <div><p className="eyebrow">NEW POINT EVENT</p><h3>บันทึก Points หรือบทลงโทษ</h3><small>รายการหัก Points ต้องมีเหตุผลเพื่อให้ตรวจสอบย้อนหลังได้</small></div>
                   <div className={`point-event-preview ${selectedPointEventRule.points !== null && selectedPointEventRule.points < 0 ? "negative" : "positive"}`}><span>{selectedPointEventRule.points === null ? "—" : `${selectedPointEventRule.points >= 0 ? "+" : ""}${selectedPointEventRule.points}`}</span><p><strong>{selectedPointEventRule.label}</strong><small>{selectedPointEventRule.description}</small></p></div>
                   <div className="point-event-form-grid">
-                    <label><span>พนักงาน</span><select required value={pointEventForm.employeeId} onChange={(event) => setPointEventForm((form) => ({ ...form, employeeId: event.target.value }))}>{employees.filter((employee) => employee.status === "active").map((employee) => <option key={employee.id} value={employee.id}>{employee.name} · {getRole(employee.roleId).shortName}</option>)}</select></label>
+                    <label><span>พนักงาน</span><select required value={pointEventForm.employeeId} onChange={(event) => setPointEventForm((form) => ({ ...form, employeeId: event.target.value }))}>{employees.filter((employee) => employee.status === "active").map((employee) => <option key={employee.id} value={employee.id}>{employee.name} · {employeePositionLabel(employee)}</option>)}</select></label>
                     <label><span>ประเภทเหตุการณ์</span><select value={selectedPointEventType} onChange={(event) => setPointEventForm((form) => ({ ...form, eventType: event.target.value as PointEventType }))}>{availableManualPointEventTypes.map((eventType) => <option key={eventType} value={eventType}>{pointEventRules[eventType].label} ({(pointEventRules[eventType].points ?? 0) > 0 ? "+" : ""}{pointEventRules[eventType].points ?? 0})</option>)}</select></label>
                     <label><span>วันที่เกิดเหตุการณ์</span><input required type="date" value={pointEventForm.eventDate} onChange={(event) => setPointEventForm((form) => ({ ...form, eventDate: event.target.value }))} /></label>
                     <label><span>ลิงก์หลักฐาน {selectedPointEventRule.requiresEvidence ? "(จำเป็น)" : "(ถ้ามี)"}</span><input required={selectedPointEventRule.requiresEvidence} type="url" value={pointEventForm.evidenceUrl} onChange={(event) => setPointEventForm((form) => ({ ...form, evidenceUrl: event.target.value }))} placeholder="https://..." /></label>
@@ -5585,9 +5615,16 @@ export default function Home() {
       {showProfileEditor && profileEmployee && (
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setShowProfileEditor(false)}>
           <form className="employee-profile-modal" onSubmit={saveEmployeeProfile} role="dialog" aria-modal="true" aria-labelledby="employee-profile-title">
-            <div className="profile-editor-hero"><div className="profile-identity"><EmployeeAvatar employee={profileEmployee} profile={profileRecord} className="avatar-modal" /><div><p className="eyebrow">EMPLOYEE PROFILE</p><h2 id="employee-profile-title">ข้อมูลของ {profileEmployee.name}</h2><small>{getRole(profileEmployee.roleId).name} · เก็บเฉพาะข้อมูลที่จำเป็นต่อการจ้างงาน</small></div></div><button type="button" className="modal-close dark" onClick={() => setShowProfileEditor(false)} aria-label="ปิดหน้าต่าง">×</button></div>
+            <div className="profile-editor-hero"><div className="profile-identity"><EmployeeAvatar employee={profileEmployee} profile={profileRecord} className="avatar-modal" /><div><p className="eyebrow">EMPLOYEE PROFILE</p><h2 id="employee-profile-title">ข้อมูลของ {profileEmployee.name}</h2><small>{employeePositionLabel(profileEmployee)} · เก็บเฉพาะข้อมูลที่จำเป็นต่อการจ้างงาน</small></div></div><button type="button" className="modal-close dark" onClick={() => setShowProfileEditor(false)} aria-label="ปิดหน้าต่าง">×</button></div>
             <div className="profile-editor-body">
               <div className="form-grid profile-editor-grid">
+                <label className="wide employee-position-choice"><span>ชื่อตำแหน่งที่แสดง</span><select value={profilePositionMode} onChange={(event) => {
+                  const positionMode = event.target.value as EmployeePositionMode;
+                  setProfilePositionMode(positionMode);
+                  if (positionMode === "standard") setProfilePositionTitle("");
+                }}><option value="standard">ใช้ตำแหน่งมาตรฐาน — {getRole(profileEmployee.roleId).name}</option><option value="custom">กำหนดเอง…</option></select><small>ค่าปัจจุบัน: {employeePositionLabel(profileEmployee)}</small></label>
+                {profilePositionMode === "custom" && <label className="wide employee-custom-position"><span>ชื่อตำแหน่งกำหนดเอง <em>{profilePositionTitleLength}/120</em></span><input required aria-invalid={profileCustomPositionInvalid} aria-describedby="profile-position-help" value={profilePositionTitle} onChange={(event) => setProfilePositionTitle(event.target.value)} placeholder="เช่น Senior Marketplace Growth Specialist" /><small id="profile-position-help">ระบบจะแสดงชื่อนี้แทนชื่อตำแหน่งมาตรฐาน · นับหลังจัดช่องว่างให้เป็นรูปแบบเดียวกัน</small></label>}
+                <div className="wide employee-position-context" role="note" aria-label="กรอบ KPI และสิทธิ์ที่ผูกกับพนักงาน"><span aria-hidden="true">KPI</span><p><small>กรอบ KPI และแผนก (แก้จากหน้านี้ไม่ได้)</small><strong>{getRole(profileEmployee.roleId).name}</strong><em>{getRole(profileEmployee.roleId).department} · ชื่อตำแหน่งที่แสดงไม่เปลี่ยนสิทธิ์หรือกรอบประเมิน</em></p></div>
                 <label><span>อีเมลส่วนตัว</span><input type="email" value={profileForm.personalEmail} onChange={(event) => setProfileForm((form) => ({ ...form, personalEmail: event.target.value }))} placeholder="name@example.com" /></label>
                 <label><span>เบอร์โทรศัพท์</span><input value={profileForm.phone} onChange={(event) => setProfileForm((form) => ({ ...form, phone: event.target.value }))} placeholder="08X-XXX-XXXX" /></label>
                 <label><span>วันเกิด</span><input type="date" value={profileForm.birthDate} onChange={(event) => setProfileForm((form) => ({ ...form, birthDate: event.target.value }))} /></label>
@@ -5603,7 +5640,7 @@ export default function Home() {
               </div>
               <div className="privacy-note"><span>⌁</span><p>ข้อมูลส่วนบุคคลและเอกสารพนักงานควรให้เฉพาะผู้มีหน้าที่ด้าน HR เข้าถึง และใช้ตามวัตถุประสงค์การจ้างงานเท่านั้น</p></div>
             </div>
-            <div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setShowProfileEditor(false)}>ยกเลิก</button><button className="primary-button" disabled={isSaving}>{isSaving ? "กำลังบันทึก..." : "บันทึกโปรไฟล์"}</button></div>
+            <div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setShowProfileEditor(false)}>ยกเลิก</button><button className="primary-button" disabled={isSaving || profileCustomPositionInvalid}>{isSaving ? "กำลังบันทึก..." : "บันทึกโปรไฟล์"}</button></div>
           </form>
         </div>
       )}
@@ -5658,7 +5695,7 @@ export default function Home() {
             </header>
             <div className="quest-fulfillment-body">
               <div className="quest-fulfillment-grid">
-                <label className="wide"><span>พนักงานที่ผ่านเควส</span><select autoFocus required value={questCompletionForm.employeeId} onChange={(event) => setQuestCompletionForm((form) => ({ ...form, employeeId: event.target.value }))}><option value="">เลือกพนักงาน</option>{selectedQuestEligibleEmployees.map((employee) => { const role = getRole(employee.roleId); return <option key={employee.id} value={employee.id}>{employee.name} · {role.department} · {role.shortName}</option>; })}</select><small>แสดงเฉพาะพนักงานที่ทำงานอยู่ ตรงขอบเขตเควส ยังไม่เคยรับสิทธิ์ และไม่ใช่ผู้ตรวจเอง</small></label>
+                <label className="wide"><span>พนักงานที่ผ่านเควส</span><select autoFocus required value={questCompletionForm.employeeId} onChange={(event) => setQuestCompletionForm((form) => ({ ...form, employeeId: event.target.value }))}><option value="">เลือกพนักงาน</option>{selectedQuestEligibleEmployees.map((employee) => { const role = getRole(employee.roleId); return <option key={employee.id} value={employee.id}>{employee.name} · {role.department} · {employeePositionLabel(employee)}</option>; })}</select><small>แสดงเฉพาะพนักงานที่ทำงานอยู่ ตรงขอบเขตเควส ยังไม่เคยรับสิทธิ์ และไม่ใช่ผู้ตรวจเอง</small></label>
                 <label><span>วันที่ทำสำเร็จ</span><input required type="date" min={questCompletionMinDate} max={questCompletionMaxDate} disabled={questCompletionMinDate > questCompletionMaxDate} value={questCompletionForm.completionDate} onChange={(event) => setQuestCompletionForm((form) => ({ ...form, completionDate: event.target.value }))} /><small>อยู่ในช่วงเควส ไม่เกินวันนี้ และย้อนหลังได้ไม่เกิน 90 วัน</small></label>
                 <label><span>Points ที่ระบบจะเพิ่ม</span><input readOnly aria-readonly="true" value={`${formatMoney(questToFulfill.pointsReward)} Points`} /><small>ใช้จำนวนตามเควสแบบตรงตัว ระบบจะไม่ปรับลดให้อัตโนมัติ</small></label>
                 <label className="wide"><span>ลิงก์หลักฐาน HTTPS</span><input required type="url" inputMode="url" pattern="https://.*" maxLength={1200} value={questCompletionForm.evidenceUrl} onChange={(event) => setQuestCompletionForm((form) => ({ ...form, evidenceUrl: event.target.value }))} placeholder="https://drive.google.com/..." aria-describedby="quest-fulfillment-evidence-help" /><small id="quest-fulfillment-evidence-help">ต้องเป็นลิงก์ https:// ที่ผู้ตรวจเปิดดูผลงานหรือหลักฐานได้</small>{questCompletionForm.evidenceUrl && questCompletionEvidenceInvalid && <small className="quest-form-error" role="alert">ลิงก์หลักฐานต้องขึ้นต้นด้วย https:// และเป็น URL ที่ถูกต้อง</small>}</label>
@@ -5697,7 +5734,7 @@ export default function Home() {
                 <label className="wide"><span>ชื่อเควส</span><input autoFocus required disabled={editingQuestHasCompletions} maxLength={180} value={questForm.title} onChange={(event) => setQuestForm((form) => ({ ...form, title: event.target.value }))} placeholder="เช่น พิชิตเป้ายอดขายประจำสัปดาห์" /></label>
                 <label className="wide"><span>รายละเอียดและเกณฑ์สำเร็จ</span><textarea required disabled={editingQuestHasCompletions} maxLength={4000} value={questForm.description} onChange={(event) => setQuestForm((form) => ({ ...form, description: event.target.value }))} placeholder="บอกเป้าหมาย สิ่งที่ต้องทำ และหลักฐานที่ HR จะใช้ตรวจผลให้ชัดเจน" /></label>
 
-                {questForm.type === "individual" && <label className="wide quest-target-field"><span>พนักงานผู้รับเควส</span><select required disabled={editingQuestHasCompletions} value={questForm.targetEmployeeIds[0] ?? ""} onChange={(event) => setQuestForm((form) => ({ ...form, targetEmployeeIds: event.target.value ? [event.target.value] : [], targetDepartmentIds: [] }))}><option value="">เลือกพนักงาน 1 คน</option>{activeEmployees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name} · {getRole(employee.roleId).name}</option>)}</select><small>เควสนี้จะแสดงเฉพาะพนักงานที่เลือกและ HR / Admin</small></label>}
+                {questForm.type === "individual" && <label className="wide quest-target-field"><span>พนักงานผู้รับเควส</span><select required disabled={editingQuestHasCompletions} value={questForm.targetEmployeeIds[0] ?? ""} onChange={(event) => setQuestForm((form) => ({ ...form, targetEmployeeIds: event.target.value ? [event.target.value] : [], targetDepartmentIds: [] }))}><option value="">เลือกพนักงาน 1 คน</option>{activeEmployees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name} · {employeePositionLabel(employee)}</option>)}</select><small>เควสนี้จะแสดงเฉพาะพนักงานที่เลือกและ HR / Admin</small></label>}
                 {questForm.type === "team" && <fieldset className="wide quest-team-picker"><legend>ทีม / แผนกที่เข้าร่วม</legend><div>{departmentFilters.filter((department) => department.id !== "all").map((department) => { const selected = questForm.targetDepartmentIds.includes(department.id); return <button type="button" key={department.id} disabled={editingQuestHasCompletions} className={selected ? "active" : ""} aria-pressed={selected} onClick={() => setQuestForm((form) => ({ ...form, targetEmployeeIds: [], targetDepartmentIds: selected ? form.targetDepartmentIds.filter((id) => id !== department.id) : [...form.targetDepartmentIds, department.id] }))}><span aria-hidden="true">{selected ? "✓" : "＋"}</span>{department.label}</button>; })}</div><small>เลือกได้มากกว่า 1 แผนก สมาชิกและหัวหน้าของแผนกที่เลือกจะเห็นเควสนี้</small></fieldset>}
                 {questForm.type === "activity" && <div className="wide quest-activity-scope" role="note"><span aria-hidden="true">✦</span><p><strong>กิจกรรมสำหรับทุกคนในองค์กร</strong><small>ไม่ต้องเลือกรายชื่อหรือแผนก เมื่อเปิดใช้งาน พนักงานและหัวหน้าทุกคนจะเห็นเควสนี้</small></p></div>}
 
@@ -5733,7 +5770,7 @@ export default function Home() {
               <div className="employee-coordinate-body">
                 <div className="employee-coordinate-recipient-preview" aria-live="polite"><span aria-hidden="true">ถึง</span><p><small>ผู้รับงาน</small><strong>{safeWorkRosterById.get(workForm.assigneeEmployeeId)?.name ?? "กรุณาเลือกผู้รับงาน"}</strong></p><b>{workForm.priority === "urgent" ? "เร่งด่วน" : workPriorityLabel(workForm.priority)}</b></div>
                 <div className="form-grid employee-coordinate-grid">
-                  <label className="wide"><span>ผู้รับงาน</span><select required value={workForm.assigneeEmployeeId} onChange={(event) => setWorkForm((form) => ({ ...form, assigneeEmployeeId: event.target.value }))}><option value="">เลือกตนเองหรือเพื่อนร่วมทีม</option>{activeSafeWorkRoster.map((employee) => <option key={employee.id} value={employee.id}>{employee.id === currentUser?.employeeId ? `ฉันเอง · ${employee.name}` : `${employee.name} · ${getRole(employee.roleId).shortName}`}</option>)}</select><small>รายชื่อนี้มาจากภาพรวมทีมที่แชร์ได้เท่านั้น</small></label>
+                  <label className="wide"><span>ผู้รับงาน</span><select required value={workForm.assigneeEmployeeId} onChange={(event) => setWorkForm((form) => ({ ...form, assigneeEmployeeId: event.target.value }))}><option value="">เลือกตนเองหรือเพื่อนร่วมทีม</option>{activeSafeWorkRoster.map((employee) => <option key={employee.id} value={employee.id}>{employee.id === currentUser?.employeeId ? `ฉันเอง · ${employee.name}` : `${employee.name} · ${employeePositionLabel(employee)}`}</option>)}</select><small>รายชื่อนี้มาจากภาพรวมทีมที่แชร์ได้เท่านั้น</small></label>
                   <label className="wide"><span>ชื่องาน</span><input autoFocus required value={workForm.title} onChange={(event) => setWorkForm((form) => ({ ...form, title: event.target.value }))} placeholder="เช่น ขอข้อมูลยอดขายสำหรับสรุปรายสัปดาห์" /></label>
                   <label className="wide"><span>รายละเอียดและสิ่งที่ต้องส่งมอบ</span><textarea required value={workForm.description} onChange={(event) => setWorkForm((form) => ({ ...form, description: event.target.value }))} placeholder="บอกบริบท สิ่งที่ต้องการ และรูปแบบผลลัพธ์ให้ชัดเจน" /></label>
                   <label><span>กำหนดส่ง</span><input required min={todayDate} type="date" value={workForm.dueDate} onChange={(event) => setWorkForm((form) => ({ ...form, dueDate: event.target.value }))} /></label>
@@ -5755,7 +5792,7 @@ export default function Home() {
                   <label><span>ประเภท</span><select value={workForm.kind} onChange={(event) => { const kind = event.target.value as WorkItemRecord["kind"]; setWorkForm((form) => ({ ...form, kind, points: workPointValue(kind, form.priority, activePointPolicyRules) })); }}><option value="task">งาน</option><option value="request">รีเควสต์</option><option value="mission">ภารกิจ</option></select></label>
                   <label><span>ระดับความสำคัญ</span><select value={workForm.priority} onChange={(event) => { const priority = event.target.value as WorkItemRecord["priority"]; setWorkForm((form) => ({ ...form, priority, points: workPointValue(form.kind, priority, activePointPolicyRules) })); }}><option value="low">ทั่วไป</option><option value="medium">ปานกลาง</option><option value="high">สำคัญ</option><option value="urgent">เร่งด่วน</option></select></label>
                   <label><span>โปรเจกต์</span><select required value={workForm.projectId} onChange={(event) => setWorkForm((form) => ({ ...form, projectId: event.target.value }))}>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
-                  <label><span>ผู้รับผิดชอบ</span><select required value={workForm.assigneeEmployeeId} onChange={(event) => setWorkForm((form) => ({ ...form, assigneeEmployeeId: event.target.value }))}>{employees.filter((employee) => employee.status === "active").map((employee) => <option key={employee.id} value={employee.id}>{employee.name} · {getRole(employee.roleId).shortName}</option>)}</select></label>
+                  <label><span>ผู้รับผิดชอบ</span><select required value={workForm.assigneeEmployeeId} onChange={(event) => setWorkForm((form) => ({ ...form, assigneeEmployeeId: event.target.value }))}>{employees.filter((employee) => employee.status === "active").map((employee) => <option key={employee.id} value={employee.id}>{employee.name} · {employeePositionLabel(employee)}</option>)}</select></label>
                   <label><span>สถานะ</span><select value={workForm.status === "review" || workForm.status === "done" ? "in_progress" : workForm.status} onChange={(event) => { const status = event.target.value as "todo" | "in_progress"; setWorkForm((form) => ({ ...form, status, progress: status === "todo" ? Math.min(form.progress, 20) : Math.max(1, Math.min(form.progress, 90)) })); }}><option value="todo">ต้องทำ</option><option value="in_progress">กำลังทำ</option></select><small>รอตรวจจะเกิดเมื่อพนักงานส่งหลักฐาน และเสร็จแล้วเมื่อผู้ตรวจอนุมัติ</small></label>
                   <label><span>กำหนดเสร็จ</span><input required type="date" value={workForm.dueDate} onChange={(event) => setWorkForm((form) => ({ ...form, dueDate: event.target.value }))} /></label>
                   <label className="auto-point-field"><span>Points มาตรฐาน (อัตโนมัติ)</span><input readOnly value={`${workForm.points} Points`} /><small>แก้เองไม่ได้ เพื่อให้ทุกคนได้รับ Points ตามกติกาเดียวกัน</small></label>
@@ -5887,7 +5924,7 @@ export default function Home() {
             <div className="skill-profile-hero">
               <div className="profile-identity">
                 <EmployeeAvatar employee={skillProfileEmployee} profile={employeeProfilesById.get(skillProfileEmployee.id)} className="avatar-modal" />
-                <div><p className="eyebrow">INDIVIDUAL SKILL PROFILE</p><h2 id="skill-profile-title">{skillProfileEmployee.name}</h2><small>{skillProfileRole.name} · {skillProfileRole.department}</small></div>
+                <div><p className="eyebrow">INDIVIDUAL SKILL PROFILE</p><h2 id="skill-profile-title">{skillProfileEmployee.name}</h2><small>{employeePositionLabel(skillProfileEmployee)} · {skillProfileRole.department}</small></div>
               </div>
               <button className="modal-close dark" onClick={() => setSkillProfileEmployee(null)} aria-label="ปิดหน้าต่าง">×</button>
               <div className="profile-score-block">
@@ -5910,7 +5947,7 @@ export default function Home() {
                         {roleFitRecommendations.slice(0, 3).map(({ role, score }, index) => (
                           <article key={role.id} className={index === 0 ? "top" : ""}>
                             <span className="fit-rank">{String(index + 1).padStart(2, "0")}</span>
-                            <div><strong>{role.name}</strong><small>{role.department}{role.id === skillProfileEmployee.roleId ? " · ตำแหน่งปัจจุบัน" : ""}</small></div>
+                            <div><strong>{role.name}</strong><small>{role.department}{role.id === skillProfileEmployee.roleId ? " · กรอบ KPI ปัจจุบัน" : ""}</small></div>
                             <div className="fit-score"><strong>{score}%</strong><i><b style={{ width: `${score}%` }} /></i></div>
                           </article>
                         ))}
@@ -5981,7 +6018,7 @@ export default function Home() {
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setHrEmployee(null)}>
           <form className="hr-plan-modal" onSubmit={saveHrPlan} role="dialog" aria-modal="true" aria-labelledby="hr-plan-title">
             <div className="hr-plan-hero">
-              <div className="profile-identity"><EmployeeAvatar employee={hrEmployee} profile={employeeProfilesById.get(hrEmployee.id)} className="avatar-modal" /><div><p className="eyebrow">WORKFORCE PLAN</p><h2 id="hr-plan-title">จัดการแผนของ {hrEmployee.name}</h2><small>{hrEmployeeInsight.role.name} · {hrEmployeeInsight.role.department}</small></div></div>
+              <div className="profile-identity"><EmployeeAvatar employee={hrEmployee} profile={employeeProfilesById.get(hrEmployee.id)} className="avatar-modal" /><div><p className="eyebrow">WORKFORCE PLAN</p><h2 id="hr-plan-title">จัดการแผนของ {hrEmployee.name}</h2><small>{employeePositionLabel(hrEmployee)} · {hrEmployeeInsight.role.department}</small></div></div>
               <button type="button" className="modal-close dark" onClick={() => setHrEmployee(null)} aria-label="ปิดหน้าต่าง">×</button>
               <div className="hr-plan-snapshot">
                 <span><small>KPI รวม</small><strong>{hrEmployeeInsight.evaluation ? hrEmployeeInsight.evaluation.totalScore.toFixed(1) : "—"}</strong></span>
@@ -6072,10 +6109,19 @@ export default function Home() {
             <div className="form-grid">
               <label className="wide"><span>ชื่อ–นามสกุล</span><input required value={employeeForm.name} onChange={(event) => setEmployeeForm((form) => ({ ...form, name: event.target.value }))} placeholder="เช่น อริสา ตั้งใจ" /></label>
               <label className="wide"><span>อีเมล</span><input required type="email" value={employeeForm.email} onChange={(event) => setEmployeeForm((form) => ({ ...form, email: event.target.value }))} placeholder="name@company.com" /></label>
-              <label><span>ตำแหน่ง</span><select value={employeeForm.roleId} onChange={(event) => setEmployeeForm((form) => ({ ...form, roleId: event.target.value }))}>{roles.map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}</select></label>
-              <label><span>ผู้จัดการ</span><input value={employeeForm.manager} onChange={(event) => setEmployeeForm((form) => ({ ...form, manager: event.target.value }))} placeholder="ชื่อผู้จัดการ" /></label>
+              <label className="wide employee-position-choice"><span>ชื่อตำแหน่งที่แสดง</span><select value={employeeForm.positionMode === "custom" ? "__custom__" : employeeForm.roleId} onChange={(event) => {
+                const value = event.target.value;
+                setEmployeeForm((form) => value === "__custom__"
+                  ? { ...form, positionMode: "custom" }
+                  : { ...form, positionMode: "standard", positionTitle: "", roleId: value });
+              }}>{roles.map((role) => <option key={role.id} value={role.id}>{role.name} · {role.department}</option>)}<option value="__custom__">กำหนดเอง…</option></select><small>เลือกจากตำแหน่งมาตรฐาน หรือพิมพ์ชื่อที่องค์กรใช้จริง</small></label>
+              {employeeForm.positionMode === "custom" && <>
+                <label className="wide employee-custom-position"><span>ชื่อตำแหน่งกำหนดเอง <em>{employeePositionTitleLength}/120</em></span><input required aria-invalid={employeeCustomPositionInvalid} aria-describedby="new-employee-position-help" value={employeeForm.positionTitle} onChange={(event) => setEmployeeForm((form) => ({ ...form, positionTitle: event.target.value }))} placeholder="เช่น Senior Marketplace Growth Specialist" /><small id="new-employee-position-help">ชื่อนี้ใช้แสดงในแฟ้ม รายชื่อ และรายงานเท่านั้น · นับหลังจัดช่องว่างให้เป็นรูปแบบเดียวกัน</small></label>
+                <label className="wide employee-base-role"><span>กรอบ KPI และแผนก</span><select required value={employeeForm.roleId} onChange={(event) => setEmployeeForm((form) => ({ ...form, roleId: event.target.value }))}>{roles.map((role) => <option key={role.id} value={role.id}>{role.name} · {role.department}</option>)}</select><small>ใช้กำหนด KPI สกิล แผนก และขอบเขตงาน โดยไม่เปลี่ยนตามชื่อกำหนดเอง</small></label>
+              </>}
+              <label className="wide"><span>ผู้จัดการ</span><input value={employeeForm.manager} onChange={(event) => setEmployeeForm((form) => ({ ...form, manager: event.target.value }))} placeholder="ชื่อผู้จัดการ" /></label>
             </div>
-            <div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setShowAddEmployee(false)}>ยกเลิก</button><button className="primary-button" disabled={isSaving}>{isSaving ? "กำลังเพิ่ม..." : "เพิ่มพนักงาน"}</button></div>
+            <div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setShowAddEmployee(false)}>ยกเลิก</button><button className="primary-button" disabled={isSaving || employeeCustomPositionInvalid}>{isSaving ? "กำลังเพิ่ม..." : "เพิ่มพนักงาน"}</button></div>
           </form>
         </div>
       )}
@@ -6125,7 +6171,7 @@ function EmployeePowerCard({ profile, employeeProfile, rank, onCompare }: { prof
       </header>
       <div className="power-card-person">
         <EmployeeAvatar employee={employee} profile={employeeProfile} className="avatar-power" />
-        <div><small>{role.department}</small><h3>{employee.name}</h3><p>{role.name}</p></div>
+        <div><small>{role.department}</small><h3>{employee.name}</h3><p>{employeePositionLabel(employee)}</p></div>
       </div>
       {overall === null ? (
         <div className="power-card-empty"><strong>รอประเมินค่าพลัง</strong><p>บันทึก KPI และสกิลเพื่อสร้างการ์ดใบแรก</p></div>
@@ -6147,8 +6193,7 @@ function MetricCard({ label, value, copy, icon, tone = "", progress }: { label: 
 }
 
 function EmployeeCompact({ employee, onClick }: { employee: EmployeeRecord; onClick: () => void }) {
-  const role = getRole(employee.roleId);
-  return <button className="employee-row" onClick={onClick}><span className="employee-avatar">{employee.initials}</span><span className="employee-copy"><strong>{employee.name}</strong><small>{role.name}</small><em>ยังไม่มีผลรอบนี้</em></span><span className="row-arrow" aria-hidden="true">›</span></button>;
+  return <button className="employee-row" onClick={onClick}><span className="employee-avatar">{employee.initials}</span><span className="employee-copy"><strong>{employee.name}</strong><small>{employeePositionLabel(employee)}</small><em>ยังไม่มีผลรอบนี้</em></span><span className="row-arrow" aria-hidden="true">›</span></button>;
 }
 
 function ScoreCell({ value }: { value: number | null }) {

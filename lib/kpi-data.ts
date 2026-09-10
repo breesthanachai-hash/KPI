@@ -109,12 +109,27 @@ export type EmployeeRecord = {
   name: string;
   email: string;
   roleId: string;
+  positionTitle: string;
   manager: string;
   status: "active" | "inactive" | "resigned" | "archived";
   latestScore: number | null;
   latestSkillScore: number | null;
   latestPeriod: string | null;
   updatedAt: string;
+};
+
+export type EmployeePositionEventRecord = {
+  id: string;
+  employeeId: string;
+  employeeNameSnapshot: string;
+  roleIdSnapshot: string;
+  previousPositionTitle: string;
+  nextPositionTitle: string;
+  expectedUpdatedAt: string;
+  resultingUpdatedAt: string;
+  actorUserId: string;
+  actorName: string;
+  createdAt: string;
 };
 
 export type UserAccountRecord = {
@@ -1101,14 +1116,14 @@ export const seedEmployeeLegacyRoleIds: Record<string, string> = {
 };
 
 export const seedEmployees: EmployeeRecord[] = [
-  { id: "emp-narin", initials: "นก", name: "นรินทร์ กิตติคุณ", email: "narin@peoplepulse.co", roleId: "growth-commerce-manager", manager: "ธนชัย ใจแสน", status: "active", latestScore: 92, latestSkillScore: 88, latestPeriod: periods[0], updatedAt: "2026-08-26T12:00:00.000Z" },
-  { id: "emp-pimchanok", initials: "พส", name: "พิมพ์ชนก สุขใจ", email: "pimchanok@peoplepulse.co", roleId: "customer-insight-marketer", manager: "นรินทร์ กิตติคุณ", status: "active", latestScore: 87, latestSkillScore: 84, latestPeriod: periods[0], updatedAt: "2026-08-26T12:00:00.000Z" },
-  { id: "emp-sirilak", initials: "ศร", name: "ศิริลักษณ์ รุ่งเรือง", email: "sirilak@peoplepulse.co", roleId: "offer-conversion-marketer", manager: "นรินทร์ กิตติคุณ", status: "active", latestScore: null, latestSkillScore: null, latestPeriod: null, updatedAt: "2026-08-26T12:00:00.000Z" },
-  { id: "emp-kanyarat", initials: "กช", name: "กัญญารัตน์ ชัยพร", email: "kanyarat@peoplepulse.co", roleId: "crm-retention-marketer", manager: "นรินทร์ กิตติคุณ", status: "active", latestScore: 82, latestSkillScore: 86, latestPeriod: periods[0], updatedAt: "2026-08-26T12:00:00.000Z" },
-  { id: "emp-thanawat", initials: "ธพ", name: "ธนวัฒน์ พงศ์ศรี", email: "thanawat@peoplepulse.co", roleId: "performance-video-editor", manager: "นรินทร์ กิตติคุณ", status: "active", latestScore: 71, latestSkillScore: 74, latestPeriod: periods[0], updatedAt: "2026-08-26T12:00:00.000Z" },
-  { id: "emp-pattarapon", initials: "ภพ", name: "ภัทรพล พูนทรัพย์", email: "pattarapon@peoplepulse.co", roleId: "brand-content-video-editor", manager: "นรินทร์ กิตติคุณ", status: "active", latestScore: null, latestSkillScore: null, latestPeriod: null, updatedAt: "2026-08-26T12:00:00.000Z" },
-  { id: "emp-supakorn", initials: "ศว", name: "ศุภกร วัฒนะ", email: "supakorn@peoplepulse.co", roleId: "marketplace-commerce-specialist", manager: "นรินทร์ กิตติคุณ", status: "active", latestScore: 89, latestSkillScore: 91, latestPeriod: periods[0], updatedAt: "2026-08-26T12:00:00.000Z" },
-  { id: "emp-nattapong", initials: "ณต", name: "ณัฐพงษ์ ตั้งใจ", email: "nattapong@peoplepulse.co", roleId: "facebook-media-buyer", manager: "นรินทร์ กิตติคุณ", status: "active", latestScore: 84, latestSkillScore: 79, latestPeriod: periods[0], updatedAt: "2026-08-26T12:00:00.000Z" },
+  { id: "emp-narin", initials: "นก", name: "นรินทร์ กิตติคุณ", email: "narin@peoplepulse.co", roleId: "growth-commerce-manager", positionTitle: "", manager: "ธนชัย ใจแสน", status: "active", latestScore: 92, latestSkillScore: 88, latestPeriod: periods[0], updatedAt: "2026-08-26T12:00:00.000Z" },
+  { id: "emp-pimchanok", initials: "พส", name: "พิมพ์ชนก สุขใจ", email: "pimchanok@peoplepulse.co", roleId: "customer-insight-marketer", positionTitle: "", manager: "นรินทร์ กิตติคุณ", status: "active", latestScore: 87, latestSkillScore: 84, latestPeriod: periods[0], updatedAt: "2026-08-26T12:00:00.000Z" },
+  { id: "emp-sirilak", initials: "ศร", name: "ศิริลักษณ์ รุ่งเรือง", email: "sirilak@peoplepulse.co", roleId: "offer-conversion-marketer", positionTitle: "", manager: "นรินทร์ กิตติคุณ", status: "active", latestScore: null, latestSkillScore: null, latestPeriod: null, updatedAt: "2026-08-26T12:00:00.000Z" },
+  { id: "emp-kanyarat", initials: "กช", name: "กัญญารัตน์ ชัยพร", email: "kanyarat@peoplepulse.co", roleId: "crm-retention-marketer", positionTitle: "", manager: "นรินทร์ กิตติคุณ", status: "active", latestScore: 82, latestSkillScore: 86, latestPeriod: periods[0], updatedAt: "2026-08-26T12:00:00.000Z" },
+  { id: "emp-thanawat", initials: "ธพ", name: "ธนวัฒน์ พงศ์ศรี", email: "thanawat@peoplepulse.co", roleId: "performance-video-editor", positionTitle: "", manager: "นรินทร์ กิตติคุณ", status: "active", latestScore: 71, latestSkillScore: 74, latestPeriod: periods[0], updatedAt: "2026-08-26T12:00:00.000Z" },
+  { id: "emp-pattarapon", initials: "ภพ", name: "ภัทรพล พูนทรัพย์", email: "pattarapon@peoplepulse.co", roleId: "brand-content-video-editor", positionTitle: "", manager: "นรินทร์ กิตติคุณ", status: "active", latestScore: null, latestSkillScore: null, latestPeriod: null, updatedAt: "2026-08-26T12:00:00.000Z" },
+  { id: "emp-supakorn", initials: "ศว", name: "ศุภกร วัฒนะ", email: "supakorn@peoplepulse.co", roleId: "marketplace-commerce-specialist", positionTitle: "", manager: "นรินทร์ กิตติคุณ", status: "active", latestScore: 89, latestSkillScore: 91, latestPeriod: periods[0], updatedAt: "2026-08-26T12:00:00.000Z" },
+  { id: "emp-nattapong", initials: "ณต", name: "ณัฐพงษ์ ตั้งใจ", email: "nattapong@peoplepulse.co", roleId: "facebook-media-buyer", positionTitle: "", manager: "นรินทร์ กิตติคุณ", status: "active", latestScore: 84, latestSkillScore: 79, latestPeriod: periods[0], updatedAt: "2026-08-26T12:00:00.000Z" },
 ];
 
 export const seedHrProfiles: HrProfileRecord[] = [
@@ -1290,8 +1305,12 @@ export const seedEmploymentContracts: EmploymentContractRecord[] = [
   { id: "contract-pattarapon-2026", employeeId: "emp-pattarapon", documentId: null, title: "สัญญาจ้างและเงื่อนไขทดลองงาน", version: "1.0", status: "draft", effectiveDate: "2026-06-16", expiryDate: "2026-10-13", sentAt: null, signedName: null, signedAt: null, consentText: "", signerUserId: null, signerEmail: null, createdBy: "ฝ่ายทรัพยากรบุคคล", createdAt: "2026-06-10T03:00:00.000Z", updatedAt: "2026-06-10T03:00:00.000Z" },
 ];
 
+export function findRole(roleId: string) {
+  return roles.find((role) => role.id === roleId) ?? legacyRoles.find((role) => role.id === roleId);
+}
+
 export function getRole(roleId: string) {
-  return roles.find((role) => role.id === roleId) ?? legacyRoles.find((role) => role.id === roleId) ?? roles[0];
+  return findRole(roleId) ?? roles[0];
 }
 
 export function scoreStatus(score: number | null): ScoreStatus | "รอประเมิน" {

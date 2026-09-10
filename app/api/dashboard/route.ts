@@ -1,7 +1,7 @@
 import { and, eq, isNull, notExists, or, sql } from "drizzle-orm";
 import { getD1, getDb, getFilesBucket } from "../../../db";
 import { ensureDatabase } from "../../../db/initialize";
-import { applicationDocuments, attendanceRecords, authCredentials, authEvents, authSessions, employeeProfiles, employeeRecognitions, employeeRegistrationRequests, employeeSelfAssessments, employees, employeeWarningEvents, employeeWarnings, employmentContracts, evaluations, hrProfiles, notificationReads, organizationDocuments, organizationPolicies, organizationPolicyPublishClaims, pointCapClaims, pointEvents, pointLedger, pointMutationClaims, policyAcknowledgements, projects, questCompletions, quests, questTargets, rewardRedemptionClaims, rewardRedemptions, rewards, skillAchievements, talentActions, userAccounts, workItems, workSubmissions } from "../../../db/schema";
+import { applicationDocuments, attendanceRecords, authCredentials, authEvents, authSessions, employeePositionEvents, employeeProfiles, employeeRecognitions, employeeRegistrationRequests, employeeSelfAssessments, employees, employeeWarningEvents, employeeWarnings, employmentContracts, evaluations, hrProfiles, notificationReads, organizationDocuments, organizationPolicies, organizationPolicyPublishClaims, pointCapClaims, pointEvents, pointLedger, pointMutationClaims, policyAcknowledgements, projects, questCompletions, quests, questTargets, rewardRedemptionClaims, rewardRedemptions, rewards, skillAchievements, talentActions, userAccounts, workItems, workSubmissions } from "../../../db/schema";
 import { authenticatedRequestGate, canAccessEmployee, ensureBootstrapAccounts, recordAuthEvent, revokeAllSessionsForAccount, type CurrentUser } from "../../../lib/access-control";
 import { AuthInputError, credentialMutationValues, getAccountCredential, publicUserAccountDto, publicUserAccountDtos, requestSourceHash } from "../../../lib/auth-service";
 import { internalApiError } from "../../../lib/api-errors";
@@ -10,6 +10,7 @@ import {
   clampScore,
   clampSkillLevel,
   calculateSkillScore,
+  findRole,
   getRole,
   makeInitials,
   monthlyEvaluationPoints,
@@ -42,6 +43,16 @@ import {
 } from "../../../lib/kpi-data";
 
 export const dynamic = "force-dynamic";
+
+function normalizedPositionTitle(value: unknown) {
+  if (value === undefined || value === null) return "";
+  if (typeof value !== "string" || value.includes("\0")) return null;
+  return value.normalize("NFC").trim().replace(/\s+/g, " ");
+}
+
+function roleDepartmentId(roleId: string) {
+  return findRole(roleId)?.departmentId ?? "";
+}
 
 function apiError(error: unknown) {
   const message = error instanceof Error ? error.message : "เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ";
@@ -470,8 +481,9 @@ function policyAppliesToEmployee(
 ) {
   if (policy.scopeType === "all") return true;
   if (!employee) return false;
-  if (policy.scopeType === "department") return policy.scopeValues.includes(getRole(employee.roleId).departmentId);
-  if (policy.scopeType === "role") return policy.scopeValues.includes(employee.roleId);
+  const employeeRole = findRole(employee.roleId);
+  if (policy.scopeType === "department") return Boolean(employeeRole && policy.scopeValues.includes(employeeRole.departmentId));
+  if (policy.scopeType === "role") return Boolean(employeeRole && policy.scopeValues.includes(employeeRole.id));
   return Boolean(employeeProfile && policy.scopeValues.includes(employeeProfile.employmentType));
 }
 
@@ -492,8 +504,9 @@ export async function GET(request: Request) {
     const requestedPreviewEmployeeId = url.searchParams.get("previewEmployeeId")?.trim() ?? "";
     const isEmployeePreviewRequest = authenticatedUser.role === "admin" && Boolean(requestedPreviewEmployeeId);
     const db = getDb();
-    const [employeeRows, evaluationRows, selfAssessmentRows, hrProfileRows, attendanceRows, skillAchievementRows, talentActionRows, projectRows, workItemRows, workSubmissionRows, questRows, questTargetRows, questCompletionRows, rewardRows, pointRows, pointEventRows, redemptionRows, employeeProfileRows, applicationDocumentRows, employmentContractRows, organizationPolicyRows, policyAcknowledgementRows, organizationDocumentRows, employeeWarningRows, employeeWarningEventRows, employeeRecognitionRows, userAccountRows, registrationRequestRows, notificationReadRows] = await Promise.all([
+    const [employeeRows, employeePositionEventRows, evaluationRows, selfAssessmentRows, hrProfileRows, attendanceRows, skillAchievementRows, talentActionRows, projectRows, workItemRows, workSubmissionRows, questRows, questTargetRows, questCompletionRows, rewardRows, pointRows, pointEventRows, redemptionRows, employeeProfileRows, applicationDocumentRows, employmentContractRows, organizationPolicyRows, policyAcknowledgementRows, organizationDocumentRows, employeeWarningRows, employeeWarningEventRows, employeeRecognitionRows, userAccountRows, registrationRequestRows, notificationReadRows] = await Promise.all([
       db.select().from(employees),
+      authenticatedUser.role === "admin" && !isEmployeePreviewRequest ? db.select().from(employeePositionEvents) : Promise.resolve([]),
       db.select().from(evaluations).where(eq(evaluations.period, period)),
       db.select().from(employeeSelfAssessments).where(eq(employeeSelfAssessments.period, period)),
       db.select().from(hrProfiles),
@@ -530,6 +543,10 @@ export async function GET(request: Request) {
       if (!previewEmployee) {
         return Response.json({ error: "ไม่พบโปรไฟล์พนักงานที่ใช้งานอยู่สำหรับโหมดทดลอง" }, { status: 404 });
       }
+      const previewRole = findRole(previewEmployee.roleId);
+      if (!previewRole) {
+        return Response.json({ error: "โปรไฟล์พนักงานไม่มีกรอบ KPI มาตรฐาน กรุณาให้ HR แก้ไขก่อนเปิดมุมมองพนักงาน" }, { status: 409 });
+      }
       currentUser = {
         id: `employee-preview:${previewEmployee.id}`,
         authUserId: "",
@@ -538,7 +555,7 @@ export async function GET(request: Request) {
         nickname: "",
         role: "employee",
         employeeId: previewEmployee.id,
-        departmentId: getRole(previewEmployee.roleId).departmentId,
+        departmentId: previewRole.departmentId,
         status: "active",
         lastLoginAt: null,
         createdBy: "โหมดทดลอง",
@@ -557,7 +574,7 @@ export async function GET(request: Request) {
     const visibleEmployeeIds = new Set(employeeRows.filter((employee) => {
       if (currentUser.role === "admin") return true;
       if (employee.id === currentUser.employeeId) return employee.status === "active";
-      return employee.status === "active" && currentUser.role === "manager" && Boolean(currentUser.departmentId) && getRole(employee.roleId).departmentId === currentUser.departmentId;
+      return employee.status === "active" && currentUser.role === "manager" && Boolean(currentUser.departmentId) && roleDepartmentId(employee.roleId) === currentUser.departmentId;
     }).map((employee) => employee.id));
     const visibleRewardRedemptions = redemptionRows.filter((redemption) => visibleEmployeeIds.has(redemption.employeeId));
     const visibleRewards = currentUser.role === "admin"
@@ -568,7 +585,7 @@ export async function GET(request: Request) {
     if (currentUser.role === "employee" && (!signedInEmployee || signedInEmployee.status !== "active")) {
       return Response.json({ error: "บัญชีพนักงานยังไม่ได้ผูกกับโปรไฟล์ที่ใช้งานอยู่", accessDenied: true }, { status: 403 });
     }
-    const employeeDepartmentId = currentUser.departmentId || (signedInEmployee ? getRole(signedInEmployee.roleId).departmentId : "");
+    const employeeDepartmentId = currentUser.departmentId || (signedInEmployee ? roleDepartmentId(signedInEmployee.roleId) : "");
     const visibleQuests = questRows
       .filter((quest) => {
         if (currentUser.role === "admin") return true;
@@ -592,7 +609,7 @@ export async function GET(request: Request) {
       .map((completion) => questCompletionDto(completion, currentUser.role === "admin"));
     const teamOverviewEmployeeIds = new Set(employeeRows.filter((employee) => {
       if (currentUser.role !== "employee") return visibleEmployeeIds.has(employee.id);
-      return employee.status === "active" && Boolean(employeeDepartmentId) && getRole(employee.roleId).departmentId === employeeDepartmentId;
+      return employee.status === "active" && Boolean(employeeDepartmentId) && roleDepartmentId(employee.roleId) === employeeDepartmentId;
     }).map((employee) => employee.id));
     const scopedEmployees = employeeRows.filter((employee) => visibleEmployeeIds.has(employee.id));
     const policyDay = bangkokIsoDay();
@@ -708,6 +725,7 @@ export async function GET(request: Request) {
       permissions,
       teamOverview: employeePortalTeamOverview,
       employees: scopedEmployees,
+      employeePositionEvents: currentUser.role === "admin" ? employeePositionEventRows : [],
       evaluations: evaluationRows.filter((row) => visibleEmployeeIds.has(row.employeeId)),
       selfAssessments: currentUser.role === "employee" && currentUser.employeeId
         ? selfAssessmentRows.filter((row) => row.employeeId === currentUser.employeeId)
@@ -756,6 +774,7 @@ type EmployeePayload = {
   name?: string;
   email?: string;
   roleId?: string;
+  positionTitle?: string;
   manager?: string;
 };
 
@@ -959,6 +978,8 @@ type CompleteQuestForEmployeePayload = {
 type EmployeeProfilePayload = {
   action: "saveEmployeeProfile";
   employeeId?: string;
+  expectedEmployeeUpdatedAt?: string;
+  positionTitle?: string;
   personalEmail?: string;
   phone?: string;
   birthDate?: string;
@@ -1353,6 +1374,8 @@ export async function POST(request: Request) {
       const [linkedEmployee] = employeeId ? await db.select().from(employees).where(eq(employees.id, employeeId)).limit(1) : [];
       if (employeeId && !linkedEmployee) return Response.json({ error: "ไม่พบโปรไฟล์พนักงานที่เลือก" }, { status: 404 });
       if (status === "active" && employeeId && linkedEmployee?.status !== "active") return Response.json({ error: "ไม่สามารถเปิดใช้บัญชีที่ผูกกับพนักงานที่ลาออกหรือถูกลบจากรายชื่อแล้ว" }, { status: 409 });
+      const linkedEmployeeRole = linkedEmployee ? findRole(linkedEmployee.roleId) : undefined;
+      if (role !== "admin" && !linkedEmployeeRole) return Response.json({ error: "โปรไฟล์พนักงานไม่มีกรอบ KPI มาตรฐาน กรุณาให้ HR แก้ไขก่อนผูกบัญชี" }, { status: 409 });
       const existingCredential = existing ? await getAccountCredential(existing.id) : null;
       const credentialChange = await credentialMutationValues(accountId, payload.loginId, payload.temporaryPassword, existingCredential);
       const [loginOwner] = await db.select({ userAccountId: authCredentials.userAccountId }).from(authCredentials).where(eq(authCredentials.loginIdCanonical, credentialChange.values.loginIdCanonical)).limit(1);
@@ -1362,7 +1385,7 @@ export async function POST(request: Request) {
       if (!displayName) return Response.json({ error: "กรุณาระบุชื่อที่แสดง" }, { status: 400 });
       const nickname = typeof payload.nickname === "string" ? payload.nickname.trim().replace(/\s+/g, " ").slice(0, 40) : existing?.nickname ?? "";
       const now = new Date().toISOString();
-      const linkedDepartmentId = linkedEmployee ? getRole(linkedEmployee.roleId).departmentId : "";
+      const linkedDepartmentId = linkedEmployeeRole?.departmentId ?? "";
       const requestedDepartmentId = typeof payload.departmentId === "string" ? payload.departmentId.trim().slice(0, 80) : "";
       if (role === "manager" && requestedDepartmentId && requestedDepartmentId !== linkedDepartmentId) return Response.json({ error: "หัวหน้าทีมต้องใช้แผนกจากตำแหน่งพนักงานที่ผูกไว้" }, { status: 400 });
       const departmentId = role === "manager" ? linkedDepartmentId : "";
@@ -1507,7 +1530,7 @@ export async function POST(request: Request) {
         return Response.json({ error: `พิมพ์ “${requiredConfirmation}” ให้ตรงเพื่อยืนยันการลบถาวร` }, { status: 400 });
       }
 
-      const employeeDepartmentId = getRole(employee.roleId).departmentId;
+      const employeeDepartmentId = roleDepartmentId(employee.roleId);
       const [ownedProjectRows, activeEmployeeRows, linkedAccountRows, profileFileRows, documentFileRows, warningFileRows, recognitionFileRows, submissionFileRows] = await Promise.all([
         db.select({ id: projects.id }).from(projects).where(eq(projects.ownerEmployeeId, employeeId)),
         db.select({ id: employees.id, name: employees.name, roleId: employees.roleId }).from(employees).where(and(eq(employees.status, "active"), sql`${employees.id} <> ${employeeId}`)),
@@ -1521,9 +1544,9 @@ export async function POST(request: Request) {
           .leftJoin(workItems, eq(workSubmissions.workItemId, workItems.id))
           .where(or(eq(workSubmissions.employeeId, employeeId), eq(workItems.assigneeEmployeeId, employeeId))),
       ]);
-      const replacementEmployee = activeEmployeeRows
-        .filter((candidate) => getRole(candidate.roleId).departmentId === employeeDepartmentId)
-        .sort((a, b) => a.name.localeCompare(b.name, "th") || a.id.localeCompare(b.id))[0];
+      const replacementEmployee = employeeDepartmentId ? activeEmployeeRows
+        .filter((candidate) => roleDepartmentId(candidate.roleId) === employeeDepartmentId)
+        .sort((a, b) => a.name.localeCompare(b.name, "th") || a.id.localeCompare(b.id))[0] : undefined;
       if (ownedProjectRows.length && !replacementEmployee) {
         return Response.json({ error: `ยังลบถาวรไม่ได้ เพราะ ${employee.name} เป็นเจ้าของ ${ownedProjectRows.length} โปรเจกต์ และไม่มีพนักงานที่ทำงานอยู่ในแผนกเดียวกันให้รับช่วง กรุณาเพิ่มหรือคืนสถานะพนักงานในแผนกนี้ก่อน` }, { status: 409 });
       }
@@ -1603,9 +1626,13 @@ export async function POST(request: Request) {
       const name = payload.name?.trim() ?? "";
       const email = payload.email?.trim().toLowerCase() ?? "";
       const roleId = payload.roleId ?? "";
+      const positionTitle = normalizedPositionTitle(payload.positionTitle);
       const manager = payload.manager?.trim() ?? "";
       if (!name || !email || !email.includes("@") || !roles.some((role) => role.id === roleId)) {
         return Response.json({ error: "กรุณากรอกชื่อ อีเมล และตำแหน่งให้ครบถ้วน" }, { status: 400 });
+      }
+      if (positionTitle === null || Array.from(positionTitle).length > 120) {
+        return Response.json({ error: "ชื่อตำแหน่งกำหนดเองต้องไม่เกิน 120 ตัวอักษร" }, { status: 400 });
       }
 
       const now = new Date().toISOString();
@@ -1615,6 +1642,7 @@ export async function POST(request: Request) {
         name,
         email,
         roleId,
+        positionTitle,
         manager,
         status: "active" as const,
         latestScore: null,
@@ -1661,7 +1689,8 @@ export async function POST(request: Request) {
       const [employee] = await db.select().from(employees).where(and(eq(employees.id, employeeId), eq(employees.status, "active"))).limit(1);
       if (!employee) return Response.json({ error: "ไม่พบพนักงานที่กำลังใช้งานอยู่ จึงไม่สามารถบันทึกผลประเมินได้" }, { status: 404 });
 
-      const role = getRole(employee.roleId);
+      const role = findRole(employee.roleId);
+      if (!role) return Response.json({ error: "โปรไฟล์พนักงานไม่มีกรอบ KPI มาตรฐาน กรุณาให้ HR แก้ไขก่อนประเมิน" }, { status: 409 });
       const hasCompleteSkillAssessment = role.skills.every((skill) => {
         const level = payload.skillScores?.[skill.id];
         return typeof level === "number" && Number.isFinite(level) && level >= 1 && level <= 5;
@@ -1728,7 +1757,8 @@ export async function POST(request: Request) {
       const period = payload.period ?? periods[0];
       const [employee] = await db.select().from(employees).where(and(eq(employees.id, employeeId), eq(employees.status, "active"))).limit(1);
       if (!employee) return Response.json({ error: "ไม่พบโปรไฟล์พนักงานที่ใช้งานอยู่" }, { status: 404 });
-      const role = getRole(employee.roleId);
+      const role = findRole(employee.roleId);
+      if (!role) return Response.json({ error: "โปรไฟล์พนักงานไม่มีกรอบ KPI มาตรฐาน กรุณาให้ HR แก้ไขก่อนประเมิน" }, { status: 409 });
       const hasCompleteSkillAssessment = role.skills.every((skill) => {
         const level = payload.skillScores?.[skill.id];
         return typeof level === "number" && Number.isFinite(level) && level >= 1 && level <= 5;
@@ -1890,7 +1920,8 @@ export async function POST(request: Request) {
       const employeeId = payload.employeeId ?? "";
       const [employee] = await db.select().from(employees).where(and(eq(employees.id, employeeId), eq(employees.status, "active"))).limit(1);
       if (!employee) return Response.json({ error: "ไม่พบพนักงานที่เลือก" }, { status: 404 });
-      const role = getRole(employee.roleId);
+      const role = findRole(employee.roleId);
+      if (!role) return Response.json({ error: "โปรไฟล์พนักงานไม่มีกรอบ KPI มาตรฐาน กรุณาให้ HR แก้ไขก่อนรับรองสกิล" }, { status: 409 });
       const skill = role.skills.find((item) => item.id === payload.skillId);
       const level = Math.max(1, Math.min(5, Math.round(Number(payload.level) || 0)));
       if (!skill || level < 2) return Response.json({ error: "กรุณาเลือกสกิลและระดับที่ผ่านการยืนยัน" }, { status: 400 });
@@ -1964,7 +1995,9 @@ export async function POST(request: Request) {
       const projectId = payload.projectId?.trim() || `project-${crypto.randomUUID()}`;
       const [existingProject] = payload.projectId ? await db.select().from(projects).where(eq(projects.id, projectId)).limit(1) : [];
       if (existingProject && !(await canAccessEmployee(currentUser, existingProject.ownerEmployeeId))) return Response.json({ error: "ไม่มีสิทธิ์แก้ไขโปรเจกต์นี้" }, { status: 403 });
-      const ownerDepartmentId = getRole(owner.roleId).departmentId;
+      const ownerRole = findRole(owner.roleId);
+      if (!ownerRole) return Response.json({ error: "โปรไฟล์เจ้าของโปรเจกต์ไม่มีกรอบ KPI มาตรฐาน กรุณาให้ HR แก้ไขก่อน" }, { status: 409 });
+      const ownerDepartmentId = ownerRole.departmentId;
       const requestedDepartmentId = typeof payload.departmentId === "string" ? payload.departmentId.trim().slice(0, 80) : "";
       const departmentId = requestedDepartmentId || ownerDepartmentId;
       if (!departmentId || !roles.some((role) => role.departmentId === departmentId)) return Response.json({ error: "แผนกของโปรเจกต์ไม่ถูกต้อง" }, { status: 400 });
@@ -2016,8 +2049,8 @@ export async function POST(request: Request) {
         const actorEmployeeId = currentUser.employeeId ?? "";
         const [actorEmployee] = actorEmployeeId ? await db.select().from(employees).where(and(eq(employees.id, actorEmployeeId), eq(employees.status, "active"))).limit(1) : [];
         if (!actorEmployee) return Response.json({ error: "บัญชีนี้ยังไม่ได้ผูกกับโปรไฟล์พนักงานที่ใช้งานอยู่" }, { status: 403 });
-        const actorRole = getRole(actorEmployee.roleId);
-        if (actorRole.id !== actorEmployee.roleId) return Response.json({ error: "ไม่พบตำแหน่งที่ผูกกับพนักงาน กรุณาให้ HR ตรวจสอบ" }, { status: 409 });
+        const actorRole = findRole(actorEmployee.roleId);
+        if (!actorRole) return Response.json({ error: "ไม่พบกรอบ KPI ที่ผูกกับพนักงาน กรุณาให้ HR ตรวจสอบ" }, { status: 409 });
         const actorDepartmentId = actorRole.departmentId;
         if (!actorDepartmentId) return Response.json({ error: "ไม่พบแผนกจากตำแหน่งพนักงาน กรุณาให้ HR ตรวจสอบ" }, { status: 409 });
 
@@ -2041,8 +2074,8 @@ export async function POST(request: Request) {
         const assigneeEmployeeId = typeof payload.assigneeEmployeeId === "string" ? payload.assigneeEmployeeId.trim() : "";
         const [assignee] = assigneeEmployeeId ? await db.select().from(employees).where(and(eq(employees.id, assigneeEmployeeId), eq(employees.status, "active"))).limit(1) : [];
         if (!assignee) return Response.json({ error: "กรุณาเลือกผู้รับผิดชอบที่กำลังใช้งานอยู่" }, { status: 400 });
-        const assigneeRole = getRole(assignee.roleId);
-        if (assigneeRole.id !== assignee.roleId) return Response.json({ error: "ไม่พบตำแหน่งของผู้รับผิดชอบ กรุณาให้ HR ตรวจสอบ" }, { status: 409 });
+        const assigneeRole = findRole(assignee.roleId);
+        if (!assigneeRole) return Response.json({ error: "ไม่พบกรอบ KPI ของผู้รับผิดชอบ กรุณาให้ HR ตรวจสอบ" }, { status: 409 });
         if (assigneeRole.departmentId !== actorDepartmentId) return Response.json({ error: "พนักงานมอบหมายงานได้เฉพาะตนเองหรือเพื่อนร่วมแผนกเดียวกัน" }, { status: 403 });
 
         const [[creatorCoordinationQuota], [recipientCoordinationQuota]] = await Promise.all([
@@ -2171,7 +2204,7 @@ export async function POST(request: Request) {
       if (!title || !project || !assignee) return Response.json({ error: "กรุณาระบุชื่องาน โปรเจกต์ และผู้รับผิดชอบที่กำลังใช้งานอยู่" }, { status: 400 });
       if (!(await canAccessEmployee(currentUser, assigneeEmployeeId))) return Response.json({ error: "ไม่มีสิทธิ์มอบหมายงานให้พนักงานคนนี้" }, { status: 403 });
       if (currentUser.role === "manager") {
-        const assigneeDepartmentId = getRole(assignee.roleId).departmentId;
+        const assigneeDepartmentId = findRole(assignee.roleId)?.departmentId ?? "";
         if (project.departmentId !== currentUser.departmentId || assigneeDepartmentId !== currentUser.departmentId || !(await canAccessEmployee(currentUser, project.ownerEmployeeId))) {
           return Response.json({ error: "หัวหน้าทีมมอบหมายงานได้เฉพาะในโปรเจกต์และแผนกของตนเอง" }, { status: 403 });
         }
@@ -2607,8 +2640,8 @@ export async function POST(request: Request) {
       const departmentsById = new Map<string, string>();
       for (const role of roles) departmentsById.set(role.departmentId, role.department);
       for (const employee of activeEmployeeRows) {
-        const role = getRole(employee.roleId);
-        departmentsById.set(role.departmentId, role.department);
+        const role = findRole(employee.roleId);
+        if (role) departmentsById.set(role.departmentId, role.department);
       }
       if (targetDepartmentIds.some((departmentId) => !departmentsById.has(departmentId))) {
         return Response.json({ error: "พบทีมเป้าหมายที่ไม่มีอยู่ในโครงสร้างองค์กร" }, { status: 400 });
@@ -2798,7 +2831,8 @@ export async function POST(request: Request) {
         return Response.json({ error: "เควสนี้ถูกแก้ไขจากอีกหน้าจอ กรุณาโหลดข้อมูลล่าสุด" }, { status: 409 });
       }
 
-      const employeeRole = getRole(employee.roleId);
+      const employeeRole = findRole(employee.roleId);
+      if (!employeeRole) return Response.json({ error: "โปรไฟล์พนักงานไม่มีกรอบตำแหน่งมาตรฐาน กรุณาให้ HR แก้ไขก่อนมอบสิทธิ์" }, { status: 409 });
       const employeeDepartmentId = employeeRole.departmentId;
       const eligible = quest.type === "activity"
         || (quest.type === "individual" && targetRows.some((target) => target.targetType === "employee" && target.targetKey === employee.id))
@@ -3347,11 +3381,20 @@ export async function POST(request: Request) {
 
     if (payload.action === "saveEmployeeProfile") {
       const employeeId = payload.employeeId ?? "";
-      const [employee] = await db.select({ id: employees.id }).from(employees).where(eq(employees.id, employeeId)).limit(1);
+      const expectedEmployeeUpdatedAt = payload.expectedEmployeeUpdatedAt?.trim() ?? "";
+      const requestedPositionTitle = payload.positionTitle === undefined ? undefined : normalizedPositionTitle(payload.positionTitle);
+      const [employee] = await db.select().from(employees).where(eq(employees.id, employeeId)).limit(1);
       if (!employee) return Response.json({ error: "ไม่พบพนักงานที่เลือก" }, { status: 404 });
+      if (employee.status === "archived") return Response.json({ error: "แฟ้มที่ลบออกจากรายชื่อแล้วเปิดดูได้อย่างเดียว" }, { status: 409 });
+      if (!findRole(employee.roleId)) return Response.json({ error: "โปรไฟล์พนักงานไม่มีกรอบ KPI มาตรฐาน กรุณาให้ HR แก้ไขกรอบตำแหน่งก่อน" }, { status: 409 });
+      if (!expectedEmployeeUpdatedAt || employee.updatedAt !== expectedEmployeeUpdatedAt) {
+        return Response.json({ error: "แฟ้มนี้ถูกแก้ไขจากอีกหน้าจอ กรุณาโหลดข้อมูลล่าสุด" }, { status: 409 });
+      }
+      if (requestedPositionTitle === null || (requestedPositionTitle !== undefined && Array.from(requestedPositionTitle).length > 120)) return Response.json({ error: "ชื่อตำแหน่งกำหนดเองต้องไม่เกิน 120 ตัวอักษร" }, { status: 400 });
+      const positionTitle = requestedPositionTitle ?? employee.positionTitle;
       const personalEmail = payload.personalEmail?.trim().toLowerCase().slice(0, 160) ?? "";
       if (personalEmail && !personalEmail.includes("@")) return Response.json({ error: "รูปแบบอีเมลส่วนตัวไม่ถูกต้อง" }, { status: 400 });
-      const now = new Date().toISOString();
+      const now = new Date(Math.max(Date.now(), Date.parse(employee.updatedAt) + 1)).toISOString();
       const profile = {
         employeeId,
         personalEmail,
@@ -3368,11 +3411,101 @@ export async function POST(request: Request) {
         applicationSource: payload.applicationSource?.trim().slice(0, 160) ?? "",
         updatedAt: now,
       };
-      await db.insert(employeeProfiles).values(profile).onConflictDoUpdate({
-        target: employeeProfiles.employeeId,
-        set: { ...profile, employeeId: undefined },
-      });
-      return Response.json({ employeeProfile: profile });
+      const d1 = getD1();
+      const positionChanged = positionTitle !== employee.positionTitle;
+      const positionEvent = positionChanged ? {
+        id: `employee-position-${crypto.randomUUID()}`,
+        employeeId,
+        employeeNameSnapshot: employee.name,
+        roleIdSnapshot: employee.roleId,
+        previousPositionTitle: employee.positionTitle,
+        nextPositionTitle: positionTitle,
+        expectedUpdatedAt: expectedEmployeeUpdatedAt,
+        resultingUpdatedAt: now,
+        actorUserId: currentUser.id,
+        actorName: currentUser.displayName,
+        createdAt: now,
+      } : null;
+      try {
+        const statements: D1PreparedStatement[] = [
+          d1.prepare(`INSERT INTO employee_profiles (
+            employee_id, personal_email, phone, birth_date, national_id_last4, address,
+            emergency_name, emergency_phone, start_date, employment_type, education,
+            experience_years, application_source, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(employee_id) DO UPDATE SET
+            personal_email = excluded.personal_email,
+            phone = excluded.phone,
+            birth_date = excluded.birth_date,
+            national_id_last4 = excluded.national_id_last4,
+            address = excluded.address,
+            emergency_name = excluded.emergency_name,
+            emergency_phone = excluded.emergency_phone,
+            start_date = excluded.start_date,
+            employment_type = excluded.employment_type,
+            education = excluded.education,
+            experience_years = excluded.experience_years,
+            application_source = excluded.application_source,
+            updated_at = excluded.updated_at`).bind(
+            profile.employeeId,
+            profile.personalEmail,
+            profile.phone,
+            profile.birthDate,
+            profile.nationalIdLast4,
+            profile.address,
+            profile.emergencyName,
+            profile.emergencyPhone,
+            profile.startDate,
+            profile.employmentType,
+            profile.education,
+            profile.experienceYears,
+            profile.applicationSource,
+            profile.updatedAt,
+          ),
+        ];
+        if (positionEvent) {
+          // The guarded audit insert applies the position change from its AFTER INSERT
+          // trigger. A stale employee, invalid actor or missing audit contract aborts
+          // and rolls back the profile upsert in the same D1 transaction.
+          statements.push(d1.prepare(`INSERT INTO employee_position_events (
+            id, employee_id, employee_name_snapshot, role_id_snapshot,
+            previous_position_title, next_position_title, expected_updated_at,
+            resulting_updated_at, actor_user_id, actor_name, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
+            positionEvent.id,
+            positionEvent.employeeId,
+            positionEvent.employeeNameSnapshot,
+            positionEvent.roleIdSnapshot,
+            positionEvent.previousPositionTitle,
+            positionEvent.nextPositionTitle,
+            positionEvent.expectedUpdatedAt,
+            positionEvent.resultingUpdatedAt,
+            positionEvent.actorUserId,
+            positionEvent.actorName,
+            positionEvent.createdAt,
+          ));
+        } else {
+          statements.push(
+            d1.prepare("UPDATE employees SET updated_at = ? WHERE id = ? AND updated_at = ? AND role_id = ? AND position_title = ? AND status <> 'archived'")
+              .bind(now, employeeId, expectedEmployeeUpdatedAt, employee.roleId, employee.positionTitle),
+            // The preceding employee CAS must change exactly one row. A stale or
+            // archived record violates the NOT NULL name constraint and rolls the
+            // profile upsert back with it.
+            d1.prepare("UPDATE employees SET name = CASE WHEN changes() = 1 THEN name ELSE NULL END WHERE id = ?")
+              .bind(employeeId),
+          );
+        }
+        await d1.batch(statements);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "";
+        if (message.includes("EMPLOYEE_POSITION_") || message.includes("employee_position_events") || message.includes("employees.name") || message.includes("NOT NULL constraint failed") || message.includes("FOREIGN KEY constraint failed")) {
+          return Response.json({ error: "แฟ้มนี้ถูกแก้ไขจากอีกหน้าจอ กรุณาโหลดข้อมูลล่าสุด" }, { status: 409 });
+        }
+        throw error;
+      }
+      const [savedProfile] = await db.select().from(employeeProfiles).where(eq(employeeProfiles.employeeId, employeeId)).limit(1);
+      if (!savedProfile) throw new Error("Employee profile committed without a readable profile row");
+      return Response.json({ employeeProfile: employeeProfileWithValidImage(savedProfile), employee: { ...employee, positionTitle, updatedAt: now }, positionEvent });
     }
 
     if (payload.action === "updateDocumentStatus") {

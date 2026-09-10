@@ -11,7 +11,7 @@ import {
 } from "../db/schema";
 import { type CurrentUser } from "./access-control";
 import { publicUserAccountDto } from "./auth-service";
-import { getRole } from "./kpi-data";
+import { findRole } from "./kpi-data";
 import {
   hashRegistrationPassword,
   privateLookupHash,
@@ -171,6 +171,8 @@ export async function approveEmployeeRegistration(requestIdInput: unknown, emplo
   const now = new Date().toISOString();
   const accountId = `user-${crypto.randomUUID()}`;
   const displayName = `${registration.firstName} ${registration.lastName}`.trim();
+  const employeeRole = findRole(employee.roleId);
+  if (role !== "admin" && !employeeRole) throw new RegistrationInputError("โปรไฟล์พนักงานไม่มีกรอบตำแหน่งมาตรฐาน กรุณาให้ HR แก้ไขก่อนอนุมัติ", 409);
   const account: typeof userAccounts.$inferInsert = {
     id: accountId,
     authUserId: "",
@@ -179,7 +181,7 @@ export async function approveEmployeeRegistration(requestIdInput: unknown, emplo
     nickname: registration.nickname,
     role,
     employeeId,
-    departmentId: role === "admin" ? "" : getRole(employee.roleId).departmentId,
+    departmentId: role === "admin" ? "" : employeeRole?.departmentId ?? "",
     status: "active",
     lastLoginAt: null,
     createdBy: reviewer.displayName,

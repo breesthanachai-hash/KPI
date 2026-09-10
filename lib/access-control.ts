@@ -2,7 +2,7 @@ import { and, eq, gt, isNull, ne, sql } from "drizzle-orm";
 import { getDb } from "../db";
 import { ensureDatabase } from "../db/initialize";
 import { authCredentials, authEvents, authRateLimits, authSessions, employees, userAccounts } from "../db/schema";
-import { getRole, type UserAccountRecord } from "./kpi-data";
+import { findRole, type UserAccountRecord } from "./kpi-data";
 import {
   LEGACY_PASSWORD_ITERATIONS,
   PASSWORD_ALGORITHM,
@@ -471,7 +471,7 @@ export async function canAccessEmployee(account: CurrentUser, employeeId: string
   }
   if (account.role !== "manager" || !account.departmentId) return false;
   const [employee] = await db.select({ roleId: employees.roleId, status: employees.status }).from(employees).where(eq(employees.id, employeeId)).limit(1);
-  return Boolean(employee?.status === "active" && getRole(employee.roleId).departmentId === account.departmentId);
+  return Boolean(employee?.status === "active" && findRole(employee.roleId)?.departmentId === account.departmentId);
 }
 
 export function roleLabel(role: CurrentUser["role"]) {
@@ -555,7 +555,7 @@ async function authenticatedSession(request: Request) {
       await db.update(authSessions).set({ revokedAt: now, revokeReason: "employee-link-unavailable" }).where(and(eq(authSessions.id, session.id), isNull(authSessions.revokedAt)));
       return null;
     }
-    const liveDepartmentId = getRole(linkedEmployee.roleId).departmentId;
+    const liveDepartmentId = findRole(linkedEmployee.roleId)?.departmentId ?? "";
     if (!liveDepartmentId) {
       await db.update(authSessions).set({ revokedAt: now, revokeReason: "employee-role-unavailable" }).where(and(eq(authSessions.id, session.id), isNull(authSessions.revokedAt)));
       return null;

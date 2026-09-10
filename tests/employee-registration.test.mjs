@@ -92,7 +92,7 @@ test("HR/Admin approval is one-time, selects the role, links an active employee 
   assert.match(approval, /db\.batch\(\[[\s\S]*?employeeRegistrationReviewClaims[\s\S]*?userAccounts[\s\S]*?authCredentials[\s\S]*?passwordHash: ""[\s\S]*?passwordSalt: ""[\s\S]*?registration_approved/);
   assert.match(approval, /roleInput === "admin" \|\| roleInput === "manager" \|\| roleInput === "employee"/);
   assert.match(approval, /role,/);
-  assert.match(approval, /departmentId: role === "admin" \? "" : getRole\(employee\.roleId\)\.departmentId/);
+  assert.match(approval, /const employeeRole = findRole\(employee\.roleId\)[\s\S]*?departmentId: role === "admin" \? "" : employeeRole\?\.departmentId \?\? ""/);
   assert.match(approval, /role:\$\{role\}/);
   assert.match(approval, /mustChangePassword: false/);
 

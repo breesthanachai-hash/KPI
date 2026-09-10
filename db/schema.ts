@@ -7,6 +7,7 @@ export const employees = sqliteTable("employees", {
   name: text("name").notNull(),
   email: text("email").notNull(),
   roleId: text("role_id").notNull(),
+  positionTitle: text("position_title").notNull().default(""),
   manager: text("manager").notNull().default(""),
   status: text("status", { enum: ["active", "inactive", "resigned", "archived"] }).notNull().default("active"),
   latestScore: real("latest_score"),
@@ -17,6 +18,24 @@ export const employees = sqliteTable("employees", {
 }, (table) => [
   uniqueIndex("employees_email_unique").on(table.email),
   index("employees_role_idx").on(table.roleId),
+]);
+
+export const employeePositionEvents = sqliteTable("employee_position_events", {
+  id: text("id").primaryKey(),
+  employeeId: text("employee_id").notNull(),
+  employeeNameSnapshot: text("employee_name_snapshot").notNull(),
+  roleIdSnapshot: text("role_id_snapshot").notNull(),
+  previousPositionTitle: text("previous_position_title").notNull().default(""),
+  nextPositionTitle: text("next_position_title").notNull().default(""),
+  expectedUpdatedAt: text("expected_updated_at").notNull(),
+  resultingUpdatedAt: text("resulting_updated_at").notNull(),
+  actorUserId: text("actor_user_id").notNull(),
+  actorName: text("actor_name").notNull(),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("employee_position_events_employee_result_unique").on(table.employeeId, table.resultingUpdatedAt),
+  index("employee_position_events_employee_created_idx").on(table.employeeId, table.createdAt),
+  index("employee_position_events_actor_created_idx").on(table.actorUserId, table.createdAt),
 ]);
 
 export const userAccounts = sqliteTable("user_accounts", {
