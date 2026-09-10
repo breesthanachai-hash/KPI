@@ -103,7 +103,7 @@ test("ships a clear admin-only organization-document and employee-record UI", as
     assert.ok(pageAsset.includes(copy), `built UI must include: ${copy}`);
   }
 
-  assert.match(page, /permissions\.canManageOrganizationDocuments && <button[\s\S]*?<b>เอกสารองค์กร<\/b>/);
+  assert.match(page, /\{ id: "organization-docs", icon: "▤", label: "เอกสารองค์กร"[^\n]*visible: Boolean\(isAdmin && permissions\.canManageOrganizationDocuments\) \}/, "the workspace menu must show organization documents only to document managers");
   assert.match(page, /view === "organizationDocs" && isAdmin && permissions\.canManageOrganizationDocuments && !isEmployeePreview/);
   assert.match(page, /permissions\.canManageEmployeeWarnings && <section className="employee-warning-card">/);
   assert.match(page, /permissions\.canManageEmployeeRecognitions && <section className="employee-recognition-card">/);

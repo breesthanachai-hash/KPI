@@ -239,7 +239,8 @@ test("migration 0022 stays Sites-safe while runtime installs the durable quest g
   for (const trigger of questTriggerNames) {
     assert.match(initializeSource, new RegExp(`CREATE TRIGGER IF NOT EXISTS ${trigger}`));
   }
-  assert.equal((initializeSource.match(/CREATE TRIGGER IF NOT EXISTS quest_[a-z_]+/g) ?? []).length, 10);
+  // The two quest_reward_linking guards belong to system settings and are covered by tests/system-settings.test.mjs.
+  assert.equal((initializeSource.match(/CREATE TRIGGER IF NOT EXISTS quest_(?!reward_linking_)[a-z_]+/g) ?? []).length, 10);
   const db = createMigrationDatabase({ installRuntime: false });
   try {
     assert.equal(db.prepare("SELECT COUNT(*) AS count FROM pragma_table_info('quest_completions')").get().count, 33);

@@ -318,7 +318,10 @@ test("UI contract keeps settings owner-only and treats optional features as pres
 
 test("simplified navigation remains searchable, complete, keyboard-friendly and mobile-safe", () => {
   for (const view of ["overview", "employees", "profiles", "organizationDocs", "skills", "power", "peopleOps", "hr", "portfolio", "work", "office", "access", "settings"]) {
-    assert.ok(pageSource.includes(`navigateFromWorkspaceMenu(\"${view}\"`) || pageSource.includes(`setView(\"${view}\")`), `navigation must retain ${view}`);
+    assert.ok(
+      pageSource.includes(`navigateFromWorkspaceMenu(\"${view}\"`) || pageSource.includes(`destinationId === \"${view}\"`) || pageSource.includes(`setView(\"${view}\")`),
+      `navigation must retain ${view}`,
+    );
   }
   assert.match(pageSource, /showWorkspaceMenu/);
   assert.match(pageSource, /workspaceMenuSearch/);

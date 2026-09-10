@@ -54,9 +54,10 @@ test("wires the mascot to the existing People AI open state without overlapping 
   assert.match(openHandler, /setShowUserMenu\(false\)/);
   assert.match(openHandler, /setShowAiAssistant\(true\)/);
   assert.match(pageSource, /showAiMascot && <AiRobotMascot open=\{showAiAssistant\} suspended=\{hasBlockingOverlay\} onOpen=\{openPeopleAi\} onHide=\{hideAiMascot\} \/>/);
-  assert.match(pageSource, /onClick=\{openPeopleAi\}[\s\S]*?<b>ผู้ช่วย AI<\/b>/);
+  assert.match(pageSource, /\{ id: "ai", icon: "AI", label: "ผู้ช่วย AI"[^\n]*visible: publicSystemSettings\.features\.aiAssistantEnabled \}/, "the workspace menu must expose the People AI entry");
+  assert.match(pageSource, /destinationId === "ai"\) \{\s*openPeopleAi\(\);/, "the workspace menu must route the AI entry through the shared open handler");
   assert.match(pageSource, /<AiAssistant open=\{showAiAssistant\}/);
-  assert.match(pageSource, /!isEmployeeUser && <>[\s\S]*?<AiRobotMascot[\s\S]*?<AiAssistant[\s\S]*?<\/>}/);
+  assert.match(pageSource, /!isEmployeeUser && publicSystemSettings\.features\.aiAssistantEnabled && <>[\s\S]*?<AiRobotMascot[\s\S]*?<AiAssistant[\s\S]*?<\/>}/);
 });
 
 test("offers a persistent visible toggle and keeps the roaming mascot off by default", () => {
@@ -77,7 +78,7 @@ test("includes People AI in the shared focus trap, scroll lock, Escape close and
   assert.ok(overlayStart >= 0 && overlayEnd > overlayStart, "expected the shared overlay accessibility effect");
   const overlayEffect = pageSource.slice(overlayStart, overlayEnd);
 
-  assert.match(pageSource, /const hasBlockingOverlay = Boolean\([\s\S]*?showNotifications \|\| showUserMenu \|\| showChangePassword\)/);
+  assert.match(pageSource, /const hasBlockingOverlay = Boolean\([\s\S]*?showNotifications \|\| showUserMenu \|\| showWorkspaceMenu \|\| showChangePassword\)/);
   assert.match(overlayEffect, /hasBlockingOverlay \|\| showAiAssistant/);
   assert.match(overlayEffect, /lastFocusedElementRef\.current = document\.activeElement/);
   assert.match(overlayEffect, /document\.body\.style\.overflow = "hidden"/);
@@ -86,7 +87,7 @@ test("includes People AI in the shared focus trap, scroll lock, Escape close and
   assert.match(overlayEffect, /event\.key === "Escape"[\s\S]*?setShowAiAssistant\(false\)/);
   assert.match(overlayEffect, /document\.body\.style\.overflow = previousOverflow/);
   assert.match(overlayEffect, /lastFocusedElementRef\.current\?\.focus\(\)/);
-  assert.match(overlayEffect, /showNotifications, showUserMenu, showChangePassword, showAiAssistant\]\);/);
+  assert.match(overlayEffect, /showNotifications, showUserMenu, showWorkspaceMenu, showChangePassword, showAiAssistant\]\);/);
 });
 
 test("keeps the AI backdrop out of the tab order and exposes a focusable named dialog", () => {

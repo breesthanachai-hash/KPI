@@ -505,14 +505,14 @@ test("ships a private employee portal with safe team overview and self-only acti
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
   ]);
 
-  assert.match(pageAsset, /MY PEOPLE PULSE/);
+  // The header brand now comes from the owner's organization name in system settings, so only the static portal label is asserted here.
   assert.match(pageAsset, /EMPLOYEE PORTAL/);
   assert.match(pageAsset, /งานของฉัน/);
   assert.match(pageAsset, /แฟ้มผลงานของฉัน/);
   assert.match(pageAsset, /สำนักงานของทีม/);
   assert.match(pageAsset, /ค่าพลังทีม/);
-  assert.match(pageAsset, /เติบโต &amp; เงินเดือน|เติบโต & เงินเดือน/);
-  assert.match(pageAsset, /Points &amp; รางวัล|Points & รางวัล/);
+  assert.match(pageAsset, /การเติบโตของฉัน/);
+  assert.match(pageAsset, /Points ของฉัน/);
   assert.match(pageAsset, /MY GROWTH PATH/);
   assert.match(pageAsset, /เงินเดือนปัจจุบัน/);
   assert.match(pageAsset, /สกิลที่ควรพัฒนาต่อ/);
@@ -520,12 +520,13 @@ test("ships a private employee portal with safe team overview and self-only acti
 
   assert.match(page, /const employeeViews: View\[\] = \["work", "portfolio", "office", "power", "peopleOps"\]/);
   assert.match(page, /section\.id !== "projects"/);
-  assert.match(page, /!isEmployeeUser && <>[\s\S]*?<AiRobotMascot[\s\S]*?<AiAssistant/);
+  assert.match(page, /!isEmployeeUser && publicSystemSettings\.features\.aiAssistantEnabled && <>[\s\S]*?<AiRobotMascot[\s\S]*?<AiAssistant/);
   assert.match(page, /item\.assigneeEmployeeId === currentUser\.employeeId/);
   assert.match(page, /const activeRewardEmployeeId = isAdmin \? rewardEmployeeId : currentUser\?\.employeeId \?\? ""/);
   assert.match(page, /บัญชีที่ใช้ Points/);
   assert.match(page, /\{formatMoney\(item\.points\)\} Points/, "dynamic point amounts must render as `N Points`");
-  assert.doesNotMatch(page, /แต้ม/, "all page labels, units and notices must use Points");
+  // Workspace-menu search keywords may list "แต้ม" as a synonym so people can find Points; visible copy must still say Points.
+  assert.doesNotMatch(page.replace(/keywords: "[^"]*"/g, ""), /แต้ม/, "all page labels, units and notices must use Points");
   assert.match(page, /employee-growth-portal/);
   assert.match(page, /employee-portal-welcome/);
 
