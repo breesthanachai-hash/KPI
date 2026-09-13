@@ -535,7 +535,7 @@ test("password and access mutations revoke sessions, delete accounts safely, and
     assert.match(migration, new RegExp("CREATE TRIGGER `" + trigger + "`[\\s\\S]*?LAST_ACTIVE_ADMIN_REQUIRED"));
   }
   assert.match(accountBlock, /activeAdmins\.length <= 1[\s\S]*?status: 409/);
-  assert.match(page, /disabled=\{isSaving \|\| account\.id === currentUser\?\.id\}/);
+  assert.match(page, /disabled=\{isSaving \|\| account\.id === currentUser\?\.id \|\| account\.id === "user-owner"\}/);
   assert.match(page, /setShowChangePassword\(true\)[\s\S]*?<strong>เปลี่ยนรหัสผ่าน<\/strong>[\s\S]*?ยืนยันรหัสปัจจุบันและตั้งรหัสใหม่/);
   assert.match(page, /const deleteUserAccount = async \(account: PublicUserAccount\)/);
   assert.match(page, /window\.confirm\([\s\S]*?บัญชี รหัสผ่าน และเซสชันจะถูกลบถาวร แต่โปรไฟล์พนักงานและประวัติงานจะยังอยู่/);

@@ -1204,7 +1204,7 @@ test("separates work assigners from workers without changing real permissions", 
   assert.match(accessPage, /\{userAccounts\.map/);
   assert.match(accessPage, /Password Hash, Salt, Session Token/);
   assert.match(accessPage, /aria-label=\{`แก้ไขบัญชีของ \$\{account\.displayName\}`\}/);
-  assert.match(accessPage, /disabled=\{isSaving \|\| account\.id === currentUser\?\.id\}/);
+  assert.match(accessPage, /disabled=\{isSaving \|\| account\.id === currentUser\?\.id \|\| account\.id === "user-owner"\}/);
   assert.match(accessPage, /const credentialState = accountCredentialState\(account\)/);
 
   // Existing server boundaries remain authoritative: only admins receive the
