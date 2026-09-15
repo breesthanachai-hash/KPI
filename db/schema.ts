@@ -1,5 +1,51 @@
 import { sql } from "drizzle-orm";
-import { index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { check, index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+
+export const payrollRuns = sqliteTable("payroll_runs", {
+  id: text("id").primaryKey(),
+  period: text("period").notNull(),
+  status: text("status", { enum: ["draft", "approved", "paid", "void"] }).notNull().default("draft"),
+  revision: integer("revision").notNull().default(0),
+  document: text("document").notNull(),
+  approvedBy: text("approved_by"), approvedAt: text("approved_at"), paymentReference: text("payment_reference"),
+  createdBy: text("created_by").notNull(), createdAt: text("created_at").notNull(), updatedAt: text("updated_at").notNull(),
+}, (t) => [index("payroll_runs_period_idx").on(t.period), check("payroll_run_state", sql`${t.status} IN ('draft','approved','paid','void') AND typeof(${t.revision})='integer' AND ${t.revision} >= 0 AND json_valid(${t.document}) AND json_type(${t.document})='object' AND (${t.status} NOT IN ('approved','paid') OR (${t.approvedBy} IS NOT NULL AND ${t.approvedAt} IS NOT NULL))`)]);
+
+export const payrollEvents = sqliteTable("payroll_events", {
+  id: text("id").primaryKey(), runId: text("run_id").notNull().references(() => payrollRuns.id, { onDelete: "restrict" }),
+  revision: integer("revision").notNull(), action: text("action").notNull(), actorId: text("actor_id").notNull(), actorName: text("actor_name").notNull(),
+  document: text("document").notNull(), reason: text("reason").notNull().default(""), createdAt: text("created_at").notNull(),
+}, (t) => [uniqueIndex("payroll_event_revision_unique").on(t.runId, t.revision)]);
+
+export const payrollSlips = sqliteTable("payroll_slips", {
+  id: text("id").primaryKey(), runId: text("run_id").notNull().references(() => payrollRuns.id, { onDelete: "restrict" }),
+  employeeId: text("employee_id").notNull().references(() => employees.id, { onDelete: "restrict" }),
+  period: text("period").notNull(), snapshot: text("snapshot").notNull(), recipientEmail: text("recipient_email").notNull(),
+  gross: integer("gross").notNull(), deductions: integer("deductions").notNull(), net: integer("net").notNull(), createdAt: text("created_at").notNull(),
+}, (t) => [uniqueIndex("payroll_slip_employee_run_unique").on(t.runId, t.employeeId), index("payroll_slip_employee_idx").on(t.employeeId, t.period),
+  check("payroll_slip_money", sql`typeof(${t.gross})='integer' AND typeof(${t.deductions})='integer' AND typeof(${t.net})='integer' AND ${t.gross} BETWEEN 0 AND 10000000000 AND ${t.deductions} BETWEEN 0 AND ${t.gross} AND ${t.net}=${t.gross}-${t.deductions} AND json_valid(${t.snapshot})`)]);
+
+export const payrollDeliveries = sqliteTable("payroll_deliveries", {
+  slipId: text("slip_id").primaryKey().references(() => payrollSlips.id, { onDelete: "restrict" }),
+  status: text("status", { enum: ["pending", "sending", "accepted", "failed", "review"] }).notNull().default("pending"),
+  attempts: integer("attempts").notNull().default(0), leaseToken: text("lease_token"), leaseUntil: text("lease_until"),
+  firstAttemptAt: text("first_attempt_at"), payload: text("payload"), providerId: text("provider_id"), lastError: text("last_error"), updatedAt: text("updated_at").notNull(),
+  providerDraftId: text("provider_draft_id"),
+  sendStartedAt: text("send_started_at"),
+}, (t) => [check("payroll_delivery_state", sql`${t.status} IN ('pending','sending','accepted','failed','review') AND typeof(${t.attempts})='integer' AND ${t.attempts} >= 0`)]);
+
+export const payrollAwards = sqliteTable("payroll_awards", {
+  id: text("id").primaryKey(), employeeId: text("employee_id").notNull().references(() => employees.id, { onDelete: "restrict" }),
+  kind: text("kind", { enum: ["skill", "quest"] }).notNull(), sourceId: text("source_id").notNull(), label: text("label").notNull(),
+  amount: integer("amount").notNull(), startMonth: text("start_month").notNull(), endMonth: text("end_month").notNull(),
+  createdBy: text("created_by").notNull(), createdAt: text("created_at").notNull(),
+}, (t) => [uniqueIndex("payroll_award_source_unique").on(t.kind, t.sourceId), check("payroll_award_valid", sql`${t.kind} IN ('skill','quest') AND typeof(${t.amount})='integer' AND ${t.amount} BETWEEN 1 AND 10000000000 AND ${t.startMonth}<=${t.endMonth}`)]);
+
+export const payrollPayClaims = sqliteTable("payroll_pay_claims", {
+  id: text("id").primaryKey(), slipId: text("slip_id").notNull().references(() => payrollSlips.id, { onDelete: "restrict" }),
+  employeeId: text("employee_id").notNull().references(() => employees.id, { onDelete: "restrict" }),
+  kind: text("kind").notNull(), source: text("source").notNull(), amount: integer("amount").notNull(),
+}, (t) => [index("payroll_claim_employee_idx").on(t.employeeId)]);
 
 export const employees = sqliteTable("employees", {
   id: text("id").primaryKey(),

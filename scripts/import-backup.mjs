@@ -4,8 +4,9 @@
 //
 //   node scripts/import-backup.mjs <backup.tar> --database <d1-name> --bucket <r2-bucket> [--local] [--dry-run] [--skip-files]
 //
-// Rows are written with INSERT OR REPLACE in foreign-key order, so re-running
-// the import on the same backup is safe. Migrations must already be applied.
+// Restore into an EMPTY, isolated target only. Replacing rows would delete
+// retained payroll history and violate immutable audit guards. Apply migrations
+// first, but do not serve application traffic until restore + validation finish.
 
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -103,6 +104,14 @@ function main() {
   if (manifest.format !== SUPPORTED_FORMAT) throw new Error(`unsupported backup format ${manifest.format}`);
   const files = JSON.parse(new TextDecoder().decode(entries.get("files.json") ?? new Uint8Array([0x5b, 0x5d])));
   const target = options.local ? "--local" : "--remote";
+  // Complete preflight before the first write; never overwrite a populated DB.
+  if (!options.dryRun) {
+    const countsSql = manifest.tables.map(table => `SELECT '${table.name.replace(/'/g, "''")}' name, COUNT(*) count FROM ${quote(table.name)}`).join(" UNION ALL ");
+    const existing = JSON.parse(wrangler(["d1", "execute", options.database, target, "--json", "--command", countsSql], { capture: true }))[0].results;
+    if (existing.some(row => row.count > 0)) throw new Error("Restore target is not empty. Create an isolated empty database; this importer never overwrites existing records. A partial restore must be inspected, not retried over live data.");
+    const guards = JSON.parse(wrangler(["d1", "execute", options.database, target, "--json", "--command", "SELECT name FROM sqlite_master WHERE type='trigger' AND name LIKE 'payroll_%'"], { capture: true }))[0].results;
+    if (guards.length) throw new Error("Payroll runtime guards are installed. Restore requires a fresh migration-only target before application startup; do not disable guards on a live database.");
+  }
   const workDirectory = mkdtempSync(path.join(tmpdir(), "people-pulse-import-"));
   console.log(`Backup from ${manifest.createdAt}: ${manifest.tables.length} tables, ${files.length} files${options.dryRun ? " (dry run)" : ""}`);
 
@@ -122,7 +131,7 @@ function main() {
       const columns = table.columns.map(quote).join(", ");
       let pending = [];
       for (const row of rows) {
-        pending.push(`INSERT OR REPLACE INTO ${quote(table.name)} (${columns}) VALUES (${table.columns.map((column) => sqlLiteral(row[column])).join(", ")});`);
+        pending.push(`INSERT INTO ${quote(table.name)} (${columns}) VALUES (${table.columns.map((column) => sqlLiteral(row[column])).join(", ")});`);
         if (pending.length >= STATEMENTS_PER_BATCH) {
           runBatch(pending);
           pending = [];

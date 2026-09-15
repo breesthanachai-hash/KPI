@@ -204,8 +204,8 @@ test("v24 migration is additive, Sites-safe and journaled after v23", () => {
   assert.ok(migrationSnapshot.tables.system_settings);
   assert.ok(migrationSnapshot.tables.system_settings_events);
   assert.equal(migrationSnapshot.prevId, previousSnapshot.id);
-  assert.equal(migrationJournal.entries.at(-1)?.idx, 24);
-  assert.equal(migrationJournal.entries.at(-1)?.tag, migrationName);
+  assert.equal(migrationJournal.entries.find(entry => entry.idx === 24)?.tag, migrationName);
+  assert.ok(migrationJournal.entries.at(-1)?.idx >= 24);
   assert.match(schemaSource, /export const systemSettings = sqliteTable\("system_settings"/);
   assert.match(schemaSource, /export const systemSettingsEvents = sqliteTable\("system_settings_events"/);
 });

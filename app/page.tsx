@@ -51,9 +51,10 @@ import {
 } from "../lib/kpi-data";
 
 const Office3D = lazy(() => import("./office-3d"));
+const PayrollCenter = lazy(() => import("./payroll-center"));
 const AI_MASCOT_VISIBILITY_STORAGE_KEY = "people-pulse-ai-mascot-visible:v1";
 
-type View = "overview" | "employees" | "profiles" | "organizationDocs" | "skills" | "power" | "peopleOps" | "hr" | "portfolio" | "work" | "office" | "access" | "settings";
+type View = "overview" | "employees" | "profiles" | "organizationDocs" | "skills" | "power" | "peopleOps" | "hr" | "portfolio" | "work" | "office" | "access" | "settings" | "payroll";
 
 type PublicUserAccount = Omit<UserAccountRecord, "authUserId"> & {
   loginId?: string;
@@ -978,6 +979,7 @@ function officeBehaviorFor(level: OfficeLoadLevel, index: number): OfficeBehavio
 }
 
 const viewMeta: Record<View, { eyebrow: string; title: string; description: string }> = {
+  payroll: { eyebrow: "PAYROLL & COMMISSION", title: "เงินเดือนและค่าคอมมิชชัน", description: "คำนวณค่าแรง ตรวจยอด ออกสลิป และติดตามการจ่ายอย่างเป็นขั้นตอน" },
   overview: { eyebrow: "ภาพรวมองค์กร", title: "ภาพรวม KPI พนักงาน", description: "ติดตามเป้าหมาย ประเมินผลงาน และวางแผนพัฒนาทีมในที่เดียว" },
   employees: { eyebrow: "ทะเบียนและการประเมิน", title: "พนักงานและผลประเมิน", description: "ค้นหา เพิ่มพนักงาน และบันทึกผล KPI พร้อมระดับสกิลรายบุคคล" },
   profiles: { eyebrow: "EMPLOYEE DIGITAL DOSSIER", title: "แฟ้มประวัติพนักงาน", description: "รวมข้อมูลส่วนตัว เอกสารสมัครงาน การตรวจเอกสาร และสัญญาจ้างพร้อมขั้นตอนยืนยันใน Pilot" },
@@ -1395,8 +1397,14 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    if (!currentUser || isEmployeePreview || currentUser.role === "manager" || new URLSearchParams(window.location.search).get("payroll") !== "1") return;
+    const timer = window.setTimeout(() => { setView("payroll"); window.history.replaceState(null, "", window.location.pathname); }, 0);
+    return () => window.clearTimeout(timer);
+  }, [currentUser, isEmployeePreview]);
+
+  useEffect(() => {
     if (currentUser?.role !== "employee") return;
-    const employeeViews: View[] = ["work", "portfolio", "office", "power", "peopleOps"];
+    const employeeViews: View[] = ["work", "portfolio", "office", "power", "peopleOps", "payroll"];
     if (employeeViews.includes(view) && workSection !== "projects") return;
     const timer = window.setTimeout(() => {
       if (!employeeViews.includes(view)) setView("work");
@@ -2497,7 +2505,7 @@ export default function Home() {
       setHrProfiles((items) => [...items.filter((item) => item.employeeId !== body.hrProfile?.employeeId), body.hrProfile as HrProfileRecord]);
       setTalentActions((items) => [body.talentAction as TalentActionRecord, ...items]);
       setSkillAchievementForm((form) => ({ ...form, evidenceUrl: "", note: "" }));
-      showToast(`ยืนยันสกิลแล้ว เพิ่มค่าตอบแทน ฿${formatMoney(body.skillAchievement.monthlyAllowance)}/เดือน`);
+      showToast("ยืนยันสกิลแล้ว เจ้าของกำหนดเงินเพิ่มและระยะเวลาได้ในเมนูเงินเดือน / คอมมิชชัน");
     } catch (error) {
       showErrorToast(error, "ยืนยันสกิลไม่สำเร็จ");
     } finally {
@@ -4090,6 +4098,10 @@ export default function Home() {
   };
 
   const openWorkspaceDestination = (destinationId: string) => {
+    if (destinationId === "payroll" || destinationId === "my-payslips") {
+      navigateFromWorkspaceMenu("payroll");
+      return;
+    }
     if (destinationId === "my-tasks" || destinationId === "tasks") {
       navigateFromWorkspaceMenu("work", () => {
         setActiveDepartment("all");
@@ -4185,6 +4197,7 @@ export default function Home() {
       label: "การเติบโตและรางวัล",
       description: "สกิล ค่าตอบแทน Points และสิทธิประโยชน์",
       items: [
+        { id: "my-payslips", icon: "฿", label: "สลิปเงินเดือน", description: "ดูสลิปของฉันและพิมพ์ PDF", keywords: "payroll payslip เงินเดือน ค่าแรง", active: view === "payroll", primarySimple: true, primaryFull: true, visible: !isEmployeePreview },
         { id: "my-growth", icon: "↗", label: "การเติบโตของฉัน", description: "สกิล เป้าหมายตำแหน่ง และเงินเดือน", keywords: "growth salary skill เติบโต เงินเดือน", active: view === "peopleOps", primarySimple: true, primaryFull: true, visible: true },
         { id: "my-points", icon: "★", label: "Points ของฉัน", description: "ยอดสะสมและประวัติได้–เสีย Points", keywords: "point คะแนน แต้ม", badge: formatMoney(currentUser?.employeeId ? pointBalances.get(currentUser.employeeId) ?? 0 : 0), active: view === "work" && workSection === "points" && pointPanel !== "policies", primarySimple: true, primaryFull: true, visible: true },
         { id: "my-rewards", icon: "♢", label: "ร้านรางวัล", description: "เลือกรางวัลและติดตามคำขอแลก", keywords: "reward redeem แลก", active: view === "work" && workSection === "rewards", primaryFull: true, visible: true },
@@ -4244,6 +4257,7 @@ export default function Home() {
       label: "เครื่องมือและการตั้งค่า",
       description: "ผู้ช่วยทำงานและค่ากลางของระบบ",
       items: [
+        { id: "payroll", icon: "฿", label: "เงินเดือน / คอมมิชชัน", description: "จัดรอบจ่าย ตรวจยอด ออกสลิป และส่งอีเมล", keywords: "payroll salary payslip เงินเดือน ค่าแรง คอม", active: view === "payroll", primarySimple: true, primaryFull: true, visible: currentUser?.role === "admin" && !isEmployeePreview },
         { id: "ai", icon: "AI", label: "ผู้ช่วย AI", description: "ถามข้อมูลและเปิดหน้าที่ต้องการ", keywords: "assistant help ช่วยเหลือ", active: showAiAssistant, primaryFull: true, visible: publicSystemSettings.features.aiAssistantEnabled },
         { id: "settings", icon: "⚙", label: "ตั้งค่าระบบ", description: "ชื่อองค์กร เมนูเริ่มต้น และฟีเจอร์เชื่อมโยง", keywords: "setting owner config ตั้งค่า", badge: "เจ้าของ", active: view === "settings", primarySimple: true, primaryFull: true, visible: canManageSystemSettings },
       ],
@@ -5096,7 +5110,7 @@ export default function Home() {
 
             <div className="employee-growth-summary">
               <article className="salary"><span>฿</span><div><small>เงินเดือนปัจจุบัน</small><strong>{peopleOpsHrProfile ? `฿${formatMoney(peopleOpsHrProfile.currentSalary)}` : "รอ HR อัปเดต"}</strong><p>{peopleOpsHrProfile ? `ทบทวนรอบถัดไป ${peopleOpsHrProfile.salaryReviewMonth || "ตามนโยบายบริษัท"}` : "ติดต่อ HR หากข้อมูลยังไม่ครบ"}</p></div></article>
-              <article className="allowance"><span>＋</span><div><small>เงินเพิ่มจากสกิลสะสม</small><strong>+฿{formatMoney(peopleOpsSkillUplift)} / เดือน</strong><p>{peopleOpsAchievements.length} ระดับสกิลที่ผ่านการยืนยัน</p></div></article>
+              <article className="allowance"><span>＋</span><div><small>เงินสกิลเดิมที่รวมในฐานเงินเดือนแล้ว</small><strong>฿{formatMoney(peopleOpsSkillUplift)} / เดือน</strong><p>เงินเพิ่มแบบมีระยะเวลาดูในสลิปเงินเดือน</p></div></article>
               <article><span>↗</span><div><small>ตำแหน่งเป้าหมาย</small><strong>{growthRoleNames[peopleOpsRole.id] ?? `หัวหน้าทีม${peopleOpsRole.department}`}</strong><p>ใช้ผลงาน สกิล เควสต์ และความสม่ำเสมอร่วมกัน</p></div></article>
               <article><span>★</span><div><small>เควสต์พัฒนาสำเร็จ</small><strong>{peopleOpsMissions.filter((item) => item.status === "done").length} / {peopleOpsMissions.length}</strong><p>งานเปิดอยู่ {peopleOpsWork.filter((item) => item.status !== "done").length} รายการ</p></div></article>
             </div>
@@ -5227,7 +5241,7 @@ export default function Home() {
                 </div>
                 <div className="growth-summary-grid">
                   <article><small>เงินเดือนปัจจุบัน</small><strong>฿{formatMoney(peopleOpsHrProfile?.currentSalary ?? 0)}</strong><span>อัปเดตล่าสุด {peopleOpsHrProfile ? formatUpdatedAt(peopleOpsHrProfile.updatedAt) : "—"}</span></article>
-                  <article className="positive"><small>เงินเพิ่มจากสกิลสะสม</small><strong>+฿{formatMoney(peopleOpsSkillUplift)}</strong><span>ต่อเดือน · {peopleOpsAchievements.length} ระดับที่ยืนยันแล้ว</span></article>
+                  <article className="positive"><small>เงินสกิลเดิมที่รวมในฐานแล้ว</small><strong>฿{formatMoney(peopleOpsSkillUplift)}</strong><span>ไม่บวกซ้ำ · เงินเพิ่มใหม่ดูเมนูเงินเดือน</span></article>
                   <article><small>เป้าหมายตำแหน่งถัดไป</small><strong>{growthRoleNames[peopleOpsRole.id] ?? "หัวหน้าทีม" + peopleOpsRole.department}</strong><span>วัดจาก KPI สกิล เควสต์ และความสม่ำเสมอ</span></article>
                   <article className={promotionReadiness >= 80 ? "positive" : "warning"}><small>ความพร้อมเลื่อนตำแหน่ง</small><strong>{promotionReadiness}%</strong><i><b style={{ width: promotionReadiness + "%" }} /></i></article>
                 </div>
@@ -5244,21 +5258,21 @@ export default function Home() {
                   <section className="skill-pay-card">
                     <div className="people-ops-section-heading"><div><p className="eyebrow">SKILL-BASED PAY</p><h2>เงินเพิ่มตามสกิลที่ยืนยันแล้ว</h2><p>ระดับใหม่เพิ่มค่าตอบแทนและความรับผิดชอบ โดยไม่จำกัดเส้นทางเติบโตไว้ที่อายุงาน</p></div><button onClick={() => setView("skills")}>ดูกราฟสกิล →</button></div>
                     <div className="skill-opportunity-list">
-                      {nextSkillOpportunities.map(({ skill, currentLevel, highestVerifiedLevel, allowance, canVerify }) => <article key={skill.id} className={canVerify ? "ready" : ""}>
+                      {nextSkillOpportunities.map(({ skill, currentLevel, highestVerifiedLevel, canVerify }) => <article key={skill.id} className={canVerify ? "ready" : ""}>
                         <div><strong>{skill.name}</strong><small>ปัจจุบันระดับ {currentLevel || "—"} · ยืนยันสูงสุด {highestVerifiedLevel || "ยังไม่ยืนยัน"}</small></div>
                         <span className="skill-level-dots">{[1, 2, 3, 4, 5].map((level) => <i key={level} className={level <= currentLevel ? "filled" : ""} />)}</span>
-                        <div className="skill-pay-value"><small>เงินเพิ่มระดับนี้</small><strong>+฿{formatMoney(allowance)}/เดือน</strong></div>
+                        <div className="skill-pay-value"><small>เงินเพิ่มระดับนี้</small><strong>เจ้าของกำหนดจำนวนและระยะเวลา</strong></div>
                         <button disabled={!canVerify} onClick={() => { setSkillAchievementForm({ skillId: skill.id, level: currentLevel, evidenceUrl: "", note: "" }); document.getElementById("skill-verification-form")?.scrollIntoView({ behavior: "smooth", block: "center" }); }}>{canVerify ? "ตรวจและยืนยัน" : currentLevel ? "ยืนยันแล้ว" : "รอประเมิน"}</button>
                       </article>)}
                     </div>
                     <form id="skill-verification-form" className="skill-verification-form" onSubmit={verifySkillAchievement}>
-                      <div><p className="eyebrow">VERIFICATION</p><h3>ยืนยันสกิลและเพิ่มค่าตอบแทน</h3><small>ระบบตรวจระดับจากผลประเมินล่าสุดและป้องกันการเพิ่มซ้ำอัตโนมัติ</small></div>
+                      <div><p className="eyebrow">VERIFICATION</p><h3>ยืนยันสกิลที่ผ่านแล้ว</h3><small>ไม่เพิ่มเงินเดือนถาวรอัตโนมัติ เจ้าของกำหนดเงินเพิ่มและช่วงเวลาได้ในเมนูเงินเดือน / คอมมิชชัน</small></div>
                       <label><span>สกิลวิชาชีพที่มีเงินเพิ่ม</span><select required value={skillAchievementForm.skillId} onChange={(event) => { const skillId = event.target.value; setSkillAchievementForm((form) => ({ ...form, skillId, level: Math.max(2, peopleOpsEvaluation?.skillScores[skillId] ?? 2) })); }}><option value="">เลือกสกิล</option>{peopleOpsRole.skills.filter((skill) => skill.eligibleForAllowance !== false).map((skill) => <option key={skill.id} value={skill.id}>{skill.name}</option>)}</select></label>
                       <label><span>ระดับที่ยืนยัน</span><input required type="number" min="2" max="5" value={skillAchievementForm.level} onChange={(event) => setSkillAchievementForm((form) => ({ ...form, level: Number(event.target.value) }))} /></label>
                       <label className="wide"><span>ลิงก์หลักฐานการทดสอบ / ผลงาน</span><input type="url" value={skillAchievementForm.evidenceUrl} onChange={(event) => setSkillAchievementForm((form) => ({ ...form, evidenceUrl: event.target.value }))} placeholder="https://... (ถ้ามี)" /></label>
                       <label className="wide"><span>เหตุผลที่ผ่านเกณฑ์</span><input value={skillAchievementForm.note} onChange={(event) => setSkillAchievementForm((form) => ({ ...form, note: event.target.value }))} placeholder="เช่น ผ่าน Skill Test 86% และมีผลงานจริง 2 ชิ้น" /></label>
-                      <div className="skill-verification-value"><span>เงินเพิ่มเมื่อยืนยัน</span><strong>+฿{formatMoney(skillAllowanceFor(peopleOpsRole.id, skillAchievementForm.level))}/เดือน</strong></div>
-                      <button disabled={isSaving || !skillAchievementForm.skillId}>{isSaving ? "กำลังยืนยัน..." : "ยืนยันและอัปเดตเงินเดือน"}</button>
+                      <div className="skill-verification-value"><span>หลังยืนยันสกิล</span><strong>กำหนดเงินเพิ่มแบบมีวันหมดอายุในเมนูเงินเดือน</strong></div>
+                      <button disabled={isSaving || !skillAchievementForm.skillId}>{isSaving ? "กำลังยืนยัน..." : "ยืนยันสกิล"}</button>
                     </form>
                   </section>
 
@@ -5496,6 +5510,10 @@ export default function Home() {
               </div>
             </section>
           </section>
+        )}
+
+        {view === "payroll" && !isEmployeePreview && currentUser && (currentUser.role === "admin" || currentUser.role === "employee") && (
+          <Suspense fallback={<div className="empty-state">กำลังเปิดระบบเงินเดือน…</div>}><PayrollCenter key={currentUser.id} /></Suspense>
         )}
 
         {view === "settings" && canManageSystemSettings && (

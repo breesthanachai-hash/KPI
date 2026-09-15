@@ -518,7 +518,7 @@ test("ships a private employee portal with safe team overview and self-only acti
   assert.match(pageAsset, /สกิลที่ควรพัฒนาต่อ/);
   assert.match(pageAsset, /ข้อมูลส่วนนี้เห็นได้เฉพาะคุณและ HR/);
 
-  assert.match(page, /const employeeViews: View\[\] = \["work", "portfolio", "office", "power", "peopleOps"\]/);
+  assert.match(page, /const employeeViews: View\[\] = \["work", "portfolio", "office", "power", "peopleOps", "payroll"\]/);
   assert.match(page, /section\.id !== "projects"/);
   assert.match(page, /!isEmployeeUser && publicSystemSettings\.features\.aiAssistantEnabled && <>[\s\S]*?<AiRobotMascot[\s\S]*?<AiAssistant/);
   assert.match(page, /item\.assigneeEmployeeId === currentUser\.employeeId/);

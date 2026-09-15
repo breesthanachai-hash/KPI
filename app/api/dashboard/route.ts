@@ -35,7 +35,6 @@ import {
   seedSkillAchievements,
   seedTalentActions,
   seedWorkItems,
-  skillAllowanceFor,
   workPointValue,
   type PointEventRecord,
   type PointEventType,
@@ -1402,7 +1401,9 @@ export async function POST(request: Request) {
       const requestedDepartmentId = typeof payload.departmentId === "string" ? payload.departmentId.trim().slice(0, 80) : "";
       if (role === "manager" && requestedDepartmentId && requestedDepartmentId !== linkedDepartmentId) return Response.json({ error: "หัวหน้าทีมต้องใช้แผนกจากตำแหน่งพนักงานที่ผูกไว้" }, { status: 400 });
       const departmentId = role === "manager" ? linkedDepartmentId : "";
-      const email = existing?.email || linkedEmployee?.email || `${credentialChange.values.loginIdCanonical}@accounts.peoplepulse.internal`;
+      const email = linkedEmployee && existing?.employeeId !== linkedEmployee.id
+        ? linkedEmployee.email
+        : existing?.email || linkedEmployee?.email || `${credentialChange.values.loginIdCanonical}@accounts.peoplepulse.internal`;
       const [emailOwner] = await db.select({ id: userAccounts.id }).from(userAccounts).where(eq(userAccounts.email, email)).limit(1);
       if (emailOwner && emailOwner.id !== accountId) return Response.json({ error: "โปรไฟล์พนักงานนี้มีบัญชีผู้ใช้งานแล้ว" }, { status: 409 });
       const userAccount: UserAccountRecord = {
@@ -1539,6 +1540,8 @@ export async function POST(request: Request) {
         return Response.json({ error: "แฟ้มนี้ถูกแก้ไขจากอีกหน้าจอ กรุณาโหลดข้อมูลล่าสุด" }, { status: 409 });
       }
       const requiredConfirmation = `ลบถาวร ${employee.name}`;
+      const payrollHistory = await getD1().prepare("SELECT 1 FROM payroll_slips WHERE employee_id=? UNION ALL SELECT 1 FROM payroll_awards WHERE employee_id=? LIMIT 1").bind(employeeId, employeeId).first();
+      if (payrollHistory) return Response.json({ error: "มีประวัติเงินเดือนหรือสิทธิ์เงินเพิ่ม ต้องเก็บแฟ้มไว้เพื่อการตรวจสอบ ใช้สถานะลาออก/เก็บถาวรแทนการลบข้อมูล" }, { status: 409 });
       if (payload.confirmation !== requiredConfirmation) {
         return Response.json({ error: `พิมพ์ “${requiredConfirmation}” ให้ตรงเพื่อยืนยันการลบถาวร` }, { status: 400 });
       }
@@ -1944,9 +1947,11 @@ export async function POST(request: Request) {
       const evaluatedLevel = Number(evaluation?.skillScores?.[skill.id] ?? 0);
       if (evaluatedLevel < level) return Response.json({ error: `ผลประเมินล่าสุดของ ${skill.name} ยังไม่ถึงระดับ ${level}` }, { status: 400 });
       const [duplicate] = await db.select().from(skillAchievements).where(and(eq(skillAchievements.employeeId, employeeId), and(eq(skillAchievements.skillId, skill.id), eq(skillAchievements.level, level)))).limit(1);
-      if (duplicate) return Response.json({ error: "ระดับสกิลนี้ได้รับเงินเพิ่มแล้ว ระบบไม่เพิ่มซ้ำ" }, { status: 409 });
+      if (duplicate) return Response.json({ error: "ระดับสกิลนี้ได้รับการยืนยันแล้ว ระบบไม่บันทึกซ้ำ" }, { status: 409 });
       const now = new Date().toISOString();
-      const allowance = skillAllowanceFor(role.id, level);
+      // New certifications no longer silently increase permanent base salary.
+      // The owner grants finite cash awards through the payroll module instead.
+      const allowance = 0;
       const verifier = evaluatorName(currentUser);
       const achievement = {
         id: `achievement-${crypto.randomUUID()}`,
@@ -1964,7 +1969,7 @@ export async function POST(request: Request) {
       };
       const initialHrProfile = {
         employeeId,
-        currentSalary: Math.min(1_000_000, Math.round(roleSalaryBands[role.id].mid + allowance)),
+        currentSalary: 0,
         salaryReviewMonth: "รอบถัดไปตามนโยบายบริษัท",
         updatedAt: now,
       };
@@ -1972,7 +1977,7 @@ export async function POST(request: Request) {
         id: `action-${crypto.randomUUID()}`,
         employeeId,
         type: "salary_review" as const,
-        title: `ยืนยัน ${skill.name} ระดับ ${level} · เพิ่ม ฿${allowance.toLocaleString("th-TH")}/เดือน`,
+        title: `ยืนยัน ${skill.name} ระดับ ${level} · รอเจ้าของกำหนดเงินเพิ่มตามช่วงเวลา`,
         status: "completed" as const,
         score: level * 20,
         dueDate: now.slice(0, 10),
@@ -1983,10 +1988,7 @@ export async function POST(request: Request) {
       try {
         await db.batch([
           db.insert(skillAchievements).values(achievement),
-          db.insert(hrProfiles).values(initialHrProfile).onConflictDoUpdate({
-            target: hrProfiles.employeeId,
-            set: { currentSalary: sql`min(1000000, ${hrProfiles.currentSalary} + ${allowance})`, updatedAt: now },
-          }),
+          db.insert(hrProfiles).values(initialHrProfile).onConflictDoNothing({ target: hrProfiles.employeeId }),
           db.insert(talentActions).values(talentAction),
         ]);
       } catch (error) {

@@ -106,7 +106,9 @@ test("the Settings Center exposes the backup download only inside the owner view
 
 test("the import script restores parent tables first and refuses archives without a manifest", async () => {
   const script = await source("scripts/import-backup.mjs");
-  assert.match(script, /INSERT OR REPLACE INTO/);
+  assert.match(script, /INSERT INTO/);
+  assert.doesNotMatch(script, /INSERT OR REPLACE INTO/);
+  assert.match(script, /Restore target is not empty/);
   assert.match(script, /PRAGMA defer_foreign_keys = true;/);
   assert.match(script, /REFERENCES\\s\+/);
   assert.match(script, /manifest\.json is missing/);

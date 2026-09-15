@@ -107,7 +107,7 @@ test("ships a clear admin-only organization-document and employee-record UI", as
   assert.match(page, /view === "organizationDocs" && isAdmin && permissions\.canManageOrganizationDocuments && !isEmployeePreview/);
   assert.match(page, /permissions\.canManageEmployeeWarnings && <section className="employee-warning-card">/);
   assert.match(page, /permissions\.canManageEmployeeRecognitions && <section className="employee-recognition-card">/);
-  assert.match(page, /const employeeViews: View\[\] = \["work", "portfolio", "office", "power", "peopleOps"\]/);
+  assert.match(page, /const employeeViews: View\[\] = \["work", "portfolio", "office", "power", "peopleOps", "payroll"\]/);
 
   const organizationFileInput = page.match(/className="wide organization-record-file"[\s\S]{0,700}/)?.[0] ?? "";
   assert.ok(organizationFileInput, "expected the organization-document file input");

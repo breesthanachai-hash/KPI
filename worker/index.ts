@@ -59,7 +59,7 @@ const worker = {
 
 function secureResponse(response: Response, requestUrl: URL) {
   const headers = new Headers(response.headers);
-  headers.set("content-security-policy", "base-uri 'self'; frame-ancestors 'none'; object-src 'none'");
+  if (!headers.has("content-security-policy")) headers.set("content-security-policy", "base-uri 'self'; frame-ancestors 'none'; object-src 'none'");
   headers.set("cross-origin-opener-policy", "same-origin");
   headers.set("permissions-policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()");
   headers.set("referrer-policy", "strict-origin-when-cross-origin");

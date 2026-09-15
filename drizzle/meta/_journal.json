@@ -176,6 +176,13 @@
       "when": 1789042675958,
       "tag": "0024_gifted_peter_parker",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1789275943302,
+      "tag": "0025_mighty_iron_lad",
+      "breakpoints": true
     }
   ]
 }

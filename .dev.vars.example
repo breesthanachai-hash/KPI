@@ -1,0 +1,7 @@
+# Local-only example. Never put real secrets in version control.
+PEOPLE_PULSE_CANONICAL_ORIGIN=https://peoplepulse.profaiprofit.com
+# Gmail sending is disabled until all three OAuth values are configured.
+PEOPLE_PULSE_GMAIL_CLIENT_ID=
+PEOPLE_PULSE_GMAIL_CLIENT_SECRET=
+PEOPLE_PULSE_GMAIL_REFRESH_TOKEN=
+# Keep existing local authentication values in .dev.vars; do not replace that file.
