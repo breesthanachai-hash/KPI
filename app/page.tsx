@@ -5,6 +5,8 @@ import type { Office3DPerson } from "./office-3d";
 import AiAssistant, { type PeopleAiActionId, type PeopleAiContext } from "./ai-assistant";
 import AiRobotMascot from "./ai-robot-mascot";
 import { AuthScreen, ChangePasswordDialog } from "./auth-ui";
+import EmployeeHistory from "./employee-history";
+import DailyAssignments from "./daily-assignments";
 import { MAX_NEW_PASSWORD_LENGTH, MIN_GENERAL_PASSWORD_LENGTH, passwordMeetsMinimum } from "../lib/password-policy.js";
 import {
   type ApplicationDocumentRecord,
@@ -758,7 +760,7 @@ function hasCompleteSkillAssessment(role: ReturnType<typeof getRole>, evaluation
 }
 
 function calculateRoleFit(profile: Record<TalentDimensionId, number>, roleId: string) {
-  const target = roleTalentProfiles[roleId];
+  const target = roleTalentProfiles[getRole(roleId).baseRoleId ?? roleId];
   const fit = talentDimensions.reduce((sum, { id }) => sum + Math.min(profile[id] / target[id], 1), 0) / talentDimensions.length * 100;
   return Math.round(fit);
 }
@@ -771,9 +773,14 @@ function radarPolygon(values: Record<TalentDimensionId, number>) {
   }).join(", ");
 }
 
+// Retired teams are unavailable for selection; role and employee history stays intact.
+const availableDepartments = Array.from(new Map(roles
+  .filter((role) => role.departmentId && role.departmentId !== "growth-commerce")
+  .map((role) => [role.departmentId, { id: role.departmentId, label: role.department }])).values());
+
 const departmentFilters = [
   { id: "all", label: "ทุกแผนก" },
-  ...Array.from(new Map(roles.map((role) => [role.departmentId, { id: role.departmentId, label: role.department }])).values()),
+  ...availableDepartments,
 ];
 
 function fallbackEvaluation(employee: EmployeeRecord): EvaluationRecord | null {
@@ -3991,8 +3998,10 @@ export default function Home() {
   const canSubmitRewardRedemption = Boolean(activeRewardEmployeeId) && !isEmployeePreview && rewardPreflightChecks.every((check) => check.passed);
   const activeViewTitle = view === "work" && workSection === "quests" ? "ศูนย์เควส"
     : view === "work" && workSection === "points" && pointPanel === "policies" ? "กฎองค์กรและการรับทราบ"
-    : isEmployeeUser && view === "work" && workSection === "points" ? "Points สะสมของฉัน"
-    : isEmployeeUser && view === "work" && workSection === "rewards" ? "แลกรางวัล"
+    : view === "work" && workSection === "points" ? (isEmployeeUser ? "Points ของฉัน" : "จัดการ Points")
+    : view === "work" && workSection === "rewards" ? (isEmployeeUser ? "ร้านรางวัล" : "รางวัล")
+    : view === "work" && workSection === "projects" ? "โปรเจกต์"
+    : view === "work" && workSection === "tasks" ? "รายการงาน"
       : isEmployeeUser && view === "work" ? "งานของฉัน"
         : isEmployeeUser && view === "portfolio" ? "แฟ้มผลงานของฉัน"
           : isEmployeeUser && view === "office" ? "สำนักงานของทีม"
@@ -4003,6 +4012,9 @@ export default function Home() {
     : view === "work" && workSection === "points" && pointPanel === "policies" ? (isAdmin ? "ร่าง ตรวจความครบถ้วน และประกาศกฎองค์กรให้พนักงานรับทราบอย่างตรวจสอบได้" : "อ่านกฎที่ประกาศใช้ เข้าใจกติกา Points และบันทึกการรับทราบของคุณ")
     : isEmployeeUser && view === "work" && workSection === "points" ? "ตรวจสอบยอด Points รายการได้–เสีย Points และที่มาทุกรายการของคุณ"
     : isEmployeeUser && view === "work" && workSection === "rewards" ? "ใช้ Points ของคุณแลกรางวัล และติดตามสถานะคำขอได้ในที่เดียว"
+    : view === "work" && workSection === "projects" ? "จัดการโปรเจกต์ ติดตามงาน ผู้รับผิดชอบ และความคืบหน้าของแต่ละโครงการ"
+    : view === "work" && workSection === "points" ? "จัดการยอด Points รอบการให้คะแนน กติกา และประวัติการได้รับ–ใช้ Points"
+    : view === "work" && workSection === "rewards" ? "จัดการรายการรางวัล จำนวนสิทธิ์คงเหลือ และติดตามประวัติการแลกรางวัล"
       : isEmployeeUser && view === "work" ? "ดูสิ่งที่ต้องทำ เริ่มงาน อัปเดตความคืบหน้า และส่งหลักฐานได้ในไม่กี่ขั้นตอน"
         : isEmployeeUser && view === "portfolio" ? "ค้นงานและหลักฐานของคุณ พร้อมติดตามสถานะการตรวจผลงาน"
           : isEmployeeUser && view === "office" ? "ดูสถานะภาระงานรวมของทีมโดยไม่เปิดเผยรายละเอียดงานส่วนบุคคล"
@@ -4220,8 +4232,8 @@ export default function Home() {
       description: "ดูสิ่งที่ต้องทำ เควส โปรเจกต์ และผลงาน",
       items: [
         { id: "overview", icon: "◫", label: "ภาพรวมทีม", description: "KPI และสถานะสำคัญขององค์กร", keywords: "dashboard summary ภาพรวม", active: view === "overview", primarySimple: true, primaryFull: true, visible: true },
-        { id: "tasks", icon: "✓", label: "รายการงาน", description: "งานที่ต้องทำและงานรอตรวจ", keywords: "todo task งาน", badge: String(workItems.filter((item) => item.status !== "done").length), active: view === "work" && workSection === "tasks", primarySimple: true, primaryFull: true, visible: true },
-        { id: "quests", icon: "Q", label: "ศูนย์เควส", description: "เควสรายบุคคล ทีม และกิจกรรม", keywords: "quest ภารกิจ", badge: String(currentQuests.length), active: view === "work" && workSection === "quests", primarySimple: true, primaryFull: true, visible: true },
+        { id: "tasks", icon: "✓", label: "รายการงาน", description: "งานที่ต้องทำและงานรอตรวจ", keywords: "todo task งาน", badge: String(workItems.filter((item) => item.status !== "done").length), active: view === "work" && workSection === "tasks", primarySimple: false, primaryFull: false, visible: true },
+        { id: "quests", icon: "Q", label: "ห้องทำงาน", description: "เควสรายบุคคล ทีม และกิจกรรม", keywords: "quest ภารกิจ", badge: String(currentQuests.length), active: view === "work" && !(workSection === "points" && pointPanel === "policies"), primarySimple: true, primaryFull: true, visible: true },
         { id: "projects", icon: "◇", label: "โปรเจกต์", description: "ติดตามกลุ่มงานและผู้รับผิดชอบ", keywords: "project โครงการ", badge: String(projects.length), active: view === "work" && workSection === "projects", primaryFull: true, visible: true },
         { id: "portfolio", icon: "▱", label: "แฟ้มผลงาน", description: "ค้นหางาน ไฟล์ และหลักฐาน", keywords: "portfolio evidence ผลงาน หลักฐาน", active: view === "portfolio", primaryFull: true, visible: true },
         { id: "points", icon: "★", label: "จัดการ Points", description: "ยอด กฎ และประวัติ Points", keywords: "point คะแนน แต้ม", active: view === "work" && workSection === "points" && pointPanel !== "policies", primaryFull: true, visible: true },
@@ -4233,7 +4245,7 @@ export default function Home() {
       label: "ทีมและผลงาน",
       description: "ค้นหาคน ประเมินสกิล และดูความพร้อมของทีม",
       items: [
-        { id: "employees", icon: "♙", label: "พนักงาน", description: "รายชื่อ ตำแหน่ง และผลประเมิน", keywords: "employee kpi คน บุคลากร", active: view === "employees", primarySimple: true, primaryFull: true, visible: true },
+        { id: "employees", icon: "♙", label: "จัดการพนักงาน", description: "พนักงาน ผลประเมิน และแฟ้มข้อมูล", keywords: "employee kpi คน บุคลากร", active: view === "employees" || view === "profiles", primarySimple: true, primaryFull: true, visible: true },
         { id: "skills", icon: "✦", label: "สกิลทีม", description: "Skill Matrix และช่องว่างทักษะ", keywords: "skill competency", active: view === "skills", primaryFull: true, visible: true },
         { id: "power", icon: "◆", label: "ค่าพลัง", description: "เปรียบเทียบศักยภาพของทีม", keywords: "power rating", active: view === "power", primaryFull: true, visible: true },
         { id: "office", icon: "⌂", label: "สำนักงานจำลอง", description: "ภาระงานของทีมในมุมมอง 3D", keywords: "office 3d สำนักงาน", badge: String(officePressureCount), active: view === "office", primaryFull: true, visible: publicSystemSettings.features.office3dEnabled },
@@ -4245,7 +4257,7 @@ export default function Home() {
       description: "แฟ้มบุคลากร เอกสาร กฎ และสิทธิ์ผู้ใช้",
       items: [
         { id: "people-ops", icon: "◷", label: "เวลาและการเติบโต", description: "ลงเวลา วันลา และเส้นทางเติบโต", keywords: "attendance leave growth salary", badge: pendingLeaveRecords.length ? String(pendingLeaveRecords.length) : undefined, active: view === "peopleOps", primaryFull: true, visible: Boolean(isAdmin) },
-        { id: "profiles", icon: "▣", label: "แฟ้มพนักงาน", description: "ข้อมูลส่วนตัว เอกสาร และสัญญา", keywords: "dossier profile contract", active: view === "profiles", primaryFull: true, visible: Boolean(isAdmin) },
+        { id: "profiles", icon: "▣", label: "พนักงานทั้งหมด", description: "รายชื่อ รายละเอียด แก้ไข และประวัติการแก้ไข", keywords: "dossier profile contract log แฟ้มพนักงาน", active: view === "profiles", primarySimple: false, primaryFull: false, visible: Boolean(isAdmin) },
         { id: "organization-docs", icon: "▤", label: "เอกสารองค์กร", description: "คลังเอกสารและแม่แบบ", keywords: "document template เอกสาร", badge: String(organizationDocuments.length), active: view === "organizationDocs", primaryFull: true, visible: Boolean(isAdmin && permissions.canManageOrganizationDocuments) },
         { id: "hr", icon: "⬡", label: "บริหารบุคลากร", description: "แผนพัฒนา ตำแหน่ง และค่าตอบแทน", keywords: "hr talent workforce salary", active: view === "hr", primaryFull: true, visible: Boolean(isAdmin) },
         { id: "policies", icon: "§", label: "กฎองค์กร", description: "ร่าง ประกาศ และติดตามการรับทราบ", keywords: "policy rule นโยบาย", active: view === "work" && workSection === "points" && pointPanel === "policies", primaryFull: true, visible: Boolean(isAdmin) },
@@ -4356,7 +4368,7 @@ export default function Home() {
           <span><strong>{publicSystemSettings.organization.name}</strong><small>{isEmployeeUser ? "EMPLOYEE PORTAL" : `${publicSystemSettings.organization.shortName} · PEOPLE & WORK OS`}</small></span>
         </button>
         <nav className="primary-workspace-nav" aria-label="เมนูหลัก">
-          {primaryWorkspaceNavigationItems.map((item) => <button key={item.id} type="button" className={item.active ? "active" : ""} onClick={() => openWorkspaceDestination(item.id)} aria-current={item.active ? "page" : undefined}><span aria-hidden="true">{item.icon}</span><b>{item.label}</b>{item.badge && <em>{item.badge}</em>}</button>)}
+          {primaryWorkspaceNavigationItems.map((item) => <button key={item.id} type="button" className={item.active ? "active" : ""} onClick={() => openWorkspaceDestination(item.id)} aria-current={item.active ? "page" : undefined}><span aria-hidden="true">{item.id === "quests" ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="7" y="3" width="10" height="7" rx="1.5" /><path d="M12 10v4M9 14h6M3 15h18M5 15v6M19 15v6" /></svg> : item.icon}</span><b>{item.label}</b>{item.badge && <em>{item.badge}</em>}</button>)}
           <button type="button" className={`workspace-menu-trigger ${showWorkspaceMenu ? "active" : ""}`} onClick={openWorkspaceMenu} aria-haspopup="dialog" aria-expanded={showWorkspaceMenu} aria-controls="workspace-menu"><span aria-hidden="true">☷</span><b>เมนูทั้งหมด</b><em>{workspaceNavigationGroups.flatMap((group) => group.items).filter((item) => item.visible).length}</em></button>
         </nav>
         <div className="header-actions">
@@ -4504,7 +4516,7 @@ export default function Home() {
             </div>
           </section>
         )}
-        <div className="page-heading">
+        <div className="page-heading" data-work-section={view === "work" ? workSection : undefined}>
           <div>
             <p className="eyebrow">{activeViewEyebrow}</p>
             <h1>{activeViewTitle}</h1>
@@ -4546,6 +4558,11 @@ export default function Home() {
             }}><span aria-hidden="true">{view === "power" ? "VS" : view === "office" ? "⌁" : view === "peopleOps" ? "◷" : "＋"}</span> {view === "office" ? "หาคนพร้อมรับงาน" : view === "peopleOps" ? "ลงเวลาตอนนี้" : view === "hr" ? "เพิ่มแผนบุคลากร" : view === "profiles" ? "แก้ไขโปรไฟล์" : view === "power" ? "เปรียบเทียบค่าพลัง" : view === "portfolio" ? "เติมหลักฐานที่ขาด" : "เริ่มประเมิน"}</button>
           </div>}
         </div>
+
+        {!isEmployeeUser && (view === "employees" || view === "profiles") && <nav className="employee-management-tabs" aria-label="ส่วนจัดการพนักงาน">
+          <button type="button" className={view === "employees" ? "active" : ""} aria-current={view === "employees" ? "page" : undefined} onClick={() => setView("employees")}><span aria-hidden="true">♙</span><span><strong>พนักงาน</strong><small>ตำแหน่งและผลประเมิน</small></span></button>
+          {canManageEmployeeFiles && <button type="button" className={view === "profiles" ? "active" : ""} aria-current={view === "profiles" ? "page" : undefined} onClick={() => setView("profiles")}><span aria-hidden="true">▣</span><span><strong>พนักงานทั้งหมด</strong><small>ข้อมูล แก้ไข และประวัติ LOG</small></span></button>}
+        </nav>}
 
         {!isEmployeeUser && view !== "access" && view !== "work" && view !== "organizationDocs" && view !== "settings" && <div className="filter-row" aria-label="กรองตามแผนก">
           {departmentFilters.map((filter) => (
@@ -4719,6 +4736,7 @@ export default function Home() {
 
             {profileEmployee ? (
               <section className="dossier-main">
+                <EmployeeHistory key={profileEmployee.id} employeeId={profileEmployee.id} revision={profileEmployee.updatedAt} />
                 <header className="dossier-hero">
                   <div className="dossier-person"><div className="profile-photo-control"><EmployeeAvatar employee={profileEmployee} profile={profileRecord} className="avatar-dossier" /><label>{uploadingProfileImage ? "กำลังอัปโหลด" : "เปลี่ยนรูป"}<input type="file" accept=".jpg,.jpeg,.png,.webp" disabled={uploadingProfileImage || profileEmployee.status === "archived"} onChange={(event) => { const file = event.target.files?.[0]; void uploadProfileImage(file); event.currentTarget.value = ""; }} /></label></div><div><p className="eyebrow">DIGITAL EMPLOYEE FILE</p><h2>{profileEmployee.name}</h2><small>{employeePositionLabel(profileEmployee)} · {getRole(profileEmployee.roleId).department}</small><em className={`employee-lifecycle-badge status-${profileEmployee.status}`}>{employeeLifecycleLabel(profileEmployee.status)}</em></div></div>
                   <div className="dossier-completeness"><span style={{ "--dossier-score": `${dossierCompleteness}%` } as React.CSSProperties}><b>{dossierCompleteness}%</b></span><div><strong>ความสมบูรณ์ของแฟ้ม</strong><small>{dossierCompleteness >= 85 ? "ข้อมูลพร้อมใช้งาน" : "ยังมีข้อมูลหรือเอกสารที่ต้องเติม"}</small></div></div>
@@ -5443,7 +5461,7 @@ export default function Home() {
                   <label className="wide"><span>สถานะบัญชี</span><select value={userAccountForm.status} onChange={(event) => setUserAccountForm((form) => ({ ...form, status: event.target.value as UserAccountRecord["status"] }))}><option value="active">ใช้งาน</option><option value="inactive">เพิกถอนสิทธิ์</option></select></label>
                   <div className={`access-selected-role-note wide ${selectedUserKind}`} aria-live="polite"><strong>{selectedUserKindLabel} · {userAccountForm.role === "admin" ? "HR / Admin" : userAccountForm.role === "manager" ? "หัวหน้าทีม" : "พนักงาน"}</strong><span>{selectedUserRoleGuide}</span></div>
                   {userAccountForm.role !== "admin" && <label className="wide"><span>ผูกกับโปรไฟล์พนักงาน</span><select required value={userAccountForm.employeeId} onChange={(event) => setUserAccountForm((form) => ({ ...form, employeeId: event.target.value }))}><option value="">เลือกพนักงาน</option>{employees.filter((employee) => employee.status === "active" && (!userAccounts.some((account) => account.employeeId === employee.id && account.id !== userAccountForm.accountId))).map((employee) => <option key={employee.id} value={employee.id}>{employee.name} · {employeePositionLabel(employee)}</option>)}</select></label>}
-                  {userAccountForm.role === "manager" && <label className="wide"><span>ทีมที่ดูแล</span><select value={userAccountForm.departmentId} onChange={(event) => setUserAccountForm((form) => ({ ...form, departmentId: event.target.value }))}><option value="">ใช้แผนกตามโปรไฟล์พนักงาน</option>{Array.from(new Map(roles.map((role) => [role.departmentId, role.department])).entries()).map(([departmentId, department]) => <option key={departmentId} value={departmentId}>{department}</option>)}</select></label>}
+                  {userAccountForm.role === "manager" && <label className="wide"><span>ทีมที่ดูแล</span><select value={userAccountForm.departmentId} onChange={(event) => setUserAccountForm((form) => ({ ...form, departmentId: event.target.value }))}><option value="">ใช้แผนกตามโปรไฟล์พนักงาน</option>{userAccountForm.departmentId && !availableDepartments.some((department) => department.id === userAccountForm.departmentId) && <option value={userAccountForm.departmentId} disabled>ทีมเดิม (เลิกใช้งาน)</option>}{availableDepartments.map((department) => <option key={department.id} value={department.id}>{department.label}</option>)}</select></label>}
                 </div>
                 <div className="access-form-actions">{userAccountForm.accountId && <button type="button" onClick={() => { setUserAccountForm(blankUserAccountForm()); setShowTemporaryPassword(false); }}>ยกเลิกการแก้ไข</button>}<button className="primary" disabled={isSaving}>{isSaving ? "กำลังบันทึก..." : userAccountForm.accountId ? "บันทึกบัญชี" : "สร้างบัญชีและรหัสชั่วคราว"}</button></div>
                 {credentialResult && <section className="credential-result-panel" role="status" aria-live="polite" aria-labelledby="credential-result-title">
@@ -5708,7 +5726,7 @@ export default function Home() {
 
               <div className="quest-control-bar">
                 <div className="quest-type-filters" role="group" aria-label="กรองประเภทเควส">
-                  {([{ id: "all", label: "ทุกเควส", icon: "Q" }, ...Object.entries(questTypeMeta).map(([id, meta]) => ({ id, label: meta.shortLabel, icon: meta.icon }))] as { id: QuestTypeFilter; label: string; icon: string }[]).map((filter) => <button type="button" key={filter.id} className={questTypeFilter === filter.id ? "active" : ""} aria-pressed={questTypeFilter === filter.id} onClick={() => setQuestTypeFilter(filter.id)}><span aria-hidden="true">{filter.icon}</span>{filter.label}<b>{filter.id === "all" ? quests.length : quests.filter((quest) => quest.type === filter.id).length}</b></button>)}
+                  {([{ id: "all", label: "ทุกเควส", icon: "☷" }, ...Object.entries(questTypeMeta).map(([id, meta]) => ({ id, label: meta.shortLabel, icon: id === "individual" ? "👤" : id === "team" ? "👥" : "✦" }))] as { id: QuestTypeFilter; label: string; icon: string }[]).map((filter) => <button type="button" key={filter.id} className={questTypeFilter === filter.id ? "active" : ""} aria-pressed={questTypeFilter === filter.id} onClick={() => setQuestTypeFilter(filter.id)}><span aria-hidden="true">{filter.icon}</span>{filter.label}<b>{filter.id === "all" ? quests.length : quests.filter((quest) => quest.type === filter.id).length}</b></button>)}
                 </div>
                 {permissions.canManageQuests && <div className="quest-status-filters" role="group" aria-label="กรองสถานะเควส">
                   {([{ id: "current", label: "กำลังจัดการ" }, { id: "archived", label: "ประวัติ" }, { id: "all", label: "ทั้งหมด" }] as { id: QuestStatusFilter; label: string }[]).map((filter) => <button type="button" key={filter.id} className={questStatusFilter === filter.id ? "active" : ""} aria-pressed={questStatusFilter === filter.id} onClick={() => setQuestStatusFilter(filter.id)}>{filter.label}</button>)}
@@ -5756,6 +5774,7 @@ export default function Home() {
               <div className="quest-review-note" role="note"><span aria-hidden="true">✓</span><p><strong>มอบสิทธิ์หลัง HR / Admin ตรวจหลักฐานเท่านั้น</strong><small>เมื่อยืนยันผล ระบบจะเพิ่ม Points ตามจำนวนที่ประกาศและตัดสต็อกรางวัลในรายการเดียว พร้อมเก็บผู้ตรวจ นโยบาย และหลักฐานเพื่อป้องกันการมอบซ้ำ</small></p></div>
             </section>}
 
+            {workSection === "tasks" && <DailyAssignments employeeId={currentUser?.employeeId} />}
             {workSection === "tasks" && <section className="simple-todo-card" aria-labelledby="simple-todo-title">
               <div className="simple-todo-heading">
                 <div><p className="eyebrow">งานของวันนี้</p><h2 id="simple-todo-title">{isEmployeeUser ? "ฉันต้องทำอะไรต่อ?" : "ทีมต้องทำอะไรต่อ?"}</h2><p>รายการเดียวจบ เรียงงานเร่งด่วนและกำหนดส่งให้แล้ว</p></div>
@@ -6223,10 +6242,9 @@ export default function Home() {
                 <label><span>รางวัลพิเศษ <em>ไม่บังคับ</em></span><select disabled={editingQuestHasCompletions || (!questRewardLinkingEnabled && !editingQuest?.rewardId)} value={questForm.rewardId ?? ""} onChange={(event) => setQuestForm((form) => ({ ...form, rewardId: event.target.value || null }))}><option value="">ไม่มีรางวัลพิเศษ</option>{questRewardChoices.map((reward) => <option key={reward.id} value={reward.id}>{reward.icon} {reward.title}{reward.isActive ? ` · เหลือ ${reward.stock}` : " · ปิดอยู่"}</option>)}</select>{questRewardUnavailable && <small className="quest-form-error" role="alert">รางวัลที่ผูกกับเควสต้องเปิดใช้งาน กรุณาเลือกรางวัลอื่นหรือนำรางวัลนี้ออก</small>}{!questRewardLinkingEnabled && <small>เจ้าของระบบปิดการผูกรางวัลใหม่ คุณยังเก็บหรือนำรางวัลเดิมออกจากเควสที่มีอยู่ได้</small>}</label>
                 <label><span>สถานะ</span><select value={questForm.status} onChange={(event) => { const status = event.target.value as QuestRecord["status"]; setQuestForm((form) => ({ ...form, status, progress: status === "completed" ? 100 : form.progress })); }}>{questAllowedStatuses.map((status) => <option key={status} value={status}>{status === "draft" ? "ฉบับร่าง · ยังไม่แสดง" : status === "active" ? "เปิดใช้งาน · แสดงตามขอบเขต" : "สำเร็จแล้ว · ปิดผล"}</option>)}</select><small>{questStatusMeta[questForm.status].description}</small></label>
                 <label className="quest-feature-toggle"><input type="checkbox" checked={questForm.isFeatured} onChange={(event) => setQuestForm((form) => ({ ...form, isFeatured: event.target.checked }))} /><span><strong>แสดงเป็นเควสเด่น</strong><small>ปักไว้ก่อนเควสทั่วไปและติดป้ายเด่น</small></span></label>
-                <label className="wide quest-progress-field"><span>ความคืบหน้า <b>{questForm.status === "completed" ? 100 : questForm.progress}%</b></span><input type="range" min={0} max={100} step={5} disabled={questForm.status === "completed"} value={questForm.status === "completed" ? 100 : questForm.progress} onChange={(event) => setQuestForm((form) => ({ ...form, progress: Number(event.target.value) }))} style={{ "--range-value": `${questForm.status === "completed" ? 100 : questForm.progress}%` } as React.CSSProperties} /><small>HR / Admin อัปเดตตามผลที่ตรวจสอบแล้ว สถานะสำเร็จจะตั้งเป็น 100%</small></label>
               </div>
 
-              {questTargetInvalid && <div className="quest-form-validation" role="alert"><span aria-hidden="true">!</span><p><strong>ยังกำหนดผู้เข้าร่วมไม่ครบ</strong><small>{questForm.type === "individual" ? "เลือกพนักงาน 1 คนสำหรับเควสรายบุคคล" : questForm.type === "team" ? "เลือกอย่างน้อย 1 แผนกสำหรับเควสทีม" : "กิจกรรมองค์กรไม่ต้องกำหนดผู้เข้าร่วม"}</small></p></div>}
+              {questTargetInvalid && <div className="quest-form-validation quest-target-validation" role="alert"><span aria-hidden="true">!</span><p><strong>ยังกำหนดผู้เข้าร่วมไม่ครบ</strong><small>{questForm.type === "individual" ? "เลือกพนักงาน 1 คนสำหรับเควสรายบุคคล" : questForm.type === "team" ? "เลือกอย่างน้อย 1 แผนกสำหรับเควสทีม" : "กิจกรรมองค์กรไม่ต้องกำหนดผู้เข้าร่วม"}</small></p></div>}
               {questCreatesBlockedRewardLink && <div className="quest-form-validation" role="alert"><span aria-hidden="true">!</span><p><strong>ไม่สามารถผูกรางวัลใหม่กับเควสได้</strong><small>เจ้าของระบบปิด Workflow นี้แล้ว กรุณาเลือก “ไม่มีรางวัลพิเศษ” ก่อนบันทึก</small></p></div>}
               {editingQuestHasCompletions && <div className="quest-form-validation locked" role="status"><span aria-hidden="true">⌁</span><p><strong>เงื่อนไขเควสถูกล็อกหลังมอบสิทธิ์ครั้งแรก</strong><small>เพื่อรักษาประวัติเดิม จะแก้ประเภท ชื่อ รายละเอียด ผู้เข้าร่วม ช่วงเวลา Points หรือรางวัลไม่ได้ แต่ยังอัปเดตสถานะ ความคืบหน้า และการแสดงเควสเด่นได้</small></p></div>}
               {questPolicyUnavailable && <div className="quest-form-validation" role="alert"><span aria-hidden="true">!</span><p><strong>ยังบันทึกสถานะนี้ไม่ได้ เพราะไม่มีกฎ Points ที่มีผลอยู่</strong><small>บันทึกเควสใหม่เป็นฉบับร่างได้ หรือเผยแพร่นโยบายใน “จัดการ Points” → “กฎ Points” ก่อนเปิดหรือปิดสำเร็จ</small></p></div>}
@@ -6420,7 +6438,7 @@ export default function Home() {
                 </div>
                 {skillProfileEvaluation ? (
                   <div className="talent-fit-grid">
-                    <RadarChart values={skillProfileTalent} target={roleTalentProfiles[skillProfileRole.id]} employeeName={skillProfileEmployee.name} />
+                    <RadarChart values={skillProfileTalent} target={roleTalentProfiles[skillProfileRole.baseRoleId ?? skillProfileRole.id]} employeeName={skillProfileEmployee.name} />
                     <div className="role-fit-panel">
                       <div className="role-fit-title"><span>ตำแหน่งที่เหมาะสม</span><small>เรียงจากรูปแบบสกิลที่ใกล้เคียงที่สุด</small></div>
                       <div className="role-fit-list">
