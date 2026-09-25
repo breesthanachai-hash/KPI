@@ -2926,16 +2926,15 @@ footer { border-top-color: #ccd9eb; color: #365d80 !important; }
 .ai-skill-path-heading h3 { margin: 2px 0 0; color: #173252; font-size: 20px; line-height: 1.3; }
 .ai-skill-path-heading p:not(.eyebrow) { max-width: 760px; margin: 6px 0 0; color: #365d80; font-size: 13px; line-height: 1.5; }
 .ai-skill-path-heading > span { flex: 0 0 auto; border-radius: 999px; padding: 7px 11px; background: #0f79b9; color: #fff; font-size: 12px; font-weight: 850; }
-.ai-skill-stage-grid { margin-top: 15px; display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px; }
-.ai-skill-stage-grid article { min-width: 0; display: grid; grid-template-columns: 36px minmax(0,1fr); gap: 11px; padding: 15px; border: 1px solid #c7dcec; border-radius: 14px; background: #fff; }
-.ai-skill-stage-grid article > span { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px; background: #dff2ff; color: #0d6398; font-size: 12px; font-weight: 900; }
-.ai-skill-stage-grid article > div { min-width: 0; display: grid; align-content: start; gap: 3px; }
-.ai-skill-stage-grid small { color: #0d6398 !important; font-size: 11px; font-weight: 900; }
-.ai-skill-stage-grid strong { color: #173252; font-size: 14px; line-height: 1.35; }
-.ai-skill-stage-grid p { margin: 2px 0 0; color: #365d80; font-size: 12px; line-height: 1.45; }
-.ai-skill-stage-grid b { grid-column: 2; justify-self: start; border-radius: 999px; padding: 5px 8px; background: #eef6fc; color: #245f8f; font-size: 11px; }
-.ai-skill-stage-grid article.stage-2 > span { background: #dfe9ff; color: #315fb6; }
-.ai-skill-stage-grid article.stage-3 > span { background: #e8e1ff; color: #684cb4; }
+.ai-skill-stage-grid { margin-top: 22px; display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px 16px; }
+.ai-skill-stage-grid article { --stage-accent: #086b9e; --stage-soft: #e0f3ff; min-width: 0; display: grid; grid-template-rows: subgrid; grid-row: span 5; gap: 12px; padding: 22px; border: 1px solid #c7dcec; border-top: 4px solid var(--stage-accent); border-radius: 18px; background: linear-gradient(160deg,var(--stage-soft),#fff 55%); box-shadow: 0 6px 18px #17325208; }
+.ai-skill-stage-grid article.stage-2 { --stage-accent: #2858b8; --stage-soft: #e7eeff; }
+.ai-skill-stage-grid article.stage-3 { --stage-accent: #6941ad; --stage-soft: #efe7ff; }
+.ai-skill-stage-grid article > span { width: 44px; height: 44px; display: grid; place-items: center; border: 1px solid #ffffff; border-radius: 14px; background: var(--stage-accent); color: #fff; font-size: 16px; font-weight: 900; box-shadow: 0 4px 10px #17325215; }
+.ai-skill-stage-grid article > small { color: var(--stage-accent) !important; font-size: 13px; font-weight: 900; }
+.ai-skill-stage-grid article > strong { color: #173252; font-size: 15px; line-height: 1.5; }
+.ai-skill-stage-grid article > p { margin: 0; color: #365d80; font-size: 13px; line-height: 1.8; }
+.ai-skill-stage-grid article > b { align-self: end; justify-self: start; display: inline-flex; align-items: center; min-height: 30px; border-radius: 999px; padding: 6px 12px; background: var(--stage-soft); color: var(--stage-accent); font-size: 11px; line-height: 1.5; white-space: nowrap; }
 .competency-fairness-note { margin-top: 15px; display: grid; grid-template-columns: 34px minmax(0,1fr); align-items: center; gap: 11px; padding: 13px 15px; border: 1px solid #bfd3eb; border-radius: 14px; background: #eef5fc; }
 .competency-fairness-note > span,.skill-evaluation-note > span { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 10px; background: #245fbe; color: #fff; font-size: 14px; font-weight: 900; }
 .competency-fairness-note p { margin: 0; color: #294e72; font-size: 14px; line-height: 1.55; }
@@ -6207,6 +6206,31 @@ input::placeholder,textarea::placeholder { color: #526f8d !important; opacity: 1
 .assignment-binding-preview { padding: 16px; border-radius: 12px; background: #fff; }
 .assignment-binding-roster { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,260px),1fr)); gap: 12px; }
 .assignment-binding-panel input[type="checkbox"] { width: 18px; min-height: 18px; vertical-align: middle; }
+.attendance-checkin { padding: clamp(18px,3vw,32px); border: 1px solid #cddff5; border-radius: 24px; background: linear-gradient(130deg,#fff,#edf8ff); }
+.checkin-summary { display:flex; flex-wrap:wrap; gap:24px; padding:20px; margin:20px 0; background:#e3efff; border-radius:16px; }
+.checkin-guide { display: grid; gap: 10px; margin-block: 18px; }
+.checkin-guide p { margin: 0; line-height: 1.7; }
+.checkin-guide strong { color: #173252; }
+.attendance-submenu { display:flex; flex-wrap:wrap; gap:8px; padding:8px; margin-bottom:16px; border:1px solid #d2e3f7; border-radius:16px; background:#fff; }
+.attendance-submenu button { padding:12px 20px; border:0; border-radius:10px; background:transparent; color:#24456c; font:inherit; font-weight:700; cursor:pointer; }
+.attendance-submenu button[aria-current="page"] { background:#2156aa; color:white; }
+.attendance-month { display:grid; gap:8px; max-width:240px; margin-block:24px; font-weight:700; }
+.attendance-month input { padding:10px 14px; min-width:0; border:1px solid #bbcee6; border-radius:10px; background:#fff; color:#173252; font:inherit; }
+.attendance-history-table { width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; }
+.attendance-history-table caption { text-align:left; margin-bottom:12px; color:#365d80; }
+.attendance-history-table th,.attendance-history-table td { padding:14px 10px; text-align:left; border-bottom:1px solid #dce6f4; }
+.attendance-history-table th { background:#eaf2ff; color:#173252; }
+.checkin-capture-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:24px; margin-block:24px; }
+.checkin-capture-grid video,.checkin-capture-grid img { width:100%; max-height:380px; object-fit:contain; border-radius:16px; background:#162c4d; }
+.checkin-location { padding:24px; background:white; border:1px solid #d2e3f7; border-radius:18px; }
+.checkin-actions { display:flex; flex-wrap:wrap; gap:12px; margin-top:12px; }
+.attendance-checkin button { padding:12px 18px; margin:4px; border:0; border-radius:12px; background:#2156aa; color:#fff; font:inherit; cursor:pointer; }
+.attendance-checkin button:disabled { opacity:.5; cursor:not-allowed; }
+.attendance-checkin [role="alert"] { color:#a02030; }
+.attendance-checkin [role="status"] { padding:12px; border-radius:12px; background:#e6f4ee; color:#17533f; }
+.attendance-checkin li { margin-block:10px; }
+@media (min-width:1100px) { .mission-layout > .work-section-tabs { grid-template-columns:repeat(6,minmax(0,1fr)); } }
+@media (max-width:700px) { .checkin-capture-grid { grid-template-columns:1fr; } }
 .employee-management-tabs { display: flex; flex-wrap: wrap; gap: 12px; padding: 10px; margin-block: 18px; background: #fff; border: 1px solid #dbe6f5; border-radius: 18px; }
 .employee-management-tabs > button { flex: 1 1 220px; display: flex; align-items: center; gap: 12px; padding: 16px; text-align: left; border: 1px solid #d1def3; border-radius: 13px; background: #eef5ff; cursor: pointer; }
 .employee-management-tabs > button > span:last-child { display: grid; gap: 4px; }

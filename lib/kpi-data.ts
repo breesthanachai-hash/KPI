@@ -1067,19 +1067,19 @@ const previousRoles: RoleTemplate[] = [
 const positionDefinitions = [
   { id: "packing-shipping-officer", name: "เจ้าหน้าที่แพ็คและจัดส่งสินค้า", base: "customer-service", duties: ["แพ็คสินค้าที่บ้านแพ็ค ตรวจสินค้าและจำนวนให้ตรงกับออเดอร์", "เตรียมพัสดุและจัดส่งสินค้า พร้อมตรวจข้อมูลผู้รับและติดตามการส่งมอบ"] },
   { id: "sales-service-admin", name: "แอดมินบริการลูกค้าและปิดการขาย", base: "customer-service", duties: ["ตอบแชท ให้ข้อมูลสินค้า และบริการลูกค้า", "คีย์ออเดอร์ ตรวจรายละเอียดคำสั่งซื้อและข้อมูลจัดส่ง", "ติดตามลูกค้าและปิดการขาย พร้อมประสานงานส่งต่อออเดอร์"] },
-  { id: "accounting-cashflow", name: "เจ้าหน้าที่บัญชีรายรับ–รายจ่าย", base: "hr", duties: ["ตรวจ Statement SCD กสิกรและกรุงไทย พร้อมตรวจที่มาของเงินเข้า–ออก", "บันทึกรายรับรายจ่ายของบ้านนพ.ทั้งหมดในโปรแกรมมหาเทพ"] },
-  { id: "accounting-sales-tax", name: "เจ้าหน้าที่บัญชีขายและเอกสารภาษี", base: "hr", duties: ["จัดทำสลิปรายจ่ายใน Word และนำรายรับ My Order เข้า FlowAccount", "แนบใบเสร็จส่งสำนักงานบัญชีเพื่อยื่นภาษี จัดทำ COD และแจ้งยอดขายแหนมปลากราย"] },
-  { id: "hr-payroll-commission", name: "เจ้าหน้าที่ HR เงินเดือนและค่าคอมมิชชัน", base: "hr", duties: ["ลงค่าแรงพนักงานในเมืองและบ้านแพ็ค พร้อมจัดทำเงินหมุนเวียน", "คิดค่าคอมแอดมินบ้านน้ำพริก เทเลเซลล์ และมหาเทพ ลงภาษีหัก ณ ที่จ่ายและตารางเงินเดือนส่งสำนักงานบัญชี"] },
-  { id: "marketing-assistant-intern", name: "ผู้ช่วยผู้จัดการฝึกงาน — วิเคราะห์การตลาด", base: "customer-insight-marketer", duties: ["วิเคราะห์การตลาดและคู่แข่ง พร้อมสรุปประชุม", "สนับสนุนงานที่ผู้จัดการมอบหมายและโปรเจกต์รีแบรนด์สินค้าที่มีปัญหา"] },
-  { id: "ecommerce-platform-officer", name: "เจ้าหน้าที่ดูแลแพลตฟอร์มอีคอมเมิร์ซ", base: "marketplace-commerce-specialist", duties: ["สรุปยอดขาย ตรวจความเหมาะสม อนุมัติและติดตาม KOL", "ตอบแชท Shopee, TikTok, Lazada, Thai Mart และเว็บไซต์แม่เฉลา", "ควบคุมไลฟ์และรีรัน ดูแลสต็อก จัดแคมเปญและตัดคลิปลงช่อง"] },
-  { id: "performance-video-production", name: "นักตัดต่อวิดีโอสาย Performance", base: "performance-video-editor", duties: ["ตัดคลิปเทสและเติมคอนเทนต์ตามเป้ารายบุคคล ไม่ใช้โควตาเดียวกันทั้งตำแหน่ง", "ถ่ายฟุตเทจ รันรหัสสินค้า ส่งงาน เพิ่มสินค้าให้แอดมิน ทำรูปสินค้าและขึ้นแอด My Order" ] },
-  { id: "ai-graphic-affiliate", name: "นักสร้างคอนเทนต์ AI กราฟิกและ Affiliate", base: "brand-content-video-editor", duties: ["ทำ Affiliate 4 ช่องทาง บน Facebook, TikTok และ YouTube พร้อมออกแบบโลโก้", "สร้างซีรีส์อย่างน้อยวันละ 1 เรื่อง และคลิปเบ็ดเตล็ดอย่างน้อยช่องละ 1 ตอนใน 6 ช่อง", "ผลิตคลิปช่อง Peachy วันละ 2 คลิป"] },
-  { id: "digital-marketing-systems", name: "นักการตลาดดิจิทัลและดูแลระบบหลังบ้าน", base: "facebook-media-buyer", duties: ["ตัดคลิปเติมและเทส ถ่ายฟุตเทจ รันรหัส ขึ้น คุม และยิงโฆษณา", "แก้ปัญหาระบบหลังบ้านและโปรแกรมไลฟ์สด"] },
-  { id: "brand-product-marketing", name: "นักการตลาดแบรนด์และพัฒนาผลิตภัณฑ์", base: "marketing", duties: ["คิดสินค้าใหม่นำเสนอผู้จัดการ พร้อมจัดทำสไลด์และกราฟิกสินค้า", "พิจารณาภาชนะและบรรจุภัณฑ์ที่เหมาะสมกับสินค้า"] },
-  { id: "operations-procurement-manager", name: "ผู้จัดการฝ่ายปฏิบัติการและจัดซื้อ", base: "growth-commerce-manager", duties: ["ตรวจยอดคนทำงาน อัปเดตทีม ดูแลเทเลเซลล์และคัดกรองปัญหาองค์กรและบุคคล", "เคลียร์ออเดอร์ตกค้าง จัดซื้อ หาซัพพลายเออร์ สั่งสินค้าเทสและคิดต้นทุน", "จัดคิวรถคอกจากตลาดไทและอุทัย ตรวจสต็อก จัดเตรียมและวางระบบสินค้า", "รองรับโปรเจกต์ใหม่ แก้ปัญหาทีมและถ่ายงานด่านใหญ่"] },
+  { id: "accounting-cashflow", name: "บัญชี", base: "hr", duties: ["ตรวจ Statement SCD กสิกรและกรุงไทย พร้อมตรวจที่มาของเงินเข้า–ออก", "บันทึกรายรับรายจ่ายของบ้านนพ.ทั้งหมดในโปรแกรมมหาเทพ", "จัดทำสลิปรายจ่ายใน Word และนำรายรับ My Order เข้า FlowAccount", "แนบใบเสร็จส่งสำนักงานบัญชีเพื่อยื่นภาษี จัดทำ COD และแจ้งยอดขายแหนมปลากราย"] },
+  { id: "accounting-sales-tax", name: "บัญชี", base: "hr", duties: ["จัดทำสลิปรายจ่ายใน Word และนำรายรับ My Order เข้า FlowAccount", "แนบใบเสร็จส่งสำนักงานบัญชีเพื่อยื่นภาษี จัดทำ COD และแจ้งยอดขายแหนมปลากราย"] },
+  { id: "hr-payroll-commission", name: "HR", base: "hr", duties: ["ลงค่าแรงพนักงานในเมืองและบ้านแพ็ค พร้อมจัดทำเงินหมุนเวียน", "คิดค่าคอมแอดมินบ้านน้ำพริก เทเลเซลล์ และมหาเทพ ลงภาษีหัก ณ ที่จ่ายและตารางเงินเดือนส่งสำนักงานบัญชี"] },
+  { id: "marketing-assistant-intern", name: "ฝึกงานผู้ช่วยผู้จัดการ", base: "customer-insight-marketer", duties: ["วิเคราะห์การตลาดและคู่แข่ง พร้อมสรุปประชุม", "สนับสนุนงานที่ผู้จัดการมอบหมายและโปรเจกต์รีแบรนด์สินค้าที่มีปัญหา"] },
+  { id: "ecommerce-platform-officer", name: "แพลตฟอร์ม", base: "marketplace-commerce-specialist", duties: ["สรุปยอดขาย ตรวจความเหมาะสม อนุมัติและติดตาม KOL", "ตอบแชท Shopee, TikTok, Lazada, Thai Mart และเว็บไซต์แม่เฉลา", "ควบคุมไลฟ์และรีรัน ดูแลสต็อก จัดแคมเปญและตัดคลิปลงช่อง"] },
+  { id: "performance-video-production", name: "ตัดต่อ", base: "performance-video-editor", duties: ["ตัดคลิปเทสและเติมคอนเทนต์ตามเป้ารายบุคคล ไม่ใช้โควตาเดียวกันทั้งตำแหน่ง", "ถ่ายฟุตเทจ รันรหัสสินค้า ส่งงาน เพิ่มสินค้าให้แอดมิน ทำรูปสินค้าและขึ้นแอด My Order" ] },
+  { id: "ai-graphic-affiliate", name: "เอไอกราฟิก", base: "brand-content-video-editor", duties: ["ทำ Affiliate 4 ช่องทาง บน Facebook, TikTok และ YouTube พร้อมออกแบบโลโก้", "สร้างซีรีส์อย่างน้อยวันละ 1 เรื่อง และคลิปเบ็ดเตล็ดอย่างน้อยช่องละ 1 ตอนใน 6 ช่อง", "ผลิตคลิปช่อง Peachy วันละ 2 คลิป"] },
+  { id: "digital-marketing-systems", name: "การตลาดดิจิตัล", base: "facebook-media-buyer", duties: ["ตัดคลิปเติมและเทส ถ่ายฟุตเทจ รันรหัส ขึ้น คุม และยิงโฆษณา", "แก้ปัญหาระบบหลังบ้านและโปรแกรมไลฟ์สด"] },
+  { id: "brand-product-marketing", name: "แบรนด์มาเก็ตติ้ง", base: "marketing", duties: ["คิดสินค้าใหม่นำเสนอผู้จัดการ พร้อมจัดทำสไลด์และกราฟิกสินค้า", "พิจารณาภาชนะและบรรจุภัณฑ์ที่เหมาะสมกับสินค้า"] },
+  { id: "operations-procurement-manager", name: "ผู้จัดการ", base: "growth-commerce-manager", duties: ["ตรวจยอดคนทำงาน อัปเดตทีม ดูแลเทเลเซลล์และคัดกรองปัญหาองค์กรและบุคคล", "เคลียร์ออเดอร์ตกค้าง จัดซื้อ หาซัพพลายเออร์ สั่งสินค้าเทสและคิดต้นทุน", "จัดคิวรถคอกจากตลาดไทและอุทัย ตรวจสต็อก จัดเตรียมและวางระบบสินค้า", "รองรับโปรเจกต์ใหม่ แก้ปัญหาทีมและถ่ายงานด่านใหญ่"] },
 ];
 
-export const roles: RoleTemplate[] = positionDefinitions.map((position) => {
+const positionRoles: RoleTemplate[] = positionDefinitions.map((position) => {
   const base = [...previousRoles, ...legacyRoles].find((role) => role.id === position.base)!;
   return {
     ...base,
@@ -1103,10 +1103,12 @@ export const roles: RoleTemplate[] = positionDefinitions.map((position) => {
   };
 });
 
+// Preserve the retired accounting role for existing employee/history references only.
+export const roles = positionRoles.filter((role) => role.id !== "accounting-sales-tax");
+
 export const performanceProductionTargets = [
-  { name: "ตาบอส", target: "ขั้นต่ำ 3 แคมเปญต่อวัน แคมเปญละ 3 คลิป รวมขั้นต่ำ 9 คลิป (รวมเทสและเติม) ส่งเกินได้" },
-  { name: "แตม", target: "ขั้นต่ำ 3 แคมเปญต่อวัน แคมเปญละ 3 คลิป รวมขั้นต่ำ 9 คลิป (รวมเทสและเติม) ส่งเกินได้" },
-  { name: "มายด์", target: "ตัดวันละ 2 ตัว: น้ำพริก 2 ตัว หรือยูนนาน 3 จีน (ต้องยืนยันความหมายเพิ่มเติม) ลงคลิป ขึ้นแอด และส่งงานเติมคอนเทนต์" },
+  { name: "ตัดต่อ", target: "ขั้นต่ำ 3 แคมเปญต่อวัน แคมเปญละ 3 คลิป รวมขั้นต่ำ 9 คลิป (รวมเทสและเติม) ส่งเกินได้" },
+  { name: "เป้าตัดต่อเฉพาะงานที่รอยืนยัน", target: "ตัดวันละ 2 ตัว: น้ำพริก 2 ตัว หรือยูนนาน 3 จีน (ต้องยืนยันความหมายเพิ่มเติม ยังไม่เปิดแจกงานอัตโนมัติ) ลงคลิป ขึ้นแอด และส่งงานเติมคอนเทนต์" },
 ];
 
 roles.find((role) => role.id === "performance-video-production")!.kpis[0].target =
@@ -1262,7 +1264,7 @@ export const seedApplicationDocuments: ApplicationDocumentRecord[] = [];
 export const seedEmploymentContracts: EmploymentContractRecord[] = [];
 
 export function findRole(roleId: string) {
-  return roles.find((role) => role.id === roleId) ?? previousRoles.find((role) => role.id === roleId) ?? legacyRoles.find((role) => role.id === roleId);
+  return positionRoles.find((role) => role.id === roleId) ?? previousRoles.find((role) => role.id === roleId) ?? legacyRoles.find((role) => role.id === roleId);
 }
 
 export function getRole(roleId: string) {

@@ -1879,6 +1879,7 @@ export async function POST(request: Request) {
     }
 
     if (payload.action === "saveAttendance") {
+      if (currentUser.role !== "admin" && payload.status !== "leave") return Response.json({ error: "กรุณาลงเวลาด้วยกล้องและพิกัดในห้องทำงาน หรือให้ HR บันทึกแก้ไข" }, { status: 403 });
       const employeeId = payload.employeeId ?? "";
       if (!(await canAccessEmployee(currentUser, employeeId))) return Response.json({ error: "ลงเวลาได้เฉพาะบัญชีของตนเองหรือทีมที่ได้รับสิทธิ์" }, { status: 403 });
       const [employee] = await db.select().from(employees).where(eq(employees.id, employeeId)).limit(1);
