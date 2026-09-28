@@ -445,10 +445,10 @@ test("completion is atomic, inventory-CAS guarded and idempotent before and afte
   assert.match(initializeSource, /quest_completion_delete_guard[\s\S]*?QUEST_COMPLETION_IMMUTABLE/);
 });
 
-test("the Quest Center is the prominent default and renders all scoped quest types and fulfillment history", () => {
+test("the workspace lists tasks before quests and preserves scoped quest types and fulfillment history", () => {
   assert.match(pageSource, /type WorkSection = "quests" \| "tasks" \| "projects" \| "points" \| "rewards"/);
   assert.match(pageSource, /useState<WorkSection>\("quests"\)/);
-  assert.match(pageSource, /\{ id: "quests", icon: "Q", label: "ศูนย์เควส"[\s\S]*?\{ id: "tasks", icon: "\u2713"/);
+  assert.match(pageSource, /\{ id: "tasks", icon: "\u2713", label: "งาน"[\s\S]*?\{ id: "quests", icon: "Q", label: "เควส"/);
   assert.match(pageSource, /id="quest-center-title">ภารกิจเด่นของคนและทีม/);
   assert.match(pageSource, /questTypeMeta:[\s\S]*?individual: \{ label: "เควสรายบุคคล"[\s\S]*?team: \{ label: "เควสแบบทีม"[\s\S]*?activity: \{ label: "เควสกิจกรรม"/);
   assert.match(pageSource, /<article key=\{quest\.id\} data-quest-id=\{quest\.id\} className=\{`quest-card/);

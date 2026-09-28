@@ -1,6 +1,7 @@
 /** Cloudflare Worker entry point for the vinext-starter template. */
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
+import { generateDailyAssignments } from "../lib/daily-assignments";
 
 interface Env {
   ASSETS: Fetcher;
@@ -26,6 +27,9 @@ interface ExecutionContext {
 // const imageConfig: ImageConfig = { dangerouslyAllowSVG: true };
 
 const worker = {
+  async scheduled(_controller: unknown, env: Env, ctx: ExecutionContext) {
+    ctx.waitUntil(generateDailyAssignments(env.DB));
+  },
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     if (url.hostname === "people-pulse-th-kpi.brees2539.chatgpt.site") {
@@ -61,7 +65,9 @@ function secureResponse(response: Response, requestUrl: URL) {
   const headers = new Headers(response.headers);
   if (!headers.has("content-security-policy")) headers.set("content-security-policy", "base-uri 'self'; frame-ancestors 'none'; object-src 'none'");
   headers.set("cross-origin-opener-policy", "same-origin");
-  headers.set("permissions-policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()");
+  // Attendance check-in explicitly asks the user for camera and GPS access.
+  // Keep every other sensitive browser capability disabled.
+  headers.set("permissions-policy", "camera=(self), geolocation=(self), microphone=(), payment=(), usb=()");
   headers.set("referrer-policy", "strict-origin-when-cross-origin");
   headers.set("x-content-type-options", "nosniff");
   headers.set("x-frame-options", "DENY");

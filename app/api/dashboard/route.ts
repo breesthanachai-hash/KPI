@@ -1,6 +1,7 @@
 import { and, eq, isNull, notExists, or, sql } from "drizzle-orm";
 import { getD1, getDb, getFilesBucket } from "../../../db";
 import { ensureDatabase } from "../../../db/initialize";
+import { ensureEmployeeProfileAudit } from "../../../lib/employee-profile-audit";
 import { applicationDocuments, attendanceRecords, authCredentials, authEvents, authSessions, employeePositionEvents, employeeProfiles, employeeRecognitions, employeeRegistrationRequests, employeeSelfAssessments, employees, employeeWarningEvents, employeeWarnings, employmentContracts, evaluations, hrProfiles, notificationReads, organizationDocuments, organizationPolicies, organizationPolicyPublishClaims, pointCapClaims, pointEvents, pointLedger, pointMutationClaims, policyAcknowledgements, projects, questCompletions, quests, questTargets, rewardRedemptionClaims, rewardRedemptions, rewards, skillAchievements, talentActions, userAccounts, workItems, workSubmissions } from "../../../db/schema";
 import { authenticatedRequestGate, canAccessEmployee, ensureBootstrapAccounts, recordAuthEvent, revokeAllSessionsForAccount, type CurrentUser } from "../../../lib/access-control";
 import { AuthInputError, credentialMutationValues, getAccountCredential, publicUserAccountDto, publicUserAccountDtos, requestSourceHash } from "../../../lib/auth-service";
@@ -1878,6 +1879,7 @@ export async function POST(request: Request) {
     }
 
     if (payload.action === "saveAttendance") {
+      if (currentUser.role !== "admin" && payload.status !== "leave") return Response.json({ error: "กรุณาลงเวลาด้วยกล้องและพิกัดในห้องทำงาน หรือให้ HR บันทึกแก้ไข" }, { status: 403 });
       const employeeId = payload.employeeId ?? "";
       if (!(await canAccessEmployee(currentUser, employeeId))) return Response.json({ error: "ลงเวลาได้เฉพาะบัญชีของตนเองหรือทีมที่ได้รับสิทธิ์" }, { status: 403 });
       const [employee] = await db.select().from(employees).where(eq(employees.id, employeeId)).limit(1);
@@ -3398,6 +3400,7 @@ export async function POST(request: Request) {
     }
 
     if (payload.action === "saveEmployeeProfile") {
+      await ensureEmployeeProfileAudit();
       const employeeId = payload.employeeId ?? "";
       const expectedEmployeeUpdatedAt = payload.expectedEmployeeUpdatedAt?.trim() ?? "";
       const requestedPositionTitle = payload.positionTitle === undefined ? undefined : normalizedPositionTitle(payload.positionTitle);
@@ -3431,6 +3434,7 @@ export async function POST(request: Request) {
       };
       const d1 = getD1();
       const positionChanged = positionTitle !== employee.positionTitle;
+      const [previousProfile] = await db.select().from(employeeProfiles).where(eq(employeeProfiles.employeeId, employeeId)).limit(1);
       const positionEvent = positionChanged ? {
         id: `employee-position-${crypto.randomUUID()}`,
         employeeId,
@@ -3513,6 +3517,13 @@ export async function POST(request: Request) {
               .bind(employeeId),
           );
         }
+        statements.push(d1.prepare(`INSERT INTO employee_profile_audit
+          (id, employee_id, actor_id, actor_name, created_at, before_json, after_json)
+          VALUES (?, ?, ?, ?, ?, ?, ?)`).bind(
+          crypto.randomUUID(), employeeId, currentUser.id, currentUser.displayName, now,
+          JSON.stringify({ ...previousProfile, positionTitle: employee.positionTitle }),
+          JSON.stringify({ ...profile, positionTitle }),
+        ));
         await d1.batch(statements);
       } catch (error) {
         const message = error instanceof Error ? error.message : "";

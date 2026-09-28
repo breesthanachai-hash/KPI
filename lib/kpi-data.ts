@@ -94,6 +94,7 @@ export function calculateSkillScore(role: RoleTemplate, scores: Record<string, n
 
 export type RoleTemplate = {
   id: string;
+  baseRoleId?: string;
   name: string;
   shortName: string;
   department: string;
@@ -866,7 +867,7 @@ const legacyRoles: RoleTemplate[] = [
   },
 ];
 
-export const roles: RoleTemplate[] = [
+const previousRoles: RoleTemplate[] = [
   {
     id: "growth-commerce-manager",
     name: "ผู้จัดการทีมหน้าบ้านและการเติบโต",
@@ -1062,6 +1063,57 @@ export const roles: RoleTemplate[] = [
   },
 ];
 
+// New selectable templates; historical role IDs remain resolvable without migrating employees.
+const positionDefinitions = [
+  { id: "packing-shipping-officer", name: "เจ้าหน้าที่แพ็คและจัดส่งสินค้า", base: "customer-service", duties: ["แพ็คสินค้าที่บ้านแพ็ค ตรวจสินค้าและจำนวนให้ตรงกับออเดอร์", "เตรียมพัสดุและจัดส่งสินค้า พร้อมตรวจข้อมูลผู้รับและติดตามการส่งมอบ"] },
+  { id: "sales-service-admin", name: "แอดมินบริการลูกค้าและปิดการขาย", base: "customer-service", duties: ["ตอบแชท ให้ข้อมูลสินค้า และบริการลูกค้า", "คีย์ออเดอร์ ตรวจรายละเอียดคำสั่งซื้อและข้อมูลจัดส่ง", "ติดตามลูกค้าและปิดการขาย พร้อมประสานงานส่งต่อออเดอร์"] },
+  { id: "accounting-cashflow", name: "บัญชี", base: "hr", duties: ["ตรวจ Statement SCD กสิกรและกรุงไทย พร้อมตรวจที่มาของเงินเข้า–ออก", "บันทึกรายรับรายจ่ายของบ้านนพ.ทั้งหมดในโปรแกรมมหาเทพ", "จัดทำสลิปรายจ่ายใน Word และนำรายรับ My Order เข้า FlowAccount", "แนบใบเสร็จส่งสำนักงานบัญชีเพื่อยื่นภาษี จัดทำ COD และแจ้งยอดขายแหนมปลากราย"] },
+  { id: "accounting-sales-tax", name: "บัญชี", base: "hr", duties: ["จัดทำสลิปรายจ่ายใน Word และนำรายรับ My Order เข้า FlowAccount", "แนบใบเสร็จส่งสำนักงานบัญชีเพื่อยื่นภาษี จัดทำ COD และแจ้งยอดขายแหนมปลากราย"] },
+  { id: "hr-payroll-commission", name: "HR", base: "hr", duties: ["ลงค่าแรงพนักงานในเมืองและบ้านแพ็ค พร้อมจัดทำเงินหมุนเวียน", "คิดค่าคอมแอดมินบ้านน้ำพริก เทเลเซลล์ และมหาเทพ ลงภาษีหัก ณ ที่จ่ายและตารางเงินเดือนส่งสำนักงานบัญชี"] },
+  { id: "marketing-assistant-intern", name: "ฝึกงานผู้ช่วยผู้จัดการ", base: "customer-insight-marketer", duties: ["วิเคราะห์การตลาดและคู่แข่ง พร้อมสรุปประชุม", "สนับสนุนงานที่ผู้จัดการมอบหมายและโปรเจกต์รีแบรนด์สินค้าที่มีปัญหา"] },
+  { id: "ecommerce-platform-officer", name: "แพลตฟอร์ม", base: "marketplace-commerce-specialist", duties: ["สรุปยอดขาย ตรวจความเหมาะสม อนุมัติและติดตาม KOL", "ตอบแชท Shopee, TikTok, Lazada, Thai Mart และเว็บไซต์แม่เฉลา", "ควบคุมไลฟ์และรีรัน ดูแลสต็อก จัดแคมเปญและตัดคลิปลงช่อง"] },
+  { id: "performance-video-production", name: "ตัดต่อ", base: "performance-video-editor", duties: ["ตัดคลิปเทสและเติมคอนเทนต์ตามเป้ารายบุคคล ไม่ใช้โควตาเดียวกันทั้งตำแหน่ง", "ถ่ายฟุตเทจ รันรหัสสินค้า ส่งงาน เพิ่มสินค้าให้แอดมิน ทำรูปสินค้าและขึ้นแอด My Order" ] },
+  { id: "ai-graphic-affiliate", name: "เอไอกราฟิก", base: "brand-content-video-editor", duties: ["ทำ Affiliate 4 ช่องทาง บน Facebook, TikTok และ YouTube พร้อมออกแบบโลโก้", "สร้างซีรีส์อย่างน้อยวันละ 1 เรื่อง และคลิปเบ็ดเตล็ดอย่างน้อยช่องละ 1 ตอนใน 6 ช่อง", "ผลิตคลิปช่อง Peachy วันละ 2 คลิป"] },
+  { id: "digital-marketing-systems", name: "การตลาดดิจิตัล", base: "facebook-media-buyer", duties: ["ตัดคลิปเติมและเทส ถ่ายฟุตเทจ รันรหัส ขึ้น คุม และยิงโฆษณา", "แก้ปัญหาระบบหลังบ้านและโปรแกรมไลฟ์สด"] },
+  { id: "brand-product-marketing", name: "แบรนด์มาเก็ตติ้ง", base: "marketing", duties: ["คิดสินค้าใหม่นำเสนอผู้จัดการ พร้อมจัดทำสไลด์และกราฟิกสินค้า", "พิจารณาภาชนะและบรรจุภัณฑ์ที่เหมาะสมกับสินค้า"] },
+  { id: "operations-procurement-manager", name: "ผู้จัดการ", base: "growth-commerce-manager", duties: ["ตรวจยอดคนทำงาน อัปเดตทีม ดูแลเทเลเซลล์และคัดกรองปัญหาองค์กรและบุคคล", "เคลียร์ออเดอร์ตกค้าง จัดซื้อ หาซัพพลายเออร์ สั่งสินค้าเทสและคิดต้นทุน", "จัดคิวรถคอกจากตลาดไทและอุทัย ตรวจสต็อก จัดเตรียมและวางระบบสินค้า", "รองรับโปรเจกต์ใหม่ แก้ปัญหาทีมและถ่ายงานด่านใหญ่"] },
+];
+
+const positionRoles: RoleTemplate[] = positionDefinitions.map((position) => {
+  const base = [...previousRoles, ...legacyRoles].find((role) => role.id === position.base)!;
+  return {
+    ...base,
+    id: position.id,
+    baseRoleId: position.base,
+    name: position.name,
+    shortName: position.name,
+    department: "ยังไม่ระบุทีม",
+    departmentId: "",
+    trend: 0,
+    skills: position.id === "packing-shipping-officer" ? completeSkillFramework([
+      { id: "packing-order-check", name: "ตรวจสินค้าและจำนวนตามออเดอร์", target: "ระดับ 3 จาก 5", targetLevel: 3 },
+      { id: "packing-protection", name: "แพ็คสินค้าและป้องกันความเสียหาย", target: "ระดับ 3 จาก 5", targetLevel: 3 },
+      { id: "shipping-handover", name: "ตรวจข้อมูลจัดส่งและส่งมอบพัสดุ", target: "ระดับ 3 จาก 5", targetLevel: 3 },
+    ], aiWorkMastery(1, "ใช้เครื่องมือช่วยตรวจรายการแพ็ค โดยตรวจสอบกับออเดอร์จริงก่อนส่งมอบ")) : base.skills,
+    kpis: position.duties.map((name, index) => ({
+      id: `${position.id}-duty-${index + 1}`, name,
+      weight: Math.floor(100 / position.duties.length) + (index === 0 ? 100 % position.duties.length : 0),
+      target: "ตามหน้าที่และแผนงานที่ได้รับมอบหมาย",
+    })),
+  };
+});
+
+// Preserve the retired accounting role for existing employee/history references only.
+export const roles = positionRoles.filter((role) => role.id !== "accounting-sales-tax");
+
+export const performanceProductionTargets = [
+  { name: "ตัดต่อ", target: "ขั้นต่ำ 3 แคมเปญต่อวัน แคมเปญละ 3 คลิป รวมขั้นต่ำ 9 คลิป (รวมเทสและเติม) ส่งเกินได้" },
+  { name: "เป้าตัดต่อเฉพาะงานที่รอยืนยัน", target: "ตัดวันละ 2 ตัว: น้ำพริก 2 ตัว หรือยูนนาน 3 จีน (ต้องยืนยันความหมายเพิ่มเติม ยังไม่เปิดแจกงานอัตโนมัติ) ลงคลิป ขึ้นแอด และส่งงานเติมคอนเทนต์" },
+];
+
+roles.find((role) => role.id === "performance-video-production")!.kpis[0].target =
+  performanceProductionTargets.map(({ name, target }) => `${name}: ${target}`).join("; ");
+
 export const roleSalaryBands: Record<string, { min: number; mid: number; max: number }> = {
   "sales-manager": { min: 55000, mid: 70000, max: 90000 },
   marketing: { min: 30000, mid: 42000, max: 58000 },
@@ -1078,6 +1130,11 @@ export const roleSalaryBands: Record<string, { min: number; mid: number; max: nu
   "marketplace-commerce-specialist": { min: 32000, mid: 48000, max: 75000 },
   "facebook-media-buyer": { min: 38000, mid: 58000, max: 85000 },
 };
+
+// Retain the closest existing template's reference bands; no employee salary is changed.
+for (const position of positionDefinitions) {
+  roleSalaryBands[position.id] = { ...roleSalaryBands[position.base] };
+}
 
 const roleSkillPayMultiplier: Record<string, number> = {
   "sales-manager": 1.2,
@@ -1104,75 +1161,21 @@ export function skillAllowanceFor(roleId: string, level: number) {
   return Math.round(base * multiplier / 100) * 100;
 }
 
-export const seedEmployeeLegacyRoleIds: Record<string, string> = {
-  "emp-narin": "sales-manager",
-  "emp-pimchanok": "marketing",
-  "emp-thanawat": "customer-service",
-  "emp-supakorn": "developer",
-  "emp-kanyarat": "hr",
-  "emp-nattapong": "sales-manager",
-  "emp-sirilak": "marketing",
-  "emp-pattarapon": "developer",
-};
+export const seedEmployeeLegacyRoleIds: Record<string, string> = {};
 
-export const seedEmployees: EmployeeRecord[] = [
-  { id: "emp-narin", initials: "นก", name: "นรินทร์ กิตติคุณ", email: "narin@peoplepulse.co", roleId: "growth-commerce-manager", positionTitle: "", manager: "ธนชัย ใจแสน", status: "active", latestScore: 92, latestSkillScore: 88, latestPeriod: periods[0], updatedAt: "2026-08-26T12:00:00.000Z" },
-  { id: "emp-pimchanok", initials: "พส", name: "พิมพ์ชนก สุขใจ", email: "pimchanok@peoplepulse.co", roleId: "customer-insight-marketer", positionTitle: "", manager: "นรินทร์ กิตติคุณ", status: "active", latestScore: 87, latestSkillScore: 84, latestPeriod: periods[0], updatedAt: "2026-08-26T12:00:00.000Z" },
-  { id: "emp-sirilak", initials: "ศร", name: "ศิริลักษณ์ รุ่งเรือง", email: "sirilak@peoplepulse.co", roleId: "offer-conversion-marketer", positionTitle: "", manager: "นรินทร์ กิตติคุณ", status: "active", latestScore: null, latestSkillScore: null, latestPeriod: null, updatedAt: "2026-08-26T12:00:00.000Z" },
-  { id: "emp-kanyarat", initials: "กช", name: "กัญญารัตน์ ชัยพร", email: "kanyarat@peoplepulse.co", roleId: "crm-retention-marketer", positionTitle: "", manager: "นรินทร์ กิตติคุณ", status: "active", latestScore: 82, latestSkillScore: 86, latestPeriod: periods[0], updatedAt: "2026-08-26T12:00:00.000Z" },
-  { id: "emp-thanawat", initials: "ธพ", name: "ธนวัฒน์ พงศ์ศรี", email: "thanawat@peoplepulse.co", roleId: "performance-video-editor", positionTitle: "", manager: "นรินทร์ กิตติคุณ", status: "active", latestScore: 71, latestSkillScore: 74, latestPeriod: periods[0], updatedAt: "2026-08-26T12:00:00.000Z" },
-  { id: "emp-pattarapon", initials: "ภพ", name: "ภัทรพล พูนทรัพย์", email: "pattarapon@peoplepulse.co", roleId: "brand-content-video-editor", positionTitle: "", manager: "นรินทร์ กิตติคุณ", status: "active", latestScore: null, latestSkillScore: null, latestPeriod: null, updatedAt: "2026-08-26T12:00:00.000Z" },
-  { id: "emp-supakorn", initials: "ศว", name: "ศุภกร วัฒนะ", email: "supakorn@peoplepulse.co", roleId: "marketplace-commerce-specialist", positionTitle: "", manager: "นรินทร์ กิตติคุณ", status: "active", latestScore: 89, latestSkillScore: 91, latestPeriod: periods[0], updatedAt: "2026-08-26T12:00:00.000Z" },
-  { id: "emp-nattapong", initials: "ณต", name: "ณัฐพงษ์ ตั้งใจ", email: "nattapong@peoplepulse.co", roleId: "facebook-media-buyer", positionTitle: "", manager: "นรินทร์ กิตติคุณ", status: "active", latestScore: 84, latestSkillScore: 79, latestPeriod: periods[0], updatedAt: "2026-08-26T12:00:00.000Z" },
-];
+export const seedEmployees: EmployeeRecord[] = [];
 
-export const seedHrProfiles: HrProfileRecord[] = [
-  { employeeId: "emp-narin", currentSalary: 72000, salaryReviewMonth: "มกราคม 2570", updatedAt: "2026-08-02T09:30:00.000Z" },
-  { employeeId: "emp-pimchanok", currentSalary: 44000, salaryReviewMonth: "มกราคม 2570", updatedAt: "2026-08-01T08:20:00.000Z" },
-  { employeeId: "emp-thanawat", currentSalary: 30000, salaryReviewMonth: "ตุลาคม 2569", updatedAt: "2026-07-28T04:10:00.000Z" },
-  { employeeId: "emp-supakorn", currentSalary: 68000, salaryReviewMonth: "มกราคม 2570", updatedAt: "2026-08-03T03:45:00.000Z" },
-  { employeeId: "emp-kanyarat", currentSalary: 46000, salaryReviewMonth: "มกราคม 2570", updatedAt: "2026-07-30T07:15:00.000Z" },
-  { employeeId: "emp-nattapong", currentSalary: 61000, salaryReviewMonth: "ตุลาคม 2569", updatedAt: "2026-07-29T11:05:00.000Z" },
-  { employeeId: "emp-sirilak", currentSalary: 36000, salaryReviewMonth: "มกราคม 2570", updatedAt: "2026-07-20T06:00:00.000Z" },
-  { employeeId: "emp-pattarapon", currentSalary: 52000, salaryReviewMonth: "มกราคม 2570", updatedAt: "2026-07-18T05:50:00.000Z" },
-];
+export const seedHrProfiles: HrProfileRecord[] = [];
 
-export const seedAttendanceRecords: AttendanceRecord[] = [
-  { id: "attendance-narin-2026-08-22", employeeId: "emp-narin", workDate: "2026-08-22", status: "present", clockIn: "08:42", clockOut: null, minutesLate: 0, leaveType: null, note: "ลงเวลาผ่านระบบ", approvalStatus: "not_required", approvedBy: null, approvedAt: null, createdBy: "ระบบลงเวลา", createdAt: "2026-08-22T01:42:00.000Z", updatedAt: "2026-08-22T01:42:00.000Z" },
-  { id: "attendance-pimchanok-2026-08-22", employeeId: "emp-pimchanok", workDate: "2026-08-22", status: "late", clockIn: "09:18", clockOut: null, minutesLate: 18, leaveType: null, note: "รถติด แจ้งหัวหน้าแล้ว", approvalStatus: "not_required", approvedBy: null, approvedAt: null, createdBy: "ระบบลงเวลา", createdAt: "2026-08-22T02:18:00.000Z", updatedAt: "2026-08-22T02:18:00.000Z" },
-  { id: "attendance-thanawat-2026-08-22", employeeId: "emp-thanawat", workDate: "2026-08-22", status: "leave", clockIn: null, clockOut: null, minutesLate: 0, leaveType: "sick", note: "ลาป่วย 1 วัน แนบเอกสารในแฟ้มพนักงาน", approvalStatus: "pending", approvedBy: null, approvedAt: null, createdBy: "ธนวัฒน์ พงศ์ศรี", createdAt: "2026-08-22T00:30:00.000Z", updatedAt: "2026-08-22T00:30:00.000Z" },
-  { id: "attendance-supakorn-2026-08-22", employeeId: "emp-supakorn", workDate: "2026-08-22", status: "present", clockIn: "08:55", clockOut: null, minutesLate: 0, leaveType: null, note: "", approvalStatus: "not_required", approvedBy: null, approvedAt: null, createdBy: "ระบบลงเวลา", createdAt: "2026-08-22T01:55:00.000Z", updatedAt: "2026-08-22T01:55:00.000Z" },
-];
+export const seedAttendanceRecords: AttendanceRecord[] = [];
 
-export const seedSkillAchievements: SkillAchievementRecord[] = [
-  { id: "achievement-narin-negotiation-4", employeeId: "emp-narin", roleId: "growth-commerce-manager", skillId: "growth-strategy", skillName: "การวางกลยุทธ์ Growth", level: 4, monthlyAllowance: 1600, verifiedBy: "ฝ่ายทรัพยากรบุคคล", verifiedAt: "2026-08-05T04:00:00.000Z", evidenceUrl: "", note: "ผ่านการทดสอบและมีแผน Growth ที่นำไปใช้จริง", createdAt: "2026-08-05T04:00:00.000Z" },
-  { id: "achievement-supakorn-engineering-4", employeeId: "emp-supakorn", roleId: "marketplace-commerce-specialist", skillId: "marketplace-operations", skillName: "การบริหาร TikTok Shop, Shopee และ Lazada", level: 4, monthlyAllowance: 1400, verifiedBy: "ฝ่ายทรัพยากรบุคคล", verifiedAt: "2026-08-08T04:00:00.000Z", evidenceUrl: "", note: "ผ่านผลงานจริงและการทดสอบระดับ 4", createdAt: "2026-08-08T04:00:00.000Z" },
-];
+export const seedSkillAchievements: SkillAchievementRecord[] = [];
 
-export const seedTalentActions: TalentActionRecord[] = [
-  { id: "action-thanawat-test", employeeId: "emp-thanawat", type: "skill_test", title: "ทดสอบ Direct Response Editing และ Video Retention", status: "planned", score: null, dueDate: "2026-08-28", targetRoleId: "performance-video-editor", createdAt: "2026-08-04T03:00:00.000Z", updatedAt: "2026-08-04T03:00:00.000Z" },
-  { id: "action-nattapong-upskill", employeeId: "emp-nattapong", type: "upskill", title: "พัฒนา CAPI, Attribution และ Creative Testing", status: "in_progress", score: null, dueDate: "2026-09-15", targetRoleId: "facebook-media-buyer", createdAt: "2026-08-04T03:10:00.000Z", updatedAt: "2026-08-10T03:10:00.000Z" },
-  { id: "action-pim-role", employeeId: "emp-pimchanok", type: "role_review", title: "ประเมินความพร้อม Senior Customer Insight Strategist", status: "planned", score: null, dueDate: "2026-09-05", targetRoleId: "customer-insight-marketer", createdAt: "2026-08-04T03:20:00.000Z", updatedAt: "2026-08-04T03:20:00.000Z" },
-  { id: "action-narin-salary", employeeId: "emp-narin", type: "salary_review", title: "ทบทวนค่าตอบแทนตามผลงาน Growth ของทีม", status: "planned", score: null, dueDate: "2026-10-01", targetRoleId: "growth-commerce-manager", createdAt: "2026-08-04T03:30:00.000Z", updatedAt: "2026-08-04T03:30:00.000Z" },
-];
+export const seedTalentActions: TalentActionRecord[] = [];
 
-export const seedProjects: ProjectRecord[] = [
-  { id: "project-growth-q3", name: "Growth Sprint Q3", description: "ยกระดับยอดขายและแคมเปญเพื่อปิดไตรมาสให้เหนือเป้าหมาย", ownerEmployeeId: "emp-narin", departmentId: "sales", status: "active", dueDate: "2026-09-30", color: "mustard", createdAt: "2026-08-01T02:00:00.000Z", updatedAt: "2026-08-18T06:00:00.000Z" },
-  { id: "project-cx-zero-wait", name: "CX Zero Wait", description: "ลดเวลารอและเพิ่มคุณภาพการแก้ปัญหาของลูกค้า", ownerEmployeeId: "emp-thanawat", departmentId: "service", status: "active", dueDate: "2026-09-18", color: "terra", createdAt: "2026-08-02T02:00:00.000Z", updatedAt: "2026-08-17T04:00:00.000Z" },
-  { id: "project-platform-trust", name: "Platform Trust", description: "เพิ่มความเสถียร ระบบเฝ้าระวัง และคู่มือแก้เหตุขัดข้อง", ownerEmployeeId: "emp-supakorn", departmentId: "technology", status: "active", dueDate: "2026-10-15", color: "forest", createdAt: "2026-08-03T02:00:00.000Z", updatedAt: "2026-08-18T07:00:00.000Z" },
-  { id: "project-people-onboarding", name: "Onboarding 30 Days", description: "สร้างประสบการณ์เริ่มงานและภารกิจเรียนรู้ 30 วันแรก", ownerEmployeeId: "emp-kanyarat", departmentId: "people", status: "planned", dueDate: "2026-10-30", color: "sage", createdAt: "2026-08-10T02:00:00.000Z", updatedAt: "2026-08-10T02:00:00.000Z" },
-];
+export const seedProjects: ProjectRecord[] = [];
 
-export const seedWorkItems: WorkItemRecord[] = [
-  { id: "work-growth-story", projectId: "project-growth-q3", assigneeEmployeeId: "emp-pimchanok", createdByEmployeeId: null, kind: "task", title: "สรุป Customer Story สำหรับแคมเปญ", description: "จัดทำเรื่องเล่าลูกค้า 3 เคสพร้อมผลลัพธ์เชิงตัวเลข", priority: "high", status: "in_progress", progress: 65, points: 110, dueDate: "2026-08-26", createdAt: "2026-08-05T03:00:00.000Z", updatedAt: "2026-08-18T04:10:00.000Z" },
-  { id: "work-growth-key-account", projectId: "project-growth-q3", assigneeEmployeeId: "emp-narin", createdByEmployeeId: null, kind: "mission", title: "ปิดดีลลูกค้า Key Account", description: "ปิดดีลใหม่มูลค่าตามเป้าหมายและถ่ายทอดวิธีการให้ทีม", priority: "urgent", status: "done", progress: 100, points: 180, dueDate: "2026-08-15", createdAt: "2026-08-01T03:00:00.000Z", updatedAt: "2026-08-15T09:00:00.000Z" },
-  { id: "work-growth-lead-request", projectId: "project-growth-q3", assigneeEmployeeId: "emp-sirilak", createdByEmployeeId: null, kind: "request", title: "ขอชุดรายชื่อลูกค้าเป้าหมายใหม่", description: "คัดกรองรายชื่อกลุ่มธุรกิจบริการอย่างน้อย 120 ราย", priority: "medium", status: "todo", progress: 0, points: 70, dueDate: "2026-08-29", createdAt: "2026-08-18T05:00:00.000Z", updatedAt: "2026-08-18T05:00:00.000Z" },
-  { id: "work-cx-knowledge", projectId: "project-cx-zero-wait", assigneeEmployeeId: "emp-thanawat", createdByEmployeeId: null, kind: "mission", title: "สร้างคลังคำตอบ 20 ปัญหาหลัก", description: "จัดทำคำตอบมาตรฐานและส่งให้หัวหน้าตรวจคุณภาพ", priority: "high", status: "review", progress: 90, points: 160, dueDate: "2026-08-22", createdAt: "2026-08-04T05:00:00.000Z", updatedAt: "2026-08-18T03:00:00.000Z" },
-  { id: "work-cx-refund", projectId: "project-cx-zero-wait", assigneeEmployeeId: "emp-thanawat", createdByEmployeeId: null, kind: "request", title: "รีเควสต์ปรับขั้นตอนคืนเงิน", description: "รวบรวมจุดติดขัดและเสนอขั้นตอนใหม่ให้เหลือไม่เกิน 3 ขั้น", priority: "urgent", status: "in_progress", progress: 40, points: 120, dueDate: "2026-08-24", createdAt: "2026-08-12T04:00:00.000Z", updatedAt: "2026-08-18T07:00:00.000Z" },
-  { id: "work-tech-runbook", projectId: "project-platform-trust", assigneeEmployeeId: "emp-supakorn", createdByEmployeeId: null, kind: "task", title: "จัดทำ Incident Runbook", description: "คู่มือรับมือ 5 เหตุการณ์สำคัญพร้อมผู้รับผิดชอบ", priority: "high", status: "done", progress: 100, points: 140, dueDate: "2026-08-16", createdAt: "2026-08-03T06:00:00.000Z", updatedAt: "2026-08-16T08:00:00.000Z" },
-  { id: "work-tech-alert", projectId: "project-platform-trust", assigneeEmployeeId: "emp-pattarapon", createdByEmployeeId: null, kind: "task", title: "ปรับระบบแจ้งเตือนให้ลด False Alarm", description: "ทบทวน threshold และลดการแจ้งเตือนซ้ำอย่างน้อย 30%", priority: "medium", status: "in_progress", progress: 55, points: 150, dueDate: "2026-08-31", createdAt: "2026-08-09T06:00:00.000Z", updatedAt: "2026-08-18T08:00:00.000Z" },
-  { id: "work-people-checklist", projectId: "project-people-onboarding", assigneeEmployeeId: "emp-kanyarat", createdByEmployeeId: null, kind: "task", title: "ออกแบบ Onboarding Checklist", description: "กำหนดภารกิจสัปดาห์ 1–4 พร้อมผู้ดูแลและจำนวน Points ที่ได้รับ", priority: "medium", status: "todo", progress: 10, points: 130, dueDate: "2026-09-05", createdAt: "2026-08-10T06:00:00.000Z", updatedAt: "2026-08-18T08:00:00.000Z" },
-];
+export const seedWorkItems: WorkItemRecord[] = [];
 
 const policyTemplateNotice = "เอกสารนี้เป็นแม่แบบสำหรับระบบทดลอง HR ต้องตรวจแก้ให้ตรงสภาพการจ้างและให้ที่ปรึกษากฎหมายทบทวนก่อนประกาศใช้จริง ไม่ใช่คำรับรองว่าองค์กรปฏิบัติตามกฎหมายครบถ้วนแล้ว";
 
@@ -1248,65 +1251,20 @@ export const seedOrganizationPolicies: OrganizationPolicyRecord[] = [
   },
 ];
 
-export const seedRewards: RewardRecord[] = [
-  { id: "reward-coffee", title: "คูปองกาแฟ", description: "เครื่องดื่ม 1 แก้วจากร้านพาร์ตเนอร์", category: "perk", costPoints: 300, stock: 20, icon: "☕", isActive: true, createdAt: "2026-08-01T02:00:00.000Z", updatedAt: "2026-08-27T02:00:00.000Z" },
-  { id: "reward-cash-100", title: "คูปองเงินสด 100 บาท", description: "กิฟต์วอเชอร์มูลค่า 100 บาท ส่งให้หลังคำขอได้รับอนุมัติ", category: "perk", costPoints: 1000, stock: 100, icon: "฿", isActive: true, createdAt: "2026-08-21T02:00:00.000Z", updatedAt: "2026-08-21T02:00:00.000Z" },
-  { id: "reward-shopping-500", title: "กิฟต์วอเชอร์ 500 บาท", description: "เลือกใช้กับร้านค้าที่บริษัทกำหนดหลังตรวจสอบสิทธิ์", category: "perk", costPoints: 5000, stock: 30, icon: "▣", isActive: true, createdAt: "2026-08-21T02:05:00.000Z", updatedAt: "2026-08-21T02:05:00.000Z" },
-  { id: "reward-half-day", title: "วันหยุดครึ่งวัน", description: "แลกสิทธิ์วันหยุดเพิ่มเติมครึ่งวัน", category: "wellbeing", costPoints: 3000, stock: 6, icon: "☀", isActive: true, createdAt: "2026-08-01T02:00:00.000Z", updatedAt: "2026-08-27T02:00:00.000Z" },
-  { id: "reward-learning", title: "งบเรียนรู้ 1,000 บาท", description: "ใช้กับคอร์ส หนังสือ หรือเวิร์กช็อป", category: "learning", costPoints: 2500, stock: 4, icon: "↗", isActive: true, createdAt: "2026-08-01T02:00:00.000Z", updatedAt: "2026-08-27T02:00:00.000Z" },
-  { id: "reward-lunch", title: "มื้อพิเศษกับทีม", description: "เครดิตอาหารกลางวันสำหรับฉลองความสำเร็จ", category: "recognition", costPoints: 1200, stock: 10, icon: "★", isActive: true, createdAt: "2026-08-01T02:00:00.000Z", updatedAt: "2026-08-27T02:00:00.000Z" },
-  { id: "reward-iphone-18", title: "iPhone 18", description: "รางวัลพิเศษมูลค่าสูง จำกัดจำนวนและต้องผ่านการอนุมัติตามนโยบายบริษัท", category: "recognition", costPoints: 500000, stock: 1, icon: "◎", isActive: true, createdAt: "2026-08-21T02:10:00.000Z", updatedAt: "2026-08-21T02:10:00.000Z" },
-];
+export const seedRewards: RewardRecord[] = [];
 
-export const seedPointLedger: PointLedgerRecord[] = [
-  { id: "points-work-growth-key-account", employeeId: "emp-narin", sourceType: "mission", sourceId: "work-growth-key-account", points: 120, note: "สำเร็จภารกิจปิดดีล Key Account ตามเกณฑ์ภารกิจเร่งด่วน", createdAt: "2026-08-15T09:00:00.000Z" },
-  { id: "points-work-tech-runbook", employeeId: "emp-supakorn", sourceType: "task", sourceId: "work-tech-runbook", points: 35, note: "จัดทำ Incident Runbook สำเร็จตามเกณฑ์งานสำคัญ", createdAt: "2026-08-16T08:00:00.000Z" },
-  { id: "points-bonus-pim", employeeId: "emp-pimchanok", sourceType: "bonus", sourceId: "bonus-q3-pim", points: 50, note: "โบนัสพิเศษพร้อมหลักฐานผลงานแคมเปญไตรมาส 3", createdAt: "2026-08-12T06:00:00.000Z" },
-  { id: "points-bonus-thanawat", employeeId: "emp-thanawat", sourceType: "bonus", sourceId: "bonus-cx-thanawat", points: 50, note: "โบนัสพิเศษจากคำชมลูกค้าที่ตรวจสอบแล้ว", createdAt: "2026-08-13T06:00:00.000Z" },
-  { id: "points-bonus-kanyarat", employeeId: "emp-kanyarat", sourceType: "bonus", sourceId: "bonus-people-kanyarat", points: 50, note: "โบนัสพิเศษจากการสนับสนุนกิจกรรมพัฒนาทีม", createdAt: "2026-08-14T06:00:00.000Z" },
-  { id: "points-bonus-nattapong", employeeId: "emp-nattapong", sourceType: "bonus", sourceId: "bonus-coaching-nattapong", points: 50, note: "โบนัสพิเศษจากการแบ่งปันเทคนิคการขาย", createdAt: "2026-08-14T07:00:00.000Z" },
-  { id: "points-bonus-sirilak", employeeId: "emp-sirilak", sourceType: "bonus", sourceId: "bonus-content-sirilak", points: 50, note: "โบนัสพิเศษจากการช่วยงานคอนเทนต์เร่งด่วน", createdAt: "2026-08-15T07:00:00.000Z" },
-  { id: "points-bonus-pattarapon", employeeId: "emp-pattarapon", sourceType: "bonus", sourceId: "bonus-platform-pattarapon", points: 50, note: "โบนัสพิเศษจากการแก้เหตุระบบนอกเวลาทำการ", createdAt: "2026-08-17T07:00:00.000Z" },
-  { id: "points-evaluation-narin-2026-07", employeeId: "emp-narin", sourceType: "evaluation", sourceId: "seed-evaluation-2026-07:emp-narin", points: 230, note: "Points จากผลประเมินเดือนกรกฎาคม 2569", createdAt: "2026-07-31T09:00:00.000Z" },
-  { id: "points-evaluation-supakorn-2026-07", employeeId: "emp-supakorn", sourceType: "evaluation", sourceId: "seed-evaluation-2026-07:emp-supakorn", points: 220, note: "Points จากผลประเมินเดือนกรกฎาคม 2569", createdAt: "2026-07-31T09:00:00.000Z" },
-  { id: "points-evaluation-pim-2026-07", employeeId: "emp-pimchanok", sourceType: "evaluation", sourceId: "seed-evaluation-2026-07:emp-pimchanok", points: 210, note: "Points จากผลประเมินเดือนกรกฎาคม 2569", createdAt: "2026-07-31T09:00:00.000Z" },
-  { id: "points-evaluation-thanawat-2026-07", employeeId: "emp-thanawat", sourceType: "evaluation", sourceId: "seed-evaluation-2026-07:emp-thanawat", points: 195, note: "Points จากผลประเมินเดือนกรกฎาคม 2569", createdAt: "2026-07-31T09:00:00.000Z" },
-  { id: "points-evaluation-kanyarat-2026-07", employeeId: "emp-kanyarat", sourceType: "evaluation", sourceId: "seed-evaluation-2026-07:emp-kanyarat", points: 225, note: "Points จากผลประเมินเดือนกรกฎาคม 2569", createdAt: "2026-07-31T09:00:00.000Z" },
-  { id: "points-evaluation-nattapong-2026-07", employeeId: "emp-nattapong", sourceType: "evaluation", sourceId: "seed-evaluation-2026-07:emp-nattapong", points: 230, note: "Points จากผลประเมินเดือนกรกฎาคม 2569", createdAt: "2026-07-31T09:00:00.000Z" },
-  { id: "points-evaluation-sirilak-2026-07", employeeId: "emp-sirilak", sourceType: "evaluation", sourceId: "seed-evaluation-2026-07:emp-sirilak", points: 180, note: "Points จากผลประเมินเดือนกรกฎาคม 2569", createdAt: "2026-07-31T09:00:00.000Z" },
-  { id: "points-evaluation-pattarapon-2026-07", employeeId: "emp-pattarapon", sourceType: "evaluation", sourceId: "seed-evaluation-2026-07:emp-pattarapon", points: 190, note: "Points จากผลประเมินเดือนกรกฎาคม 2569", createdAt: "2026-07-31T09:00:00.000Z" },
-];
+export const seedPointLedger: PointLedgerRecord[] = [];
 
 export const seedRewardRedemptions: RewardRedemptionRecord[] = [];
 
-export const seedEmployeeProfiles: EmployeeProfileRecord[] = [
-  { employeeId: "emp-narin", personalEmail: "narin.k@example.com", phone: "089-245-6712", birthDate: "1990-04-18", nationalIdLast4: "4821", address: "เขตบางรัก กรุงเทพมหานคร", emergencyName: "นลินี กิตติคุณ", emergencyPhone: "081-345-9981", startDate: "2022-02-01", employmentType: "permanent", education: "บริหารธุรกิจบัณฑิต มหาวิทยาลัยเชียงใหม่", experienceYears: 9, applicationSource: "Employee Referral", updatedAt: "2026-08-10T07:00:00.000Z" },
-  { employeeId: "emp-pimchanok", personalEmail: "pim.s@example.com", phone: "086-725-1840", birthDate: "1995-11-09", nationalIdLast4: "1906", address: "เขตพญาไท กรุงเทพมหานคร", emergencyName: "ภาณุ สุขใจ", emergencyPhone: "094-551-2088", startDate: "2023-06-15", employmentType: "permanent", education: "นิเทศศาสตรบัณฑิต มหาวิทยาลัยกรุงเทพ", experienceYears: 5, applicationSource: "LinkedIn", updatedAt: "2026-08-08T07:00:00.000Z" },
-  { employeeId: "emp-thanawat", personalEmail: "thanawat.p@example.com", phone: "092-448-3207", birthDate: "1997-01-21", nationalIdLast4: "7334", address: "อำเภอเมือง นนทบุรี", emergencyName: "ธัญชนก พงศ์ศรี", emergencyPhone: "089-780-4421", startDate: "2024-01-08", employmentType: "permanent", education: "ศิลปศาสตรบัณฑิต มหาวิทยาลัยรามคำแหง", experienceYears: 4, applicationSource: "JobsDB", updatedAt: "2026-08-09T07:00:00.000Z" },
-  { employeeId: "emp-supakorn", personalEmail: "supakorn.w@example.com", phone: "095-113-7846", birthDate: "1992-07-02", nationalIdLast4: "6158", address: "เขตสวนหลวง กรุงเทพมหานคร", emergencyName: "ศิริพร วัฒนะ", emergencyPhone: "086-331-0094", startDate: "2021-09-01", employmentType: "permanent", education: "วิศวกรรมศาสตรบัณฑิต มหาวิทยาลัยเทคโนโลยีพระจอมเกล้าธนบุรี", experienceYears: 8, applicationSource: "Tech Community", updatedAt: "2026-08-10T07:00:00.000Z" },
-  { employeeId: "emp-kanyarat", personalEmail: "kanyarat.c@example.com", phone: "081-624-9155", birthDate: "1993-05-13", nationalIdLast4: "3407", address: "เขตจตุจักร กรุงเทพมหานคร", emergencyName: "กฤตชัย ชัยพร", emergencyPhone: "098-205-7814", startDate: "2022-11-16", employmentType: "permanent", education: "รัฐศาสตรบัณฑิต มหาวิทยาลัยธรรมศาสตร์", experienceYears: 7, applicationSource: "Career Page", updatedAt: "2026-08-11T07:00:00.000Z" },
-  { employeeId: "emp-nattapong", personalEmail: "nattapong.t@example.com", phone: "088-275-6339", birthDate: "1991-09-27", nationalIdLast4: "9274", address: "อำเภอปากเกร็ด นนทบุรี", emergencyName: "นิชา ตั้งใจ", emergencyPhone: "082-661-7400", startDate: "2023-03-01", employmentType: "permanent", education: "บริหารธุรกิจมหาบัณฑิต มหาวิทยาลัยเกษตรศาสตร์", experienceYears: 10, applicationSource: "Recruiter", updatedAt: "2026-08-08T07:00:00.000Z" },
-  { employeeId: "emp-sirilak", personalEmail: "sirilak.r@example.com", phone: "093-508-2871", birthDate: "1998-12-04", nationalIdLast4: "2059", address: "เขตดินแดง กรุงเทพมหานคร", emergencyName: "สุกัญญา รุ่งเรือง", emergencyPhone: "090-664-5271", startDate: "2026-07-01", employmentType: "probation", education: "อักษรศาสตรบัณฑิต มหาวิทยาลัยศิลปากร", experienceYears: 3, applicationSource: "University Alumni", updatedAt: "2026-08-07T07:00:00.000Z" },
-  { employeeId: "emp-pattarapon", personalEmail: "pattarapon.p@example.com", phone: "097-362-8814", birthDate: "1996-08-19", nationalIdLast4: "7740", address: "เขตบางนา กรุงเทพมหานคร", emergencyName: "พรพิมล พูนทรัพย์", emergencyPhone: "084-411-7350", startDate: "2026-06-16", employmentType: "probation", education: "วิทยาศาสตรบัณฑิต มหาวิทยาลัยมหิดล", experienceYears: 4, applicationSource: "GitHub Portfolio", updatedAt: "2026-08-07T07:00:00.000Z" },
-];
+export const seedEmployeeProfiles: EmployeeProfileRecord[] = [];
 
-export const seedApplicationDocuments: ApplicationDocumentRecord[] = [
-  { id: "doc-narin-resume", employeeId: "emp-narin", documentType: "resume", title: "ประวัติย่อ (Resume)", fileName: "resume-narin.pdf", storageKey: "", contentType: "application/pdf", sizeBytes: 428000, status: "verified", note: "นำเข้าจากแฟ้มเดิม", uploadedBy: "ฝ่ายทรัพยากรบุคคล", uploadedAt: "2022-01-12T04:00:00.000Z", verifiedBy: "ฝ่ายทรัพยากรบุคคล", verifiedAt: "2022-01-13T04:00:00.000Z" },
-  { id: "doc-narin-id", employeeId: "emp-narin", documentType: "id_card", title: "สำเนาบัตรประชาชน", fileName: "id-card-narin.pdf", storageKey: "", contentType: "application/pdf", sizeBytes: 316000, status: "verified", note: "นำเข้าจากแฟ้มเดิม", uploadedBy: "ฝ่ายทรัพยากรบุคคล", uploadedAt: "2022-01-12T04:10:00.000Z", verifiedBy: "ฝ่ายทรัพยากรบุคคล", verifiedAt: "2022-01-13T04:10:00.000Z" },
-  { id: "doc-narin-transcript", employeeId: "emp-narin", documentType: "transcript", title: "วุฒิการศึกษา / Transcript", fileName: "transcript-narin.pdf", storageKey: "", contentType: "application/pdf", sizeBytes: 520000, status: "verified", note: "นำเข้าจากแฟ้มเดิม", uploadedBy: "ฝ่ายทรัพยากรบุคคล", uploadedAt: "2022-01-12T04:20:00.000Z", verifiedBy: "ฝ่ายทรัพยากรบุคคล", verifiedAt: "2022-01-13T04:20:00.000Z" },
-  { id: "doc-pim-resume", employeeId: "emp-pimchanok", documentType: "resume", title: "ประวัติย่อ (Resume)", fileName: "resume-pimchanok.pdf", storageKey: "", contentType: "application/pdf", sizeBytes: 376000, status: "verified", note: "นำเข้าจากระบบสรรหา", uploadedBy: "Recruitment Team", uploadedAt: "2023-05-20T04:00:00.000Z", verifiedBy: "ฝ่ายทรัพยากรบุคคล", verifiedAt: "2023-05-22T04:00:00.000Z" },
-  { id: "doc-sirilak-resume", employeeId: "emp-sirilak", documentType: "resume", title: "ประวัติย่อ (Resume)", fileName: "resume-sirilak.pdf", storageKey: "", contentType: "application/pdf", sizeBytes: 390000, status: "verified", note: "ตรวจแล้วจากระบบสรรหา", uploadedBy: "Recruitment Team", uploadedAt: "2026-05-18T04:00:00.000Z", verifiedBy: "ฝ่ายทรัพยากรบุคคล", verifiedAt: "2026-05-20T04:00:00.000Z" },
-  { id: "doc-sirilak-id", employeeId: "emp-sirilak", documentType: "id_card", title: "สำเนาบัตรประชาชน", fileName: "id-card-sirilak.pdf", storageKey: "", contentType: "application/pdf", sizeBytes: 280000, status: "pending", note: "รอตรวจความชัดเจน", uploadedBy: "ศิริลักษณ์ รุ่งเรือง", uploadedAt: "2026-06-20T04:00:00.000Z", verifiedBy: null, verifiedAt: null },
-];
+export const seedApplicationDocuments: ApplicationDocumentRecord[] = [];
 
-export const seedEmploymentContracts: EmploymentContractRecord[] = [
-  { id: "contract-narin-2022", employeeId: "emp-narin", documentId: null, title: "สัญญาจ้างพนักงานประจำ", version: "1.0", status: "signed", effectiveDate: "2022-02-01", expiryDate: null, sentAt: "2022-01-18T04:00:00.000Z", signedName: "นรินทร์ กิตติคุณ", signedAt: "2022-01-19T06:30:00.000Z", consentText: "ข้าพเจ้าได้อ่านและยอมรับข้อกำหนดในสัญญาจ้างฉบับนี้", signerUserId: "legacy-import", signerEmail: "narin@peoplepulse.co", createdBy: "ฝ่ายทรัพยากรบุคคล", createdAt: "2022-01-18T04:00:00.000Z", updatedAt: "2022-01-19T06:30:00.000Z" },
-  { id: "contract-sirilak-2026", employeeId: "emp-sirilak", documentId: null, title: "สัญญาจ้างและเงื่อนไขทดลองงาน", version: "1.0", status: "sent", effectiveDate: "2026-07-01", expiryDate: "2026-10-28", sentAt: "2026-06-18T03:00:00.000Z", signedName: null, signedAt: null, consentText: "", signerUserId: null, signerEmail: null, createdBy: "ฝ่ายทรัพยากรบุคคล", createdAt: "2026-06-18T03:00:00.000Z", updatedAt: "2026-06-18T03:00:00.000Z" },
-  { id: "contract-pattarapon-2026", employeeId: "emp-pattarapon", documentId: null, title: "สัญญาจ้างและเงื่อนไขทดลองงาน", version: "1.0", status: "draft", effectiveDate: "2026-06-16", expiryDate: "2026-10-13", sentAt: null, signedName: null, signedAt: null, consentText: "", signerUserId: null, signerEmail: null, createdBy: "ฝ่ายทรัพยากรบุคคล", createdAt: "2026-06-10T03:00:00.000Z", updatedAt: "2026-06-10T03:00:00.000Z" },
-];
+export const seedEmploymentContracts: EmploymentContractRecord[] = [];
 
 export function findRole(roleId: string) {
-  return roles.find((role) => role.id === roleId) ?? legacyRoles.find((role) => role.id === roleId);
+  return positionRoles.find((role) => role.id === roleId) ?? previousRoles.find((role) => role.id === roleId) ?? legacyRoles.find((role) => role.id === roleId);
 }
 
 export function getRole(roleId: string) {
