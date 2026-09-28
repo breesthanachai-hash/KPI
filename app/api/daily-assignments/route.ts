@@ -9,6 +9,10 @@ export async function GET(request: Request) {
   const db = getD1();
   await generateDailyAssignments(db);
   const admin = auth.currentUser.role === "admin";
+  if (new URL(request.url).searchParams.get("summary") === "1") {
+    const count = await db.prepare("SELECT COUNT(*) AS pending FROM daily_assignments a JOIN employees e ON e.id=a.employee_id WHERE a.submitted_at IS NULL AND (?=1 OR a.employee_id=?)").bind(admin ? 1 : 0, auth.currentUser.employeeId ?? "").first<{pending:number}>();
+    return Response.json({pending:count?.pending ?? 0}, {headers:{"Cache-Control":"no-store"}});
+  }
   const rows = await db.prepare(`SELECT a.*, e.name AS employee_name FROM daily_assignments a JOIN employees e ON e.id=a.employee_id WHERE (?=1 OR a.employee_id=?) ORDER BY a.day DESC, e.name LIMIT 500`).bind(admin ? 1 : 0,auth.currentUser.employeeId ?? "").all();
   const people = admin ? await db.prepare("SELECT id,name,role_id,position_title FROM employees e WHERE status='active' AND EXISTS (SELECT 1 FROM user_accounts u WHERE u.employee_id=e.id AND u.status='active')").all<{id:string;name:string;role_id:string;position_title:string}>() : {results:[]};
   const bindings = admin ? await db.prepare("SELECT CASE WHEN template_id='tam' THEN 'boss' WHEN template_id='neer' THEN 'toey' ELSE template_id END AS template_id, employee_id, MAX(enabled) AS enabled FROM daily_assignment_bindings GROUP BY CASE WHEN template_id='tam' THEN 'boss' WHEN template_id='neer' THEN 'toey' ELSE template_id END, employee_id").all() : {results:[]};

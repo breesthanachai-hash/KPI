@@ -6237,3 +6237,26 @@ input::placeholder,textarea::placeholder { color: #526f8d !important; opacity: 1
 .employee-management-tabs > button.active { background: #204eaa; border-color: #204eaa; }
 .dashboard .employee-management-tabs > button.active :is(span,strong,small) { color: #fff !important; }
 .employee-management-tabs > button:focus-visible { outline: 3px solid #f4bf43; outline-offset: 2px; }
+
+/* Workspace: compact navigation, readable secondary text and restrained surfaces. */
+.page-heading[data-work-section] { min-height: 0; padding: 22px 28px; }
+.page-heading[data-work-section] h1 { font-size: clamp(26px,3vw,36px); }
+.workspace-readable > .work-section-tabs { position: static; grid-template-columns: repeat(5,minmax(0,1fr)); gap: 8px; }
+.workspace-readable > .work-section-tabs button { min-height: 64px; padding: 12px; background: #fff; border: 1px solid #d4dfed; box-shadow: none; }
+.workspace-readable > .work-section-tabs button strong { font-size: 14px; line-height: 1.5; color: #183653; }
+.workspace-readable > .work-section-tabs button.active { background: #214fa4; border-color: #214fa4; }
+.workspace-readable > .work-section-tabs button.active strong { color: #fff; }
+.workspace-readable > .workspace-context { margin: 0; padding: 0 8px; color: #3e5670; font-size: 14px; line-height: 1.7; order: 0; }
+.workspace-readable > .attendance-submenu { margin-bottom: 0; order: 0; }
+.workspace-readable .simple-todo-heading p,.workspace-readable .daily-assignments > p,.workspace-readable .daily-assignments article > p { color: #3e5670; font-size: 14px; }
+.workspace-readable .daily-assignments article { background: #fff; border-left: 4px solid #5c7ca6; }
+.workspace-readable .daily-assignments article[data-status="overdue"] { border-left-color: #b53939; background: #fff7f5; }
+.workspace-readable .daily-assignments article[data-status="done"] { border-left-color: #298268; }
+.workspace-readable .daily-assignments article > button { background: #214fa4; color: #fff; font-weight: 700; }
+.workspace-readable .daily-assignments article > details { margin-block: 12px; color: #3e5670; }
+.workspace-readable .daily-assignments article > details summary { color: #234e84; }
+.workspace-readable .quest-center-hero { min-height: 0; padding: 24px; }
+.workspace-readable .quest-center-copy > p { color: #f0f5ff; }
+.workspace-readable :is(button,a,summary):focus-visible { outline: 3px solid #ce8600; outline-offset: 3px; }
+@media (max-width:1100px) { .workspace-readable > .work-section-tabs { grid-template-columns: repeat(3,minmax(0,1fr)); } }
+@media (max-width:600px) { .workspace-readable > .work-section-tabs { grid-template-columns: repeat(2,minmax(0,1fr)); } .page-heading[data-work-section] { padding: 18px; } }

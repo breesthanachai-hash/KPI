@@ -65,7 +65,9 @@ function secureResponse(response: Response, requestUrl: URL) {
   const headers = new Headers(response.headers);
   if (!headers.has("content-security-policy")) headers.set("content-security-policy", "base-uri 'self'; frame-ancestors 'none'; object-src 'none'");
   headers.set("cross-origin-opener-policy", "same-origin");
-  headers.set("permissions-policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()");
+  // Attendance check-in explicitly asks the user for camera and GPS access.
+  // Keep every other sensitive browser capability disabled.
+  headers.set("permissions-policy", "camera=(self), geolocation=(self), microphone=(), payment=(), usb=()");
   headers.set("referrer-policy", "strict-origin-when-cross-origin");
   headers.set("x-content-type-options", "nosniff");
   headers.set("x-frame-options", "DENY");

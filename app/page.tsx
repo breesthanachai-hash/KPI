@@ -1191,6 +1191,9 @@ export default function Home() {
   const [workDueFilter, setWorkDueFilter] = useState<WorkDueFilter>("all");
   const [employeeTaskScope, setEmployeeTaskScope] = useState<EmployeeTaskScope>("assigned");
   const [workSection, setWorkSection] = useState<WorkSection>("quests");
+  const [taskPanel, setTaskPanel] = useState<"daily" | "assigned" | null>(null);
+  const [rewardPanel, setRewardPanel] = useState<"points" | "rewards">("points");
+  const [dailyPending, setDailyPending] = useState<number | null>(null);
   const [pointPanel, setPointPanel] = useState<PointPanel>("overview");
   const [workAssigneeFilter, setWorkAssigneeFilter] = useState("all");
   const [officeLoadFilter, setOfficeLoadFilter] = useState<OfficeLoadFilter>("all");
@@ -1321,6 +1324,14 @@ export default function Home() {
               : loadedSystemSettings.experience.employeeHome;
           setView(configuredHome);
           if (configuredHome === "work") setWorkSection("tasks");
+          try {
+            const saved = JSON.parse(window.localStorage.getItem(`workspace-tabs:${body.currentUser.id}:${body.currentUser.role}:${Boolean(body.employeePreview)}`) ?? "null");
+            if (saved && ["attendance", "tasks", "quests", "projects", "points", "rewards"].includes(saved.section) && !(body.currentUser.role === "employee" && saved.section === "projects")) {
+              setWorkSection(saved.section);
+              if (["daily", "assigned"].includes(saved.tasks)) setTaskPanel(saved.tasks);
+              if (["points", "rewards"].includes(saved.rewards)) setRewardPanel(saved.rewards);
+            }
+          } catch { /* Unavailable or invalid storage must not block sign-in. */ }
         }
         setTeamOverview(body.teamOverview ?? { employees: [], evaluations: [], workItems: [] });
         setLaunchReadiness(body.launchReadiness ?? null);
@@ -1409,6 +1420,30 @@ export default function Home() {
     if (!currentUser || isEmployeePreview || currentUser.role === "manager" || new URLSearchParams(window.location.search).get("payroll") !== "1") return;
     const timer = window.setTimeout(() => { setView("payroll"); window.history.replaceState(null, "", window.location.pathname); }, 0);
     return () => window.clearTimeout(timer);
+  }, [currentUser, isEmployeePreview]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    try {
+      window.localStorage.setItem(`workspace-tabs:${currentUser.id}:${currentUser.role}:${isEmployeePreview}`, JSON.stringify({section:workSection,tasks:taskPanel,rewards:workSection === "rewards" ? "rewards" : rewardPanel}));
+    } catch { /* Navigation still works when browser storage is disabled. */ }
+  }, [currentUser, isEmployeePreview, workSection, taskPanel, rewardPanel]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    let disposed = false;
+    const refresh = async () => {
+      try {
+        const response = await fetch("/api/daily-assignments?summary=1");
+        if (!response.ok) throw new Error("summary unavailable");
+        const data = await response.json();
+        if (!disposed) setDailyPending(Number.isInteger(data.pending) && data.pending >= 0 ? data.pending : null);
+      } catch { if (!disposed) setDailyPending(null); }
+    };
+    void refresh();
+    const timer = window.setInterval(refresh, 60000);
+    window.addEventListener("daily-assignments-updated", refresh);
+    return () => { disposed = true; window.clearInterval(timer); window.removeEventListener("daily-assignments-updated", refresh); };
   }, [currentUser, isEmployeePreview]);
 
   useEffect(() => {
@@ -2338,6 +2373,7 @@ export default function Home() {
     setView("work");
     setWorkSection("tasks");
     setWorkDueFilter(notification.dueFilter ?? "all");
+    setTaskPanel("assigned");
     setWorkFilter(notification.kind === "quest" ? "mission" : "all");
     setWorkSearch(notificationWorkItem?.title ?? "");
   };
@@ -3987,7 +4023,7 @@ export default function Home() {
     : view === "work" && workSection === "points" ? (isEmployeeUser ? "Points ของฉัน" : "จัดการ Points")
     : view === "work" && workSection === "rewards" ? (isEmployeeUser ? "ร้านรางวัล" : "รางวัล")
     : view === "work" && workSection === "projects" ? "โปรเจกต์"
-    : view === "work" && workSection === "tasks" ? "รายการงาน"
+    : view === "work" && workSection === "tasks" ? ((taskPanel ?? (isEmployeeUser ? "daily" : "assigned")) === "daily" ? "งานประจำวัน" : isEmployeeUser ? "งานที่ได้รับมอบหมาย" : "ภาพรวมงานทีม")
       : isEmployeeUser && view === "work" ? "งานของฉัน"
         : isEmployeeUser && view === "portfolio" ? "แฟ้มผลงานของฉัน"
           : isEmployeeUser && view === "office" ? "สำนักงานของทีม"
@@ -3995,6 +4031,7 @@ export default function Home() {
               : isEmployeeUser && view === "peopleOps" ? "การเติบโตและเงินเดือนของฉัน"
                 : viewMeta[view].title;
   const activeViewDescription = view === "work" && workSection === "attendance" ? "ถ่ายรูปและจับพิกัดเพื่อบันทึกเวลาเข้า–ออกงานของคุณอย่างปลอดภัย"
+    : view === "work" && workSection === "tasks" ? ((taskPanel ?? (isEmployeeUser ? "daily" : "assigned")) === "daily" ? "งานอัตโนมัติตามตำแหน่ง ส่งหลักฐานเพื่อบันทึกสิ่งที่ทำวันนี้" : "ติดตามผู้รับผิดชอบ กำหนดส่ง และความคืบหน้าของงาน")
     : view === "work" && workSection === "quests" ? (permissions.canManageQuests ? "สร้าง จัดกลุ่ม และประกาศเควสพร้อม Points และรางวัลให้ทีมเห็นอย่างชัดเจน" : "ดูเควสที่เปิดสำหรับคุณหรือทีม พร้อมเป้าหมาย กำหนดส่ง Points และรางวัลในที่เดียว")
     : view === "work" && workSection === "points" && pointPanel === "policies" ? (isAdmin ? "ร่าง ตรวจความครบถ้วน และประกาศกฎองค์กรให้พนักงานรับทราบอย่างตรวจสอบได้" : "อ่านกฎที่ประกาศใช้ เข้าใจกติกา Points และบันทึกการรับทราบของคุณ")
     : isEmployeeUser && view === "work" && workSection === "points" ? "ตรวจสอบยอด Points รายการได้–เสีย Points และที่มาทุกรายการของคุณ"
@@ -4105,13 +4142,14 @@ export default function Home() {
       navigateFromWorkspaceMenu("work", () => {
         setActiveDepartment("all");
         setEmployeeTaskScope("assigned");
+        setTaskPanel("assigned");
         setWorkSection("tasks");
         setWorkAssigneeFilter(isEmployeeUser ? currentUser?.employeeId ?? "all" : "all");
         setWorkDueFilter("all");
         setWorkSearch("");
       });
     } else if (destinationId === "my-quests" || destinationId === "quests") {
-      navigateFromWorkspaceMenu("work", () => { setQuestTypeFilter("all"); setWorkSection("quests"); });
+      navigateFromWorkspaceMenu("work", () => { if (destinationId === "my-quests") { setQuestTypeFilter("all"); setWorkSection("quests"); } });
     } else if (destinationId === "my-portfolio" || destinationId === "portfolio") {
       navigateFromWorkspaceMenu("portfolio", () => { if (isEmployeeUser) setPortfolioEmployeeId(currentUser?.employeeId ?? "all"); });
     } else if (destinationId === "my-growth" || destinationId === "people-ops") {
@@ -4285,14 +4323,17 @@ export default function Home() {
 
   const handlePeopleAiAction = (action: PeopleAiActionId) => {
     if (action === "open_today") {
+      setTaskPanel("assigned");
       setView("work");
       setWorkSection("tasks");
       setWorkDueFilter("today");
     } else if (action === "open_overdue") {
+      setTaskPanel("assigned");
       setView("work");
       setWorkSection("tasks");
       setWorkDueFilter("overdue");
     } else if (action === "create_task" && permissions.canManageWork) {
+      setTaskPanel("assigned");
       setView("work");
       setWorkSection("tasks");
       openWorkItemForm();
@@ -4421,7 +4462,7 @@ export default function Home() {
           {currentUserEmployee && <div className="top-profile-work-summary"><span><small>ตำแหน่ง</small><strong>{employeePositionLabel(currentUserEmployee)}</strong></span><span><small>Points คงเหลือ</small><strong>{formatMoney(pointBalances.get(currentUserEmployee.id) ?? 0)}</strong></span></div>}
           <nav>
             <button type="button" onClick={() => { setShowUserMenu(false); if (isAdmin) { if (currentUser?.employeeId) setProfileEmployeeId(currentUser.employeeId); setView("profiles"); } else { setPortfolioEmployeeId(currentUser?.employeeId ?? "all"); setView("portfolio"); } }}><span>▣</span><p><strong>{isAdmin ? "จัดการโปรไฟล์" : "แฟ้มผลงานของฉัน"}</strong><small>{isAdmin ? "ข้อมูล เอกสาร และสัญญา" : "ดูผลงานและหลักฐานที่ส่งไว้"}</small></p></button>
-            <button type="button" onClick={() => { setShowUserMenu(false); setView("work"); setWorkSection("tasks"); setWorkAssigneeFilter(currentUser?.employeeId ?? "all"); }}><span>✓</span><p><strong>งานของฉัน</strong><small>เปิดรายการสิ่งที่ต้องทำ</small></p></button>
+            <button type="button" onClick={() => { setShowUserMenu(false); setView("work"); setWorkSection("tasks"); setTaskPanel("assigned"); setWorkAssigneeFilter(currentUser?.employeeId ?? "all"); }}><span>✓</span><p><strong>งานของฉัน</strong><small>เปิดรายการสิ่งที่ต้องทำ</small></p></button>
             <button type="button" onClick={() => { setShowUserMenu(false); setView("work"); setWorkSection("points"); setPointPanel("policies"); }}><span>§</span><p><strong>กฎองค์กร</strong><small>{isAdmin ? "ร่าง ประกาศ และติดตามการรับทราบ" : "อ่านกฎที่ประกาศใช้และยืนยันรับทราบ"}</small></p></button>
             {isEmployeeUser && <button type="button" onClick={() => { setShowUserMenu(false); setView("peopleOps"); }}><span>↗</span><p><strong>การเติบโตและเงินเดือน</strong><small>ดูเป้าหมาย สกิล และค่าตอบแทนของฉัน</small></p></button>}
             {isEmployeeUser && <button type="button" onClick={() => { setShowUserMenu(false); setView("work"); setWorkSection("points"); setPointPanel("overview"); }}><span>★</span><p><strong>Points และรางวัล</strong><small>ดูยอด Points และเลือกรางวัล</small></p></button>}
@@ -4491,8 +4532,8 @@ export default function Home() {
               <div><p className="eyebrow">MY WORKSPACE</p><h2>สวัสดี {currentUserEmployee.name}</h2><p>{employeePositionLabel(currentUserEmployee)} · วันนี้จัดการงานและการเติบโตของคุณได้จากหน้าจอเดียว</p></div>
             </div>
             <div className="employee-welcome-stats">
-              <button onClick={() => { setEmployeeTaskScope("assigned"); setWorkDueFilter("today"); setWorkSection("tasks"); }}><span>✓</span><p><small>งานวันนี้</small><strong>{employeeAssignedTodayCount}</strong></p></button>
-              <button onClick={() => { setEmployeeTaskScope("assigned"); setWorkDueFilter("review"); setWorkSection("tasks"); }}><span>⌕</span><p><small>รอตรวจ</small><strong>{employeeAssignedReviewCount}</strong></p></button>
+              <button onClick={() => { setEmployeeTaskScope("assigned"); setTaskPanel("assigned"); setWorkDueFilter("today"); setWorkSection("tasks"); }}><span>✓</span><p><small>งานวันนี้</small><strong>{employeeAssignedTodayCount}</strong></p></button>
+              <button onClick={() => { setEmployeeTaskScope("assigned"); setTaskPanel("assigned"); setWorkDueFilter("review"); setWorkSection("tasks"); }}><span>⌕</span><p><small>รอตรวจ</small><strong>{employeeAssignedReviewCount}</strong></p></button>
               <button onClick={() => setView("peopleOps")}><span>↗</span><p><small>พร้อมเติบโต</small><strong>{promotionReadiness}%</strong></p></button>
               <button onClick={() => { setPointPanel("overview"); setWorkSection("points"); }}><span>★</span><p><small>Points คงเหลือ</small><strong>{formatMoney(pointBalances.get(currentUserEmployee.id) ?? 0)}</strong></p></button>
             </div>
@@ -4603,6 +4644,7 @@ export default function Home() {
                 return;
               }
               setWorkAssigneeFilter(employeeId);
+              setTaskPanel("assigned");
               setWorkDueFilter("all");
               setWorkSearch("");
               setWorkSection("tasks");
@@ -5682,24 +5724,32 @@ export default function Home() {
         )}
 
         {view === "work" && (
-          <section className="mission-layout">
+          <section className="mission-layout workspace-readable">
             <nav className="work-section-tabs" aria-label="เลือกส่วนจัดการงาน">
               {([
                 { id: "attendance", icon: "◷", label: "เข้างาน", copy: "กล้องและพิกัด GPS", value: 0 },
-                { id: "quests", icon: "Q", label: "ศูนย์เควส", copy: isEmployeeUser ? "เควสสำหรับฉัน" : "สร้างและจัดการ", value: currentQuests.length },
-                { id: "tasks", icon: "✓", label: "รายการงาน", copy: "งานที่ต้องทำ", value: (isEmployeeUser ? employeeAssignedWorkItems : workItems).filter((item) => item.status !== "done").length },
+                { id: "tasks", icon: "✓", label: "งาน", copy: "งานที่ต้องทำ", value: (isEmployeeUser ? employeeAssignedWorkItems : workItems).filter((item) => item.status !== "done").length },
+                { id: "quests", icon: "Q", label: "เควส", copy: "ภารกิจพิเศษ", value: currentQuests.length },
                 { id: "projects", icon: "◇", label: "โปรเจกต์", copy: "ติดตามภาพรวม", value: projects.length },
-                { id: "points", icon: "★", label: isEmployeeUser ? "Points ของฉัน" : "จัดการ Points", copy: isEmployeeUser ? "ยอด กฎ ประวัติ" : "รอบ กฎ ประวัติ", value: totalPoints },
-                { id: "rewards", icon: "♢", label: isEmployeeUser ? "ร้านรางวัล" : "รางวัล", copy: "ใช้ Points แลกของ", value: rewards.filter((reward) => reward.isActive).length },
+                { id: "points", icon: "★", label: "Points และรางวัล", copy: "คะแนนและการแลก", value: totalPoints },
               ] as const).filter((section) => !isEmployeeUser || section.id !== "projects").map((section) => (
-                <button key={section.id} className={workSection === section.id ? "active" : ""} onClick={() => { if (section.id === "points") setPointPanel("overview"); setWorkSection(section.id); }} aria-current={workSection === section.id ? "page" : undefined}>
+                <button key={section.id} className={workSection === section.id || (section.id === "points" && workSection === "rewards") ? "active" : ""} onClick={() => { if (section.id === "points") { setPointPanel("overview"); setWorkSection(rewardPanel); } else setWorkSection(section.id); }} aria-current={workSection === section.id || (section.id === "points" && workSection === "rewards") ? "page" : undefined}>
                   <span aria-hidden="true">{section.icon}</span>
-                  <p><strong>{section.label}</strong><small>{section.copy}</small></p>
-                  {section.id !== "attendance" && <b>{formatMoney(section.value)}</b>}
+                  <p><strong>{section.label}</strong></p>
+                  {section.id !== "attendance" && <b title={section.id === "tasks" ? "งานมอบหมายและงานประจำวันที่ยังไม่เสร็จ รวมงานค้าง" : undefined}>{section.id === "tasks" ? dailyPending === null ? "…" : formatMoney(section.value + dailyPending) : formatMoney(section.value)}</b>}
                 </button>
               ))}
             </nav>
 
+            <p className="workspace-context">{workSection === "tasks" ? "งานประจำวันแจกตามตำแหน่ง · งานมอบหมายมีผู้รับผิดชอบและกำหนดส่ง" : workSection === "quests" ? "ภารกิจพิเศษพร้อม Points หรือรางวัล" : workSection === "projects" ? "รวมหลายงานเพื่อเป้าหมายเดียวกัน" : workSection === "attendance" ? "บันทึกเวลาเข้า–ออก และดูประวัติของคุณ" : "ดูคะแนนสะสม ประวัติ และรางวัลที่แลกได้"}</p>
+            {workSection === "tasks" && <nav className="attendance-submenu" aria-label="ประเภทงาน">
+              <button type="button" aria-current={(taskPanel ?? (isEmployeeUser ? "daily" : "assigned")) === "daily" ? "page" : undefined} onClick={() => setTaskPanel("daily")}>งานประจำวัน</button>
+              <button type="button" aria-current={(taskPanel ?? (isEmployeeUser ? "daily" : "assigned")) === "assigned" ? "page" : undefined} onClick={() => setTaskPanel("assigned")}>{isEmployeeUser ? "งานที่ได้รับมอบหมาย" : "ภาพรวมงานทีม"}</button>
+            </nav>}
+            {(workSection === "points" || workSection === "rewards") && <nav className="attendance-submenu" aria-label="คะแนนและรางวัล">
+              <button type="button" aria-current={workSection === "points" ? "page" : undefined} onClick={() => { setWorkSection("points"); setRewardPanel("points"); }}>{isEmployeeUser ? "คะแนนของฉัน" : "จัดการคะแนน"}</button>
+              <button type="button" aria-current={workSection === "rewards" ? "page" : undefined} onClick={() => { setWorkSection("rewards"); setRewardPanel("rewards"); }}>{isEmployeeUser ? "แลกรางวัล" : "จัดการรางวัล"}</button>
+            </nav>}
             {workSection === "attendance" && <AttendanceCheckin preview={isEmployeePreview} />}
             {workSection === "quests" && <section className="quest-center" aria-labelledby="quest-center-title">
               <header className="quest-center-hero">
@@ -5768,8 +5818,8 @@ export default function Home() {
               <div className="quest-review-note" role="note"><span aria-hidden="true">✓</span><p><strong>มอบสิทธิ์หลัง HR / Admin ตรวจหลักฐานเท่านั้น</strong><small>เมื่อยืนยันผล ระบบจะเพิ่ม Points ตามจำนวนที่ประกาศและตัดสต็อกรางวัลในรายการเดียว พร้อมเก็บผู้ตรวจ นโยบาย และหลักฐานเพื่อป้องกันการมอบซ้ำ</small></p></div>
             </section>}
 
-            {workSection === "tasks" && <DailyAssignments employeeId={currentUser?.employeeId} />}
-            {workSection === "tasks" && <section className="simple-todo-card" aria-labelledby="simple-todo-title">
+            {workSection === "tasks" && (taskPanel ?? (isEmployeeUser ? "daily" : "assigned")) === "daily" && <DailyAssignments employeeId={currentUser?.employeeId} />}
+            {workSection === "tasks" && (taskPanel ?? (isEmployeeUser ? "daily" : "assigned")) === "assigned" && <section className="simple-todo-card" aria-labelledby="simple-todo-title">
               <div className="simple-todo-heading">
                 <div><p className="eyebrow">งานของวันนี้</p><h2 id="simple-todo-title">{isEmployeeUser ? "ฉันต้องทำอะไรต่อ?" : "ทีมต้องทำอะไรต่อ?"}</h2><p>รายการเดียวจบ เรียงงานเร่งด่วนและกำหนดส่งให้แล้ว</p></div>
                 {(permissions.canManageWork || (isEmployeeUser && permissions.canAssignTeamWork && !isEmployeePreview)) && <div className="simple-todo-create">{permissions.canManageWork && <button type="button" className="secondary-button" onClick={() => setShowProjectForm(true)}>สร้างโปรเจกต์</button>}<button type="button" className="primary-button" onClick={() => openWorkItemForm()}><span aria-hidden="true">＋</span> {isEmployeeUser ? "สร้างงานประสาน" : "เพิ่มงาน"}</button></div>}
