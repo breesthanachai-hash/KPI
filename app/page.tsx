@@ -7,6 +7,7 @@ import AiRobotMascot from "./ai-robot-mascot";
 import { AuthScreen, ChangePasswordDialog } from "./auth-ui";
 import EmployeeHistory from "./employee-history";
 import DailyAssignments from "./daily-assignments";
+import PositionChangeRequests from "./position-change-requests";
 import AttendanceCheckin from "./attendance-checkin";
 import { MAX_NEW_PASSWORD_LENGTH, MIN_GENERAL_PASSWORD_LENGTH, passwordMeetsMinimum } from "../lib/password-policy.js";
 import {
@@ -57,7 +58,7 @@ const Office3D = lazy(() => import("./office-3d"));
 const PayrollCenter = lazy(() => import("./payroll-center"));
 const AI_MASCOT_VISIBILITY_STORAGE_KEY = "people-pulse-ai-mascot-visible:v1";
 
-type View = "overview" | "employees" | "profiles" | "employeeBindings" | "organizationDocs" | "skills" | "power" | "peopleOps" | "hr" | "portfolio" | "work" | "office" | "access" | "settings" | "payroll";
+type View = "overview" | "employees" | "profiles" | "employeeBindings" | "positionRequests" | "organizationDocs" | "skills" | "power" | "peopleOps" | "hr" | "portfolio" | "work" | "office" | "access" | "settings" | "payroll";
 
 type PublicUserAccount = Omit<UserAccountRecord, "authUserId"> & {
   loginId?: string;
@@ -987,6 +988,7 @@ function officeBehaviorFor(level: OfficeLoadLevel, index: number): OfficeBehavio
 }
 
 const viewMeta: Record<View, { eyebrow: string; title: string; description: string }> = {
+  positionRequests: { eyebrow: "HR / ADMIN", title: "คำขอเปลี่ยนตำแหน่ง", description: "ส่งคำขอจากเครื่องทดสอบให้ระบบหลักตรวจอนุมัติ ก่อนเปลี่ยนข้อมูลจริง" },
   employeeBindings: { eyebrow: "HR / ADMIN", title: "ผูกบัญชีกับตำแหน่งงาน", description: "เลือกผู้รับผิดชอบและแม่แบบงานรายวัน โดยไม่เปลี่ยนสิทธิ์หรือข้อมูลตำแหน่งในแฟ้มพนักงาน" },
   payroll: { eyebrow: "PAYROLL & COMMISSION", title: "เงินเดือนและค่าคอมมิชชัน", description: "คำนวณค่าแรง ตรวจยอด ออกสลิป และติดตามการจ่ายอย่างเป็นขั้นตอน" },
   overview: { eyebrow: "ภาพรวมองค์กร", title: "ภาพรวม KPI พนักงาน", description: "ติดตามเป้าหมาย ประเมินผลงาน และวางแผนพัฒนาทีมในที่เดียว" },
@@ -1465,7 +1467,7 @@ export default function Home() {
   }, [currentUser, isEmployeePreview, permissions.canManageOrganizationDocuments, view]);
 
   useEffect(() => {
-    if (view !== "profiles" || canManageEmployeeFiles) return;
+    if ((view !== "profiles" && view !== "positionRequests") || canManageEmployeeFiles) return;
     const timer = window.setTimeout(() => setView("work"), 0);
     return () => window.clearTimeout(timer);
   }, [canManageEmployeeFiles, view]);
@@ -4270,7 +4272,7 @@ export default function Home() {
       label: "ทีมและผลงาน",
       description: "ค้นหาคน ประเมินสกิล และดูความพร้อมของทีม",
       items: [
-        { id: "employees", icon: "♙", label: "จัดการพนักงาน", description: "พนักงาน ผลประเมิน และแฟ้มข้อมูล", keywords: "employee kpi คน บุคลากร", active: view === "employees" || view === "profiles" || view === "employeeBindings", primarySimple: true, primaryFull: true, visible: true },
+        { id: "employees", icon: "♙", label: "จัดการพนักงาน", description: "พนักงาน ผลประเมิน และแฟ้มข้อมูล", keywords: "employee kpi คน บุคลากร", active: view === "employees" || view === "profiles" || view === "employeeBindings" || view === "positionRequests", primarySimple: true, primaryFull: true, visible: true },
         { id: "skills", icon: "✦", label: "สกิลทีม", description: "Skill Matrix และช่องว่างทักษะ", keywords: "skill competency", active: view === "skills", primaryFull: true, visible: true },
         { id: "power", icon: "◆", label: "ค่าพลัง", description: "เปรียบเทียบศักยภาพของทีม", keywords: "power rating", active: view === "power", primaryFull: true, visible: true },
         { id: "office", icon: "⌂", label: "สำนักงานจำลอง", description: "ภาระงานของทีมในมุมมอง 3D", keywords: "office 3d สำนักงาน", badge: String(officePressureCount), active: view === "office", primaryFull: true, visible: publicSystemSettings.features.office3dEnabled },
@@ -4550,7 +4552,7 @@ export default function Home() {
             <h1>{activeViewTitle}</h1>
             <p>{activeViewDescription}</p>
           </div>
-          {!isEmployeeUser && view !== "employeeBindings" && view !== "access" && view !== "work" && view !== "organizationDocs" && view !== "settings" && <div className="heading-actions">
+          {!isEmployeeUser && view !== "employeeBindings" && view !== "positionRequests" && view !== "access" && view !== "work" && view !== "organizationDocs" && view !== "settings" && <div className="heading-actions">
             <button className="secondary-button" onClick={() => view === "office" ? setView("work") : view === "peopleOps" ? buildGrowthTeam() : view === "profiles" ? showToast(`${requiredDocumentTypes.length - verifiedRequiredDocuments} เอกสารจำเป็นยังตรวจไม่ครบ`) : view === "power" ? showToast("ค่าพลังรวมมาจากค่าสกิล 70% และ KPI 30%") : view === "portfolio" ? exportPortfolioReport() : exportReport()}><span aria-hidden="true">{view === "office" ? "✓" : view === "peopleOps" ? "♙" : view === "profiles" ? "▣" : view === "power" ? "i" : "↓"}</span> {view === "office" ? "เปิดทูดูลิส" : view === "peopleOps" ? "สร้างทีมจากสกิล" : view === "profiles" ? "เช็กเอกสารที่ขาด" : view === "power" ? "วิธีคำนวณ" : view === "portfolio" ? "ส่งออกแฟ้ม CSV" : "ส่งออกรายงาน"}</button>
             <button className="primary-button" onClick={() => {
               if (view === "office") {
@@ -4587,15 +4589,17 @@ export default function Home() {
           </div>}
         </div>
 
-        {!isEmployeeUser && (view === "employees" || view === "profiles" || view === "employeeBindings") && <nav className="employee-management-tabs" aria-label="ส่วนจัดการพนักงาน">
+        {!isEmployeeUser && (view === "employees" || view === "profiles" || view === "employeeBindings" || view === "positionRequests") && <nav className="employee-management-tabs" aria-label="ส่วนจัดการพนักงาน">
           {canManageEmployeeFiles && <button type="button" className={view === "employeeBindings" ? "active" : ""} aria-current={view === "employeeBindings" ? "page" : undefined} onClick={() => setView("employeeBindings")}><span aria-hidden="true">⇄</span><span><strong>ผูกบัญชีกับตำแหน่ง</strong><small>ตั้งค่างานรายวัน · HR/Admin</small></span></button>}
+          {canManageEmployeeFiles && <button type="button" className={view === "positionRequests" ? "active" : ""} aria-current={view === "positionRequests" ? "page" : undefined} onClick={() => setView("positionRequests")}><span aria-hidden="true">⇄</span><span><strong>คำขอเปลี่ยนตำแหน่ง</strong><small>ส่งออก นำเข้า และอนุมัติ</small></span></button>}
           <button type="button" className={view === "employees" ? "active" : ""} aria-current={view === "employees" ? "page" : undefined} onClick={() => setView("employees")}><span aria-hidden="true">♙</span><span><strong>พนักงาน</strong><small>ตำแหน่งและผลประเมิน</small></span></button>
           {canManageEmployeeFiles && <button type="button" className={view === "profiles" ? "active" : ""} aria-current={view === "profiles" ? "page" : undefined} onClick={() => setView("profiles")}><span aria-hidden="true">▣</span><span><strong>พนักงานทั้งหมด</strong><small>ข้อมูล แก้ไข และประวัติ LOG</small></span></button>}
         </nav>}
 
         {view === "employeeBindings" && canManageEmployeeFiles && <DailyAssignments mode="bindings" employeeId={currentUser?.employeeId} />}
+        {view === "positionRequests" && canManageEmployeeFiles && <PositionChangeRequests onEmployeeChanged={() => setDashboardReloadKey(key => key + 1)} />}
 
-        {!isEmployeeUser && view !== "employeeBindings" && view !== "access" && view !== "work" && view !== "organizationDocs" && view !== "settings" && <div className="filter-row" aria-label="กรองตามแผนก">
+        {!isEmployeeUser && view !== "employeeBindings" && view !== "positionRequests" && view !== "access" && view !== "work" && view !== "organizationDocs" && view !== "settings" && <div className="filter-row" aria-label="กรองตามแผนก">
           {departmentFilters.map((filter) => (
             <button key={filter.id} className={activeDepartment === filter.id ? "active" : ""} onClick={() => setActiveDepartment(filter.id)}>{filter.label}</button>
           ))}

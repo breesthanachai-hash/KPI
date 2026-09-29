@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { access, readFile, readdir } from "node:fs/promises";
 import test from "node:test";
+import { roles, seedEmployees, seedRewards } from "../lib/kpi-data.ts";
 
 const projectRoot = new URL("../", import.meta.url);
 
@@ -66,7 +67,7 @@ test("builds the People Pulse KPI product bundle", async () => {
   assert.match(pageAsset, /ผู้เชี่ยวชาญโฆษณา Facebook/);
   assert.match(pageAsset, /การบริหาร TikTok Shop, Shopee และ Lazada/);
   assert.match(pageAsset, /Pixel, CAPI และ Event Tracking/);
-  assert.match(kpiData, /นรินทร์ กิตติคุณ/);
+  assert.deepEqual(seedEmployees, [], "release templates must not invent employee records");
   assert.match(kpiData, /growth-commerce-manager/);
   assert.match(kpiData, /seedEmployeeLegacyRoleIds/);
   assert.match(kpiData, /core-ai-work-mastery/);
@@ -74,7 +75,12 @@ test("builds the People Pulse KPI product bundle", async () => {
   assert.match(kpiData, /ห้ามใส่ข้อมูลลับ/);
   assert.match(kpiData, /มีมนุษย์กำกับ/);
   assert.match(kpiData, /eligibleForAllowance: false/);
-  assert.equal((kpiData.match(/\], aiWorkMastery\(/g) ?? []).length, 8, "expected a role-specific AI target for every current role");
+  assert.ok(roles.length > 0, "expected selectable position templates");
+  for (const role of roles) {
+    const aiSkill = role.skills.find((skill) => skill.id === "core-ai-work-mastery");
+    assert.ok(aiSkill && aiSkill.targetLevel >= 1 && aiSkill.targetLevel <= 5 && aiSkill.evidence,
+      `expected a valid AI target and evidence guidance for ${role.id}`);
+  }
   const skillCategoryBlock = kpiData.match(/export const skillCategories:[\s\S]*?\n\];/)?.[0] ?? "";
   const skillCategoryWeightTotal = [...skillCategoryBlock.matchAll(/weight: (\d+)/g)].reduce((sum, match) => sum + Number(match[1]), 0);
   assert.equal(skillCategoryWeightTotal, 100, "competency category weights must total 100");
@@ -154,7 +160,7 @@ test("builds the People Pulse KPI product bundle", async () => {
   assert.match(pageAsset, /เลือกส่วนจัดการงาน/);
   assert.match(pageAsset, /รายการงาน/);
   assert.match(pageAsset, /ติดตามภาพรวม/);
-  assert.match(pageAsset, /ใช้ Points แลกของ/);
+  assert.match(pageAsset, /ใช้ Points ของคุณแลกรางวัล/);
   assert.match(pageAsset, /งานที่ต้องทำ/);
   assert.match(pageAsset, /เกินกำหนด/);
   assert.match(pageAsset, /งานภายใน 7 วัน/);
@@ -163,8 +169,7 @@ test("builds the People Pulse KPI product bundle", async () => {
   assert.match(pageAsset, /Points จากการประเมินประจำเดือน/);
   assert.match(pageAsset, /กติกาการได้และเสีย Points/);
   assert.match(kpiData, /สูงสุด 240 Points/);
-  assert.match(kpiData, /คูปองเงินสด 100 บาท/);
-  assert.match(kpiData, /iPhone 18/);
+  assert.deepEqual(seedRewards, [], "release templates must not invent rewards");
   assert.match(pageAsset, /WORK PROOF CENTER/);
   assert.match(pageAsset, /ส่งหลักฐานงาน/);
   assert.match(pageAsset, /หลักฐานแนะนำตามตำแหน่ง/);
@@ -470,8 +475,8 @@ test("ships durable role-based access and scoped people, work, portfolio and rew
   assert.match(data, /core-discipline/);
   assert.match(data, /core-respect-manners/);
   assert.match(data, /calculateSkillScore/);
-  assert.match(data, /reward-cash-100/);
-  assert.match(data, /reward-iphone-18/);
+  assert.match(dashboardRoute, /saveReward/);
+  assert.match(dashboardRoute, /deleteReward/);
   assert.match(page, /saveEmployeeProfile/);
   assert.match(page, /signEmploymentContract/);
   assert.match(page, /submitWorkProof/);

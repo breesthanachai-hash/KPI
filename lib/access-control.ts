@@ -15,7 +15,6 @@ import {
   privateLookupHash,
   randomToken,
   validateLoginId,
-  verifyPassword,
 } from "./password-crypto";
 
 export type CurrentUser = UserAccountRecord & {
@@ -49,8 +48,6 @@ const SESSION_IDLE_MS = 8 * 60 * 60 * 1000;
 const SESSION_ABSOLUTE_MS = 24 * 60 * 60 * 1000;
 const SESSION_TOUCH_MS = 5 * 60 * 1000;
 let bootstrapInitialization: Promise<void> | null = null;
-const LOCAL_MOCK_LOGIN_ID = "admin";
-const LOCAL_MOCK_PASSWORD = "12345678";
 
 export const privateNoStoreHeaders = {
   "cache-control": "private, no-store, max-age=0",
@@ -83,58 +80,6 @@ export function ensureBootstrapAccounts() {
     throw error;
   });
   return bootstrapInitialization;
-}
-
-/**
- * The local UI is a mockup environment. Keep one predictable owner account so
- * restarting Wrangler or clearing a local D1 state never forces a new password.
- * This is deliberately unreachable on deployed origins.
- */
-export async function ensureLocalMockAdminCredential(request: Request) {
-  if (process.env.NODE_ENV !== "development") return;
-  const hostname = new URL(request.url).hostname;
-  if (!(["localhost", "127.0.0.1", "::1"].includes(hostname))) return;
-
-  const db = getDb();
-  const [owner] = await db.select().from(userAccounts).where(eq(userAccounts.id, "user-owner")).limit(1);
-  if (!owner || owner.role !== "admin" || owner.status !== "active") return;
-  const [credential] = await db.select().from(authCredentials).where(eq(authCredentials.userAccountId, owner.id)).limit(1);
-  const alreadyReady = credential
-    && credential.loginIdCanonical === LOCAL_MOCK_LOGIN_ID
-    && !credential.mustChangePassword
-    && !credential.lockedUntil
-    && credential.failedAttempts === 0
-    && await verifyPassword(LOCAL_MOCK_PASSWORD, {
-      passwordHash: credential.passwordHash,
-      passwordSalt: credential.passwordSalt,
-      passwordAlgorithm: credential.passwordAlgorithm as "pbkdf2-sha256" | "pbkdf2-sha256-chain-v1",
-      passwordIterations: credential.passwordIterations,
-      pepperVersion: credential.pepperVersion,
-    });
-  if (alreadyReady) return;
-
-  const now = new Date().toISOString();
-  const verifier = await hashPassword(LOCAL_MOCK_PASSWORD);
-  const values = {
-    loginId: LOCAL_MOCK_LOGIN_ID,
-    loginIdCanonical: LOCAL_MOCK_LOGIN_ID,
-    ...verifier,
-    credentialVersion: (credential?.credentialVersion ?? 0) + 1,
-    mustChangePassword: false,
-    failedAttempts: 0,
-    lockedUntil: null,
-    passwordChangedAt: now,
-    updatedAt: now,
-  };
-  if (credential) {
-    await db.update(authCredentials).set(values).where(and(
-      eq(authCredentials.userAccountId, owner.id),
-      eq(authCredentials.credentialVersion, credential.credentialVersion),
-    ));
-  } else {
-    await db.insert(authCredentials).values({ userAccountId: owner.id, ...values, createdAt: now });
-  }
-  await revokeAllSessionsForAccount(owner.id, "local-mock-credential-reset");
 }
 
 export async function ensureOwnerRecoveryCredential() {

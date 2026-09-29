@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { findRole } from "../lib/kpi-data";
 
 type Event = { id: string; actor_name: string; created_at: string; before_json: string; after_json: string };
 const labels: Record<string, string> = { positionTitle: "ชื่อตำแหน่ง", personalEmail: "อีเมลส่วนตัว", phone: "โทรศัพท์", birthDate: "วันเกิด", nationalIdLast4: "เลขบัตร 4 หลักท้าย", address: "ที่อยู่", emergencyName: "ผู้ติดต่อฉุกเฉิน", emergencyPhone: "โทรศัพท์ฉุกเฉิน", startDate: "วันเริ่มงาน", employmentType: "ประเภทการจ้าง", education: "การศึกษา", experienceYears: "ประสบการณ์ (ปี)", applicationSource: "ช่องทางสมัคร" };
@@ -27,9 +28,12 @@ export default function EmployeeHistory({ employeeId, revision }: { employeeId: 
     {loading ? <p role="status">กำลังโหลดประวัติ…</p> : error ? <p role="alert">{error} <button type="button" onClick={() => setRetry(retry + 1)}>ลองอีกครั้ง</button></p> : !events.length ? <p>ยังไม่มีประวัติการแก้ไขโปรไฟล์</p> : events.map((event) => {
       const before = JSON.parse(event.before_json);
       const after = JSON.parse(event.after_json);
-      const fields = Object.keys(labels).filter((field) => (before[field] ?? "") !== (after[field] ?? ""));
+      const historyLabels = { ...labels, roleId: "กรอบตำแหน่ง (KPI)" };
+      const display = (field: string, value: unknown) => field === "roleId" && typeof value === "string" ? findRole(value)?.name ?? value : String(value ?? "") || "—";
+      const fields = Object.keys(historyLabels).filter((field) => (before[field] ?? "") !== (after[field] ?? ""));
       return <details key={event.id}><summary>{new Date(event.created_at).toLocaleString("th-TH", { timeZone: "Asia/Bangkok" })} · {event.actor_name} · เปลี่ยน {fields.length} รายการ</summary>
-        {fields.length ? <div className="employee-history-scroll"><table><thead><tr><th>ข้อมูล</th><th>ก่อนแก้ไข</th><th>หลังแก้ไข</th></tr></thead><tbody>{fields.map((field) => <tr key={field}><th>{labels[field]}</th><td>{String(before[field] ?? "") || "—"}</td><td>{String(after[field] ?? "") || "—"}</td></tr>)}</tbody></table></div> : <p>บันทึกโดยไม่มีการเปลี่ยนข้อมูล</p>}
+        {after.positionRequestId && <p>คำขออ้างอิง: {String(after.positionRequestId)}</p>}
+        {fields.length ? <div className="employee-history-scroll"><table><thead><tr><th>ข้อมูล</th><th>ก่อนแก้ไข</th><th>หลังแก้ไข</th></tr></thead><tbody>{fields.map((field) => <tr key={field}><th>{historyLabels[field as keyof typeof historyLabels]}</th><td>{display(field,before[field])}</td><td>{display(field,after[field])}</td></tr>)}</tbody></table></div> : <p>บันทึกโดยไม่มีการเปลี่ยนข้อมูล</p>}
       </details>;
     })}
   </section>;
