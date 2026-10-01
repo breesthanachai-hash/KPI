@@ -66,6 +66,35 @@ export const employees = sqliteTable("employees", {
   index("employees_role_idx").on(table.roleId),
 ]);
 
+// Cross-environment proposals are snapshots, not foreign keys to users or employees.
+// They must remain reviewable if the employee is removed or source IDs are unknown.
+export const employeePositionChangeRequests = sqliteTable("employee_position_change_requests", {
+  id: text("id").primaryKey(),
+  employeeId: text("employee_id").notNull(),
+  previousRoleId: text("previous_role_id").notNull(),
+  previousPositionTitle: text("previous_position_title").notNull(),
+  expectedEmployeeUpdatedAt: text("expected_employee_updated_at").notNull(),
+  requestedRoleId: text("requested_role_id").notNull(),
+  requestedPositionTitle: text("requested_position_title").notNull(),
+  reason: text("reason").notNull(),
+  requestedBy: text("requested_by").notNull(),
+  requestedByName: text("requested_by_name").notNull(),
+  createdAt: text("created_at").notNull(),
+  sourceFingerprint: text("source_fingerprint").notNull(),
+  importedBy: text("imported_by"),
+  importedAt: text("imported_at"),
+  status: text("status", { enum: ["pending", "approved", "rejected"] }).notNull().default("pending"),
+  reviewedBy: text("reviewed_by"),
+  reviewedByName: text("reviewed_by_name"),
+  approvedAt: text("approved_at"),
+  rejectedAt: text("rejected_at"),
+  reviewNote: text("review_note").notNull().default(""),
+}, t => [
+  index("position_requests_status_created_idx").on(t.status, t.createdAt),
+  index("position_requests_employee_created_idx").on(t.employeeId, t.createdAt),
+  check("position_requests_state", sql`(${t.status}='pending' AND ${t.reviewedBy} IS NULL AND ${t.approvedAt} IS NULL AND ${t.rejectedAt} IS NULL) OR (${t.status}='approved' AND ${t.reviewedBy} IS NOT NULL AND ${t.reviewedByName} IS NOT NULL AND ${t.approvedAt} IS NOT NULL AND ${t.rejectedAt} IS NULL) OR (${t.status}='rejected' AND ${t.reviewedBy} IS NOT NULL AND ${t.reviewedByName} IS NOT NULL AND ${t.rejectedAt} IS NOT NULL AND ${t.approvedAt} IS NULL)`),
+]);
+
 export const employeePositionEvents = sqliteTable("employee_position_events", {
   id: text("id").primaryKey(),
   employeeId: text("employee_id").notNull(),

@@ -6238,6 +6238,22 @@ input::placeholder,textarea::placeholder { color: #526f8d !important; opacity: 1
 .dashboard .employee-management-tabs > button.active :is(span,strong,small) { color: #fff !important; }
 .employee-management-tabs > button:focus-visible { outline: 3px solid #f4bf43; outline-offset: 2px; }
 
+.position-requests { background: #fff; border: 1px solid #d1def3; border-radius: 18px; padding: clamp(16px, 2vw, 28px); font-size: 1rem; line-height: 1.65; overflow-wrap: anywhere; }
+.position-request-columns { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 24px; margin: 24px 0; }
+.position-request-columns > :is(form,section), .position-requests article, .position-request-review { padding: 20px; border: 1px solid #d1def3; border-radius: 14px; margin-bottom: 16px; }
+.position-request-mode { padding: 12px; background: #edf4ff; color: #173a74; border-radius: 8px; }
+.position-requests label { display: grid; gap: 6px; margin: 14px 0; font-size: 1rem; }
+.position-requests :is(input:not([type="checkbox"]),select) { width: 100%; min-width: 0; border: 1px solid #9db6de; background: #fff; color: #173a74; border-radius: 8px; padding: 12px; font: inherit; }
+.position-requests button { min-height: 44px; padding: 10px 16px; margin: 4px 8px 4px 0; border: 1px solid #2458b4; border-radius: 9px; background: #2458b4; color: #fff; font: inherit; cursor: pointer; }
+.position-requests button:disabled { opacity: .55; cursor: not-allowed; }
+.position-requests :is(input,select,button):focus-visible { outline: 3px solid #e79c13; outline-offset: 3px; }
+.position-requests small { font-size: .875rem; }
+.position-requests :is([role="alert"],.position-request-conflict) { color: #9b194b; }
+.position-request-review { background: #f0f5ff; }
+.position-requests .position-request-confirm { display: flex; align-items: flex-start; gap: 12px; }
+.position-request-confirm input { margin-top: 7px; width: 20px; height: 20px; flex-shrink: 0; }
+@media (max-width: 850px) { .position-request-columns { grid-template-columns: 1fr; } }
+
 /* Workspace: compact navigation, readable secondary text and restrained surfaces. */
 .page-heading[data-work-section] { min-height: 0; padding: 22px 28px; }
 .page-heading[data-work-section] h1 { font-size: clamp(26px,3vw,36px); }

@@ -70,6 +70,21 @@ test("password policy accepts any 6–15 character password across account flows
   assert.match(authService, /รหัสผ่านชั่วคราวอย่างน้อย 6 ตัวอักษร/);
 });
 
+test("ordinary localhost login has no fixed mock-admin credential reset", async () => {
+  const [accessControl, loginRoute] = await Promise.all([
+    source("lib/access-control.ts"),
+    source("app/api/auth/login/route.ts"),
+  ]);
+  for (const code of [accessControl, loginRoute]) {
+    assert.doesNotMatch(code, /ensureLocalMockAdminCredential|LOCAL_MOCK_(?:LOGIN_ID|PASSWORD)|local-mock-credential-reset/);
+  }
+  const login = handlerSource(loginRoute, "POST");
+  assertBefore(login, /unsafeRequestIsSameOrigin\(request\)/, /ensureDatabase\(\)/, "login origin gate");
+  assertBefore(login, /ensureBootstrapAccounts\(\)/, /authenticateLogin\(request,/, "existing bootstrap");
+  assertBefore(login, /ensureOwnerRecoveryCredential\(\)/, /authenticateLogin\(request,/, "explicit owner recovery");
+  assert.doesNotMatch(login, /NODE_ENV|hostname|hashPassword|revokeAllSessionsForAccount/);
+});
+
 test("owner recovery is expiring, single-use and can safely reset to one owner account", async () => {
   const [accessControl, cryptoSource, loginRoute, readme] = await Promise.all([
     source("lib/access-control.ts"),

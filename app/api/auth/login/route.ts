@@ -1,5 +1,5 @@
 import { ensureDatabase } from "../../../../db/initialize";
-import { ensureBootstrapAccounts, ensureLocalMockAdminCredential, ensureOwnerRecoveryCredential, privateNoStoreHeaders, sameOriginRequiredResponse, unsafeRequestIsSameOrigin } from "../../../../lib/access-control";
+import { ensureBootstrapAccounts, ensureOwnerRecoveryCredential, privateNoStoreHeaders, sameOriginRequiredResponse, unsafeRequestIsSameOrigin } from "../../../../lib/access-control";
 import { authenticateLogin } from "../../../../lib/auth-service";
 import { internalApiError } from "../../../../lib/api-errors";
 
@@ -10,7 +10,6 @@ export async function POST(request: Request) {
   try {
     await ensureDatabase();
     await ensureBootstrapAccounts();
-    await ensureLocalMockAdminCredential(request);
     await ensureOwnerRecoveryCredential();
     const payload = await readBoundedLoginPayload(request);
     const result = await authenticateLogin(request, payload?.loginId, payload?.password);
