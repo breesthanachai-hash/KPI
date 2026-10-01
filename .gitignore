@@ -44,6 +44,7 @@ next-env.d.ts
 /outputs/
 /work/
 /backups/
+/local-exports/
 # Request transfer files are user data, never source.
 position-requests-*.json
 *.sqlite
